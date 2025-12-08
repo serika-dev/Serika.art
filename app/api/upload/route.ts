@@ -1,0 +1,198 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getCollection } from '@/lib/db';
+import { uploadToR2 } from '@/lib/r2';
+import { uploadLocally } from '@/lib/localStorage';
+import { requireAuth } from '@/lib/auth';
+import { ObjectId } from 'mongodb';
+import sharp from 'sharp';
+
+const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === 'true';
+
+export async function POST(request: NextRequest) {
+  try {
+    const user = await requireAuth();
+    
+    // Ensure user exists in local DB
+    const usersCollection = await getCollection('users');
+    let rank: 'user' | 'moderator' | 'admin' | 'owner' = 'user';
+    if (user.id === '692ad0df032c62f79b57a08d') {
+      rank = 'owner';
+    }
+    
+    await usersCollection.updateOne(
+      { _id: new ObjectId(user.id) },
+      {
+        $set: {
+          username: user.username,
+          email: user.email,
+          avatarUrl: user.avatarUrl || '',
+          updatedAt: new Date(),
+        },
+        $setOnInsert: {
+          createdAt: new Date(),
+          rank,
+        },
+      },
+      { upsert: true }
+    );
+    
+    const formData = await request.formData();
+    const file = formData.get('file') as File;
+    const tagsString = formData.get('tags') as string;
+    let tags = [];
+    try {
+      tags = JSON.parse(tagsString);
+    } catch {
+      // Fallback to old format for backward compatibility
+      tags = tagsString?.split(',').map(t => ({ name: t.trim(), type: 'general' })).filter(t => t.name) || [];
+    }
+    const rating = formData.get('rating') as 'safe' | 'questionable' | 'explicit';
+    const isAIGenerated = formData.get('isAIGenerated') === 'true';
+    const source = formData.get('source') as string || '';
+    const description = formData.get('description') as string || '';
+
+    if (!file) {
+      return NextResponse.json(
+        { success: false, error: 'No file provided' },
+        { status: 400 }
+      );
+    }
+
+    if (tags.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'At least one tag is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!['safe', 'questionable', 'explicit'].includes(rating)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid rating' },
+        { status: 400 }
+      );
+    }
+
+    // Convert file to buffer
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Get image metadata
+    const metadata = await sharp(buffer).metadata();
+
+    // Create thumbnail
+    const thumbnailBuffer = await sharp(buffer)
+      .resize(300, 300, { fit: 'cover' })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+
+    // Upload to storage (R2 or local fallback)
+    let imageUrl: string;
+    let thumbnailUrl: string;
+    
+    try {
+      if (USE_LOCAL_STORAGE) {
+        console.log('Using local storage for uploads...');
+        [imageUrl, thumbnailUrl] = await Promise.all([
+          uploadLocally(buffer, file.name, file.type),
+          uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg'),
+        ]);
+      } else {
+        [imageUrl, thumbnailUrl] = await Promise.all([
+          uploadToR2(buffer, file.name, file.type),
+          uploadToR2(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg'),
+        ]);
+      }
+    } catch (uploadError: any) {
+      console.error('Primary upload failed, trying fallback:', uploadError);
+      
+      // Fallback to local storage if R2 fails
+      if (!USE_LOCAL_STORAGE) {
+        console.log('R2 upload failed, falling back to local storage...');
+        try {
+          [imageUrl, thumbnailUrl] = await Promise.all([
+            uploadLocally(buffer, file.name, file.type),
+            uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg'),
+          ]);
+        } catch (fallbackError) {
+          throw new Error('Both R2 and local storage uploads failed. Please check your configuration.');
+        }
+      } else {
+        throw uploadError;
+      }
+    }
+
+    // Create image document
+    const imageDoc = {
+      userId: new ObjectId(user.id),
+      username: user.username,
+      url: imageUrl,
+      thumbnailUrl,
+      originalFilename: file.name,
+      fileSize: buffer.length,
+      width: metadata.width || 0,
+      height: metadata.height || 0,
+      contentType: file.type,
+      tags,
+      rating,
+      isAIGenerated,
+      source,
+      description,
+      upvotes: 0,
+      downvotes: 0,
+      favorites: 0,
+      views: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const collection = await getCollection('images');
+    const result = await collection.insertOne(imageDoc);
+
+    // Update tag counts
+    const tagsCollection = await getCollection('tags');
+    for (const tag of tags) {
+      await tagsCollection.updateOne(
+        { name: tag.name.toLowerCase() },
+        {
+          $inc: { count: 1 },
+          $setOnInsert: {
+            name: tag.name.toLowerCase(),
+            type: tag.type || 'general',
+            createdAt: new Date(),
+          },
+        },
+        { upsert: true }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      image: { ...imageDoc, _id: result.insertedId },
+    });
+  } catch (error: any) {
+    console.error('Error uploading image:', error);
+    
+    if (error.message === 'Unauthorized') {
+      return NextResponse.json(
+        { success: false, error: 'You must be logged in to upload images' },
+        { status: 401 }
+      );
+    }
+
+    // Provide more specific error messages
+    let errorMessage = 'Failed to upload image';
+    
+    if (error.message?.includes('R2') || error.message?.includes('SSL') || error.code === 'EPROTO') {
+      errorMessage = 'Failed to upload to storage. Please check your R2 configuration or try again later.';
+    } else if (error.message?.includes('MongoDB') || error.message?.includes('connection')) {
+      errorMessage = 'Database connection error. Please try again.';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    return NextResponse.json(
+      { success: false, error: errorMessage },
+      { status: 500 }
+    );
+  }
+}

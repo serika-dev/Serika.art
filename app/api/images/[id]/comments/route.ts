@@ -1,0 +1,125 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getCollection } from '@/lib/db';
+import { getCurrentUser } from '@/lib/auth';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const { ObjectId } = await import('mongodb');
+    
+    const commentsCollection = await getCollection('comments');
+    const comments = await commentsCollection
+      .find({ imageId: new ObjectId(id) })
+      .sort({ createdAt: 1 })
+      .toArray();
+    
+    return NextResponse.json({
+      success: true,
+      comments: comments.map(c => ({
+        _id: c._id.toString(),
+        imageId: c.imageId.toString(),
+        userId: c.userId.toString(),
+        username: c.username,
+        avatarUrl: c.avatarUrl,
+        rank: c.rank || 'user',
+        content: c.content,
+        parentId: c.parentId?.toString(),
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+      })),
+    });
+  } catch (error: any) {
+    console.error('Error fetching comments:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch comments' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: 'You must be logged in to comment' },
+        { status: 401 }
+      );
+    }
+
+    const { id } = await params;
+    const body = await request.json();
+    const { content, parentId } = body;
+
+    if (!content || content.trim().length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Comment cannot be empty' },
+        { status: 400 }
+      );
+    }
+
+    if (content.length > 5000) {
+      return NextResponse.json(
+        { success: false, error: 'Comment is too long (max 5000 characters)' },
+        { status: 400 }
+      );
+    }
+
+    const { ObjectId } = await import('mongodb');
+    
+    // Get user details
+    const usersCollection = await getCollection('users');
+    const userDoc = await usersCollection.findOne({ _id: new ObjectId(user.id) });
+    
+    if (!userDoc) {
+      return NextResponse.json(
+        { success: false, error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    // Create comment
+    const commentsCollection = await getCollection('comments');
+    const comment = {
+      imageId: new ObjectId(id),
+      userId: new ObjectId(user.id),
+      username: userDoc.username,
+      avatarUrl: userDoc.avatarUrl,
+      rank: userDoc.rank || 'user',
+      content: content.trim(),
+      parentId: parentId ? new ObjectId(parentId) : undefined,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const result = await commentsCollection.insertOne(comment);
+
+    return NextResponse.json({
+      success: true,
+      comment: {
+        _id: result.insertedId.toString(),
+        imageId: comment.imageId.toString(),
+        userId: comment.userId.toString(),
+        username: comment.username,
+        avatarUrl: comment.avatarUrl,
+        rank: comment.rank,
+        content: comment.content,
+        parentId: comment.parentId?.toString(),
+        createdAt: comment.createdAt,
+        updatedAt: comment.updatedAt,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error creating comment:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to create comment' },
+      { status: 500 }
+    );
+  }
+}
