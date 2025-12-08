@@ -101,7 +101,7 @@ export default function PostsPage() {
     inputRef.current?.focus();
   };
 
-  const toggleTag = (tag: Tag) => {
+  const toggleTag = (tag: Tag | { name: string; type: TagType }) => {
     const exists = selectedTags.some(t => t.name === tag.name);
     if (exists) {
       setSelectedTags(selectedTags.filter(t => t.name !== tag.name));
