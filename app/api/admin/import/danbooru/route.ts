@@ -35,16 +35,32 @@ async function downloadAndUploadImage(
 ): Promise<{ mainUrl: string; width: number; height: number }> {
   // Download the image
   const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-  const imageBuffer = Buffer.from(imageResponse.data);
+  let imageBuffer = Buffer.from(imageResponse.data);
 
-  // Get image metadata
-  const metadata = await sharp(imageBuffer).metadata();
+  // Get image metadata and convert if needed
+  let metadata;
+  try {
+    metadata = await sharp(imageBuffer).metadata();
+  } catch (error) {
+    // If sharp can't read it, try to convert from webp or other format to jpeg
+    try {
+      imageBuffer = await sharp(imageBuffer).toFormat('jpeg', { quality: 90 }).toBuffer();
+      metadata = await sharp(imageBuffer).metadata();
+    } catch (convertError) {
+      throw new Error('Unsupported image format and conversion failed');
+    }
+  }
+
   const width = metadata.width || 0;
   const height = metadata.height || 0;
 
   // Generate unique filename with proper folder structure
   const timestamp = Date.now();
-  const ext = fileUrl.split('.').pop()?.split('?')[0] || 'jpg';
+  let ext = fileUrl.split('.').pop()?.split('?')[0] || 'jpg';
+  // Force jpg if we had to convert
+  if (ext === 'webp' || ext === 'gif') {
+    ext = 'jpg';
+  }
   const mainKey = `uploads/${timestamp}-danbooru-${postId}.${ext}`;
 
   // Upload main image only
@@ -144,6 +160,8 @@ async function importDanbooruPost(post: DanbooruPost) {
         { $inc: { count: 1 } }
       );
     }
+
+    return { success: true, imageId: result.insertedId.toString(), postId: post.id };
   } catch (error: any) {
     console.error('Error importing Danbooru post:', error);
     return { success: false, error: error.message, postId: post.id };
@@ -227,14 +245,15 @@ export async function POST(request: NextRequest) {
               await new Promise((resolve) => setTimeout(resolve, 300));
             }
 
-            // Send completion
+            // Send completion with only defined results
+            const validResults = results.filter((r) => r !== undefined && r !== null);
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({
                   type: 'complete',
                   total: posts.length,
-                  successful: results.filter((r) => r && r.success).length,
-                  results,
+                  successful: validResults.filter((r) => r.success).length,
+                  results: validResults,
                 })}\n\n`
               )
             );

@@ -127,10 +127,13 @@ export default function ImportPage() {
                 setBulkProgress({ current: 0, total: data.total });
               } else if (data.type === 'progress') {
                 setBulkProgress({ current: data.current, total: data.total });
-                setBulkResults((prev) => [...prev, data.result]);
+                if (data.result && (data.result.success || data.result.error)) {
+                  setBulkResults((prev) => [...prev, data.result]);
+                }
               } else if (data.type === 'complete') {
                 setBulkProgress({ current: data.total, total: data.total });
-                setBulkResults(data.results);
+                // Use the complete results array which is already filtered
+                setBulkResults(data.results || []);
               } else if (data.type === 'error') {
                 console.error('Import error:', data.error);
                 setBulkResults([
