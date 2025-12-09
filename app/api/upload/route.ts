@@ -10,31 +10,40 @@ const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === 'true';
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireAuth();
-    
-    // Ensure user exists in local DB
-    const usersCollection = await getCollection('users');
-    let rank: 'user' | 'moderator' | 'admin' | 'owner' = 'user';
-    if (user.id === '692ad0df032c62f79b57a08d') {
-      rank = 'owner';
+    // Try to get user, but allow anonymous uploads
+    let user: any = null;
+    try {
+      const { getCurrentUser } = await import('@/lib/auth');
+      user = await getCurrentUser();
+    } catch {
+      // Anonymous upload
     }
     
-    await usersCollection.updateOne(
-      { _id: new ObjectId(user.id) },
-      {
-        $set: {
-          username: user.username,
-          email: user.email,
-          avatarUrl: user.avatarUrl || '',
-          updatedAt: new Date(),
+    // If user exists, ensure they're in local DB
+    if (user) {
+      const usersCollection = await getCollection('users');
+      let rank: 'user' | 'moderator' | 'admin' | 'owner' = 'user';
+      if (user.id === '692ad0df032c62f79b57a08d') {
+        rank = 'owner';
+      }
+      
+      await usersCollection.updateOne(
+        { _id: new ObjectId(user.id) },
+        {
+          $set: {
+            username: user.username,
+            email: user.email,
+            avatarUrl: user.avatarUrl || '',
+            updatedAt: new Date(),
+          },
+          $setOnInsert: {
+            createdAt: new Date(),
+            rank,
+          },
         },
-        $setOnInsert: {
-          createdAt: new Date(),
-          rank,
-        },
-      },
-      { upsert: true }
-    );
+        { upsert: true }
+      );
+    }
     
     const formData = await request.formData();
     const file = formData.get('file') as File;
@@ -123,8 +132,8 @@ export async function POST(request: NextRequest) {
 
     // Create image document
     const imageDoc = {
-      userId: new ObjectId(user.id),
-      username: user.username,
+      userId: user ? new ObjectId(user.id) : null,
+      username: user ? user.username : 'Anonymous',
       url: imageUrl,
       thumbnailUrl,
       originalFilename: file.name,

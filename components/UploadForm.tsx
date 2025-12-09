@@ -81,17 +81,43 @@ export default function UploadForm() {
     }
   };
 
-  const handleTagAdd = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleTagAdd = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (tagSuggestions.length > 0 && showSuggestions) {
-        addTag(tagSuggestions[0]);
+      const normalizedInput = tagInput.trim().toLowerCase();
+      const hasSuggestions = tagSuggestions.length > 0 && showSuggestions;
+      const topSuggestion = hasSuggestions ? tagSuggestions[0] : null;
+
+      // Only accept the top suggestion on Enter if it exactly matches the input
+      if (topSuggestion && topSuggestion.name.toLowerCase() === normalizedInput) {
+        addTag(topSuggestion);
+
+        // Check for complementary tags
+        const complementaryTags = await fetchComplementaryTags(topSuggestion.name);
+        if (complementaryTags.length > 0) {
+          const complementary = complementaryTags[0];
+          if (!tags.some(t => t.name === complementary.name)) {
+            setTags(prev => [...prev, { name: complementary.name, type: complementary.type }]);
+          }
+        }
       } else {
         addManualTag();
       }
     } else if (e.key === 'Escape') {
       setShowSuggestions(false);
     }
+  };
+
+  const fetchComplementaryTags = async (tagName: string): Promise<TagModel[]> => {
+    try {
+      const response = await axios.post('/api/tags/complementary', { tag: tagName });
+      if (response.data.success) {
+        return response.data.suggestions;
+      }
+    } catch (error) {
+      console.error('Error fetching complementary tags:', error);
+    }
+    return [];
   };
 
   const removeTag = (tagToRemove: string) => {
@@ -139,20 +165,6 @@ export default function UploadForm() {
     }
   };
 
-  if (!user) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-gray-600 mb-4">You must be logged in to upload images</p>
-        <button
-          onClick={() => window.location.href = `${process.env.NEXT_PUBLIC_ACCOUNTS_URL}/login`}
-          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-        >
-          Login
-        </button>
-      </div>
-    );
-  }
-
   return (
     <form onSubmit={handleSubmit} className="max-w-5xl mx-auto">
       <div className="mb-8">
@@ -160,7 +172,15 @@ export default function UploadForm() {
           <Upload size={36} className="text-blue-500" />
           Upload Image
         </h1>
-        <p className="text-zinc-400">Share your artwork with the community</p>
+        <p className="text-zinc-400">
+          {!user ? (
+            <span className="text-yellow-400">
+              Uploading anonymously - images will be attributed to "Anonymous"
+            </span>
+          ) : (
+            'Share your artwork with the community'
+          )}
+        </p>
       </div>
 
       {error && (

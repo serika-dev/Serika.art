@@ -35,8 +35,12 @@ export default function Navbar() {
         <div className="flex justify-between h-16">
           {/* Logo */}
           <div className="flex items-center">
-            <Link href="/" className="text-2xl font-bold text-blue-500 hover:text-blue-400">
-              Serika.art
+            <Link href="/" className="flex items-center gap-2">
+              <img
+                src="/logo.svg"
+                alt="Serika Booru"
+                className="h-8 w-auto drop-shadow-[0_2px_6px_rgba(0,0,0,0.4)]"
+              />
             </Link>
           </div>
 

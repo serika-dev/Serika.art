@@ -58,18 +58,52 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const normalizedQuery = query.trim().toLowerCase();
+    
     // Escape special regex characters
-    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedQuery = normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     const collection = await getCollection('tags');
     
-    const suggestions = await collection
+    // Fetch potential matches
+    const allMatches = await collection
       .find({
-        name: { $regex: `^${escapedQuery}`, $options: 'i' },
+        name: { $regex: escapedQuery, $options: 'i' },
       })
       .sort({ count: -1 })
-      .limit(limit)
+      .limit(limit * 3) // Get more to filter
       .toArray();
+
+    // Score and sort suggestions
+    const scoredSuggestions = allMatches.map((tag: any) => {
+      const tagName = tag.name.toLowerCase();
+      let score = 0;
+      
+      // Exact match - highest priority
+      if (tagName === normalizedQuery) {
+        score = 1000000 + tag.count;
+      }
+      // Starts with query - high priority
+      else if (tagName.startsWith(normalizedQuery)) {
+        score = 100000 + tag.count;
+      }
+      // Word boundary match (e.g., "blue" matches "blue eyes" but not "blueberry")
+      else if (tagName.startsWith(normalizedQuery + ' ') || tagName.includes(' ' + normalizedQuery + ' ') || tagName.endsWith(' ' + normalizedQuery)) {
+        score = 10000 + tag.count;
+      }
+      // Contains query - lowest priority
+      else {
+        score = tag.count;
+      }
+      
+      return { ...tag, score };
+    });
+
+    // Sort by score descending
+    const suggestions = scoredSuggestions
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(({ score, ...tag }) => tag); // Remove score from response
 
     return NextResponse.json({
       success: true,
