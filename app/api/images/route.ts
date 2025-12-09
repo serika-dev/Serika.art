@@ -23,7 +23,12 @@ export async function GET(request: NextRequest) {
     const query: any = {};
     
     if (userId) {
-      query.userId = new ObjectId(userId);
+      if (userId === 'null') {
+        // Anonymous images
+        query.userId = null;
+      } else {
+        query.userId = new ObjectId(userId);
+      }
     }
     
     if (tags.length > 0) {

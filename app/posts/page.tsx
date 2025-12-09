@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import ImageCard from '@/components/ImageCard';
 import { Image, Tag } from '@/lib/models';
 import axios from 'axios';
@@ -11,11 +12,11 @@ type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 type Rating = 'safe' | 'questionable' | 'explicit';
 
 export default function PostsPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [images, setImages] = useState<Image[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [sort, setSort] = useState('newest');
   const [tagsByType, setTagsByType] = useState<Record<TagType, Tag[]>>({
     general: [],
     artist: [],
@@ -23,17 +24,26 @@ export default function PostsPage() {
     copyright: [],
     meta: [],
   });
-  const [selectedTags, setSelectedTags] = useState<Array<{ name: string; type: TagType }>>([]);
-  const [selectedRatings, setSelectedRatings] = useState<Rating[]>(['safe', 'questionable', 'explicit']);
   const [tagInput, setTagInput] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<Tag[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Get parameters from URL
+  const page = parseInt(searchParams.get('page') || '1');
+  const sort = searchParams.get('sort') || 'newest';
+  const tagsParam = searchParams.get('tags') || '';
+  const ratingsParam = searchParams.get('ratings') || 'safe,questionable,explicit';
+  
+  const selectedTags = tagsParam 
+    ? tagsParam.split(',').map((tag, idx) => ({ name: tag, type: 'general' as TagType }))
+    : [];
+  const selectedRatings = (ratingsParam || '').split(',').filter(Boolean) as Rating[];
+
   useEffect(() => {
     fetchImages();
     fetchPopularTags();
-  }, [page, sort, selectedTags, selectedRatings]);
+  }, [page, sort, tagsParam, ratingsParam]);
 
   useEffect(() => {
     if (tagInput.trim().length > 0) {
@@ -47,13 +57,9 @@ export default function PostsPage() {
   const fetchImages = async () => {
     setLoading(true);
     try {
-      const tagsParam = selectedTags.length > 0 
-        ? `&tags=${selectedTags.map(t => t.name).join(',')}` 
-        : '';
-      const ratingsParam = selectedRatings.length < 3 
-        ? `&ratings=${selectedRatings.join(',')}` 
-        : '';
-      const response = await axios.get(`/api/images?page=${page}&limit=24&sort=${sort}${tagsParam}${ratingsParam}`);
+      const tagsQueryParam = tagsParam ? `&tags=${tagsParam}` : '';
+      const ratingsQueryParam = ratingsParam !== 'safe,questionable,explicit' ? `&ratings=${ratingsParam}` : '';
+      const response = await axios.get(`/api/images?page=${page}&limit=24&sort=${sort}${tagsQueryParam}${ratingsQueryParam}`);
       if (response.data.success) {
         setImages(response.data.images);
         setTotalPages(response.data.pagination.pages);
@@ -91,36 +97,68 @@ export default function PostsPage() {
     }
   };
 
+  const updateUrl = (newTags?: string[], newSort?: string, newPage?: number) => {
+    const params = new URLSearchParams();
+    
+    const tagsToUse = newTags !== undefined ? newTags : selectedTags.map(t => t.name);
+    const sortToUse = newSort || sort;
+    const pageToUse = newPage || 1;
+    
+    if (pageToUse > 1) params.set('page', pageToUse.toString());
+    if (sortToUse !== 'newest') params.set('sort', sortToUse);
+    if (tagsToUse.length > 0) params.set('tags', tagsToUse.join(','));
+    if (selectedRatings.length < 3) params.set('ratings', selectedRatings.join(','));
+    
+    const queryString = params.toString();
+    router.push(`/posts${queryString ? '?' + queryString : ''}`);
+  };
+
   const addTag = (tag: Tag) => {
     if (!selectedTags.some(t => t.name === tag.name)) {
-      setSelectedTags([...selectedTags, { name: tag.name, type: tag.type || 'general' }]);
-      setPage(1);
+      const newTags = [...selectedTags.map(t => t.name), tag.name];
+      updateUrl(newTags, sort, 1);
     }
     setTagInput('');
     setShowSuggestions(false);
     inputRef.current?.focus();
   };
 
+  const removeTag = (tagName: string) => {
+    const newTags = selectedTags.filter(t => t.name !== tagName).map(t => t.name);
+    updateUrl(newTags, sort, 1);
+  };
+
+  const clearFilters = () => {
+    router.push('/posts');
+  };
+
   const toggleTag = (tag: Tag | { name: string; type: TagType }) => {
-    const exists = selectedTags.some(t => t.name === tag.name);
+    const newTags = selectedTags.map(t => t.name);
+    const exists = newTags.includes(tag.name);
     if (exists) {
-      setSelectedTags(selectedTags.filter(t => t.name !== tag.name));
+      updateUrl(newTags.filter(name => name !== tag.name), sort, 1);
     } else {
-      setSelectedTags([...selectedTags, { name: tag.name, type: tag.type || 'general' }]);
+      updateUrl([...newTags, tag.name], sort, 1);
     }
-    setPage(1);
   };
 
   const toggleRating = (rating: Rating) => {
+    let newRatings: Rating[];
     if (selectedRatings.includes(rating)) {
-      // Must have at least one rating selected
-      if (selectedRatings.length > 1) {
-        setSelectedRatings(selectedRatings.filter(r => r !== rating));
-      }
+      newRatings = selectedRatings.filter(r => r !== rating);
+      if (newRatings.length === 0) newRatings = selectedRatings; // Must keep at least one
     } else {
-      setSelectedRatings([...selectedRatings, rating]);
+      newRatings = [...selectedRatings, rating];
     }
-    setPage(1);
+    
+    const params = new URLSearchParams();
+    const tagsToUse = selectedTags.map(t => t.name);
+    if (page > 1) params.set('page', page.toString());
+    if (sort !== 'newest') params.set('sort', sort);
+    if (tagsToUse.length > 0) params.set('tags', tagsToUse.join(','));
+    if (newRatings.length < 3) params.set('ratings', newRatings.join(','));
+    const queryString = params.toString();
+    router.push(`/posts${queryString ? '?' + queryString : ''}`);
   };
 
   return (
@@ -210,7 +248,7 @@ export default function PostsPage() {
                 {selectedTags.map((tag) => (
                   <button
                     key={tag.name}
-                    onClick={() => toggleTag(tag)}
+                    onClick={() => removeTag(tag.name)}
                     className="bg-blue-900/50 border border-blue-700 text-blue-200 px-2 py-1 rounded text-xs hover:bg-blue-900 transition flex items-center gap-1"
                   >
                     <span>{tag.name}</span>
@@ -278,10 +316,7 @@ export default function PostsPage() {
               <span className="text-sm font-medium text-zinc-300">Sort by:</span>
               <select
                 value={sort}
-                onChange={(e) => {
-                  setSort(e.target.value);
-                  setPage(1);
-                }}
+                onChange={(e) => updateUrl(undefined, e.target.value, 1)}
                 className="px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white text-sm"
               >
                 <option value="newest">Newest</option>
@@ -290,6 +325,15 @@ export default function PostsPage() {
                 <option value="views">Most Viewed</option>
               </select>
             </label>
+            {(selectedTags.length > 0 || selectedRatings.length < 3 || sort !== 'newest') && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-300 hover:text-white transition"
+              >
+                <X size={16} />
+                Clear Filters
+              </button>
+            )}
           </div>
         </div>
 
@@ -315,7 +359,7 @@ export default function PostsPage() {
             {totalPages > 1 && (
               <div className="flex justify-center items-center gap-4">
                 <button
-                  onClick={() => setPage(Math.max(1, page - 1))}
+                  onClick={() => updateUrl(undefined, undefined, Math.max(1, page - 1))}
                   disabled={page === 1}
                   className="px-4 py-2 bg-zinc-900 border border-zinc-700 rounded-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-zinc-300"
                 >
@@ -326,7 +370,7 @@ export default function PostsPage() {
                   Page {page} of {totalPages}
                 </span>
                 <button
-                  onClick={() => setPage(Math.min(totalPages, page + 1))}
+                  onClick={() => updateUrl(undefined, undefined, Math.min(totalPages, page + 1))}
                   disabled={page === totalPages}
                   className="px-4 py-2 bg-zinc-900 border border-zinc-700 rounded-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-zinc-300"
                 >

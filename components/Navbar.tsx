@@ -53,18 +53,17 @@ export default function Navbar() {
               Posts
             </Link>
             <Link
+              href="/tags"
+              className="px-3 py-2 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-md transition"
+            >
+              Tags
+            </Link>
+            <Link
               href="/upload"
               className="px-3 py-2 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-md transition flex items-center gap-2"
             >
               <Upload size={18} />
               Upload
-            </Link>
-            <Link
-              href="/search"
-              className="px-3 py-2 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-md transition flex items-center gap-2"
-            >
-              <Search size={18} />
-              Search
             </Link>
             {user ? (
               <div className="relative" ref={dropdownRef}>
@@ -114,6 +113,14 @@ export default function Navbar() {
                         >
                           <Shield size={18} />
                           <span>Admin Panel</span>
+                        </Link>
+                        <Link
+                          href="/admin/import"
+                          className="flex items-center gap-3 px-4 py-2 text-red-400 hover:bg-zinc-800 hover:text-red-300 transition"
+                          onClick={() => setProfileDropdownOpen(false)}
+                        >
+                          <Upload size={18} />
+                          <span>Import Posts</span>
                         </Link>
                       </>
                     )}
@@ -175,11 +182,11 @@ export default function Navbar() {
               Posts
             </Link>
             <Link
-              href="/search"
+              href="/tags"
               className="block px-3 py-2 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-md"
               onClick={() => setMobileMenuOpen(false)}
             >
-              Search
+              Tags
             </Link>
             {user ? (
               <>

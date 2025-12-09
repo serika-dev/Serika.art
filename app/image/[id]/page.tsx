@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, type FormEvent } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import axios from 'axios';
 import { Image as ImageType, Comment } from '@/lib/models';
@@ -10,9 +10,11 @@ import Link from 'next/link';
 
 export default function ImagePage() {
   const { id } = useParams();
+  const router = useRouter();
   const { user } = useAuth();
   const [image, setImage] = useState<ImageType | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const [userVote, setUserVote] = useState<'upvote' | 'downvote' | null>(null);
   const [isFavorited, setIsFavorited] = useState(false);
   const [imageSize, setImageSize] = useState<'fit' | 'original'>('fit');
@@ -34,8 +36,12 @@ export default function ImagePage() {
       if (response.data.success) {
         setImage(response.data.image);
       }
-    } catch (error) {
-      console.error('Error fetching image:', error);
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        setNotFound(true);
+      } else {
+        console.error('Error fetching image:', error);
+      }
     } finally {
       setLoading(false);
     }
@@ -143,9 +149,21 @@ export default function ImagePage() {
     );
   }
 
+  if (notFound) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-screen">
+        <h1 className="text-2xl font-bold text-white mb-4">Image not found</h1>
+        <p className="text-zinc-400 mb-6">This image doesn't exist or has been deleted.</p>
+        <Link href="/" className="text-blue-500 hover:text-blue-400">
+          Back to gallery
+        </Link>
+      </div>
+    );
+  }
+
   if (!image) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+      <div className="max-w-4xl mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-screen">
         <h1 className="text-2xl font-bold text-white mb-4">Image not found</h1>
         <Link href="/" className="text-blue-500 hover:text-blue-400">
           Back to gallery
@@ -307,11 +325,14 @@ export default function ImagePage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <Link
-                          href={`/user/${reply.userId}`}
+                          href={reply.userId ? `/user/${reply.userId}` : `/user/anonymous`}
                           className="font-semibold text-white hover:text-blue-400 text-sm"
                         >
                           {reply.username}
                         </Link>
+                        {!reply.userId && (
+                          <span className="text-xs text-zinc-500">(system)</span>
+                        )}
                         {reply.rank && reply.rank !== 'user' && (
                           <span className={`${getRankBadge(reply.rank)} px-2 py-0.5 rounded text-xs uppercase font-medium`}>
                             {reply.rank}
@@ -429,7 +450,7 @@ export default function ImagePage() {
                   <Download size={18} />
                   Download
                 </a>
-                {user && user.id === image.userId.toString() && (
+                {user && image.userId && user.id === image.userId.toString() && (
                   <button
                     onClick={handleDelete}
                     className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-500 transition"
@@ -456,9 +477,12 @@ export default function ImagePage() {
                 <span className="text-sm text-zinc-500">Uploaded by</span>
                 <div className="flex items-center gap-2 mt-1">
                   <User size={16} className="text-zinc-600" />
-                  <Link href={`/user/${image.userId}`} className="text-blue-500 hover:text-blue-400 font-medium">
+                  <Link href={image.userId ? `/user/${image.userId}` : `/user/anonymous`} className="text-blue-500 hover:text-blue-400 font-medium">
                     {image.username}
                   </Link>
+                  {!image.userId && (
+                    <span className="text-xs text-zinc-500">(system)</span>
+                  )}
                 </div>
               </div>
 
