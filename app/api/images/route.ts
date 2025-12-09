@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
-    const tags = searchParams.get('tags')?.split(',').filter(Boolean) || [];
+    const tagNames = searchParams.get('tags')?.split(',').filter(Boolean) || [];
     const ratings = searchParams.get('ratings')?.split(',').filter(Boolean) || [];
     const sort = searchParams.get('sort') || 'newest';
     const aiOnly = searchParams.get('ai') === 'true';
@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
 
     const collection = await getCollection('images');
+    const tagsCollection = await getCollection('tags');
     
     // Build query
     const query: any = {};
@@ -31,8 +32,27 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    if (tags.length > 0) {
-      query['tags.name'] = { $all: tags };
+    // Resolve tag names to ObjectIDs
+    if (tagNames.length > 0) {
+      const tagDocs = await tagsCollection
+        .find({ name: { $in: tagNames.map(t => t.toLowerCase()) } })
+        .toArray();
+      const tagIds = tagDocs.map(t => t._id);
+      if (tagIds.length > 0) {
+        query.tags = { $all: tagIds };
+      } else {
+        // No matching tags, return empty result
+        return NextResponse.json({
+          success: true,
+          images: [],
+          pagination: {
+            page,
+            limit,
+            total: 0,
+            pages: 0,
+          },
+        });
+      }
     }
     
     if (ratings.length > 0 && ratings.length < 3) {
@@ -44,8 +64,14 @@ export async function GET(request: NextRequest) {
     }
     
     if (search) {
+      // Search in tag names, description, and username
+      const tagSearchResults = await tagsCollection
+        .find({ name: { $regex: search, $options: 'i' } })
+        .toArray();
+      const tagIds = tagSearchResults.map(t => t._id);
+      
       query.$or = [
-        { tags: { $regex: search, $options: 'i' } },
+        { tags: { $in: tagIds } },
         { description: { $regex: search, $options: 'i' } },
         { username: { $regex: search, $options: 'i' } },
       ];
@@ -70,9 +96,38 @@ export async function GET(request: NextRequest) {
       collection.countDocuments(query),
     ]);
 
+    // Populate tags for all images
+    const allTagIds = new Set<string>();
+    images.forEach(img => {
+      if (Array.isArray(img.tags)) {
+        img.tags.forEach(tagId => allTagIds.add(tagId.toString()));
+      }
+    });
+
+    let tagMap = new Map();
+    if (allTagIds.size > 0) {
+      const tagDocs = await tagsCollection
+        .find({ _id: { $in: Array.from(allTagIds).map(id => new ObjectId(id)) } })
+        .toArray();
+      tagMap = new Map(tagDocs.map(t => [t._id.toString(), t]));
+    }
+
+    // Map images to replace tag IDs with populated tag data
+    const populatedImages = images.map((img: any) => ({
+      ...img,
+      tags: (img.tags || []).map((tagId: any) => {
+        const tag = tagMap.get(tagId.toString());
+        return {
+          _id: tagId,
+          name: tag?.name || 'unknown',
+          type: tag?.type || 'general',
+        };
+      }),
+    }));
+
     return NextResponse.json({
       success: true,
-      images,
+      images: populatedImages,
       pagination: {
         page,
         limit,

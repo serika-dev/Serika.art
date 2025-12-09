@@ -48,12 +48,12 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const tagsString = formData.get('tags') as string;
-    let tags = [];
+    let tagsData = [];
     try {
-      tags = JSON.parse(tagsString);
+      tagsData = JSON.parse(tagsString);
     } catch {
       // Fallback to old format for backward compatibility
-      tags = tagsString?.split(',').map(t => ({ name: t.trim(), type: 'general' })).filter(t => t.name) || [];
+      tagsData = tagsString?.split(',').map(t => ({ name: t.trim(), type: 'general' })).filter(t => t.name) || [];
     }
     const rating = formData.get('rating') as 'safe' | 'questionable' | 'explicit';
     const isAIGenerated = formData.get('isAIGenerated') === 'true';
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (tags.length === 0) {
+    if (tagsData.length === 0) {
       return NextResponse.json(
         { success: false, error: 'At least one tag is required' },
         { status: 400 }
@@ -79,6 +79,25 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Invalid rating' },
         { status: 400 }
       );
+    }
+
+    // Resolve tag names to ObjectIDs
+    const tagsCollection = await getCollection('tags');
+    const tagIds: ObjectId[] = [];
+    
+    for (const tagInfo of tagsData) {
+      let tag = await tagsCollection.findOne({ name: tagInfo.name.toLowerCase() });
+      if (!tag) {
+        const result = await tagsCollection.insertOne({
+          name: tagInfo.name.toLowerCase(),
+          type: tagInfo.type || 'general',
+          count: 0,
+          createdAt: new Date(),
+        });
+        tagIds.push(result.insertedId);
+      } else {
+        tagIds.push(tag._id);
+      }
     }
 
     // Convert file to buffer
@@ -141,7 +160,7 @@ export async function POST(request: NextRequest) {
       width: metadata.width || 0,
       height: metadata.height || 0,
       contentType: file.type,
-      tags,
+      tags: tagIds,
       rating,
       isAIGenerated,
       source,
@@ -158,19 +177,10 @@ export async function POST(request: NextRequest) {
     const result = await collection.insertOne(imageDoc);
 
     // Update tag counts
-    const tagsCollection = await getCollection('tags');
-    for (const tag of tags) {
+    for (const tagId of tagIds) {
       await tagsCollection.updateOne(
-        { name: tag.name.toLowerCase() },
-        {
-          $inc: { count: 1 },
-          $setOnInsert: {
-            name: tag.name.toLowerCase(),
-            type: tag.type || 'general',
-            createdAt: new Date(),
-          },
-        },
-        { upsert: true }
+        { _id: tagId },
+        { $inc: { count: 1 } }
       );
     }
 

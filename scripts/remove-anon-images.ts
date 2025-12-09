@@ -1,6 +1,6 @@
 import { MongoClient } from 'mongodb';
 
-const MONGO_URI = process.env.MONGO_URI;
+const MONGO_URI = process.env.MONGO_URI || '';
 const MONGO_DB = process.env.MONGO_DB || 'serika-art';
 
 if (!MONGO_URI) {
@@ -45,11 +45,13 @@ async function removeAnonImages() {
     const tagsCollection = db.collection('tags');
     for (const image of anonImages) {
       const tags = image.tags || [];
-      if (tags.length > 0) {
-        await tagsCollection.updateMany(
-          { name: { $in: tags.map((t: any) => t.name) } },
-          { $inc: { count: -1 } }
-        );
+      if (Array.isArray(tags) && tags.length > 0) {
+        for (const tagId of tags) {
+          await tagsCollection.updateOne(
+            { _id: tagId },
+            { $inc: { count: -1 } }
+          );
+        }
       }
     }
 

@@ -20,11 +20,6 @@ export interface Tag {
   createdAt: Date;
 }
 
-export interface ImageTag {
-  name: string;
-  type: 'general' | 'artist' | 'character' | 'copyright' | 'meta';
-}
-
 export interface Image {
   _id: ObjectId;
   userId: ObjectId;
@@ -36,7 +31,7 @@ export interface Image {
   width: number;
   height: number;
   contentType: string;
-  tags: ImageTag[];
+  tags: ObjectId[];
   rating: 'safe' | 'questionable' | 'explicit';
   isAIGenerated: boolean;
   source?: string;
@@ -76,3 +71,4 @@ export interface Comment {
   createdAt: Date;
   updatedAt: Date;
 }
+

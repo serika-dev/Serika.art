@@ -1,6 +1,6 @@
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 
-const MONGO_URI = process.env.MONGO_URI;
+const MONGO_URI = process.env.MONGO_URI || '';
 const MONGO_DB = process.env.MONGO_DB || 'serika-art';
 
 if (!MONGO_URI) {
@@ -38,11 +38,10 @@ async function fixTagNamesAndImages() {
         await tagsCollection.updateOne({ _id: existingTag._id }, { $set: { count: newCount } });
         console.log(`Merged tag "${tag.name}" into "${normalizedName}" (new count: ${newCount})`);
 
-        // Update images to use normalized tag name
+        // Update images to use the normalized tag ID
         await imagesCollection.updateMany(
-          { 'tags.name': tag.name },
-          { $set: { 'tags.$[elem].name': normalizedName } },
-          { arrayFilters: [{ 'elem.name': tag.name }] }
+          { tags: tag._id },
+          { $set: { 'tags.$': existingTag._id } }
         );
 
         // Delete old tag
@@ -51,36 +50,10 @@ async function fixTagNamesAndImages() {
         // Just rename the tag
         await tagsCollection.updateOne({ _id: tag._id }, { $set: { name: normalizedName } });
         console.log(`Renamed tag "${tag.name}" to "${normalizedName}"`);
-
-        // Update images to use normalized tag name
-        await imagesCollection.updateMany(
-          { 'tags.name': tag.name },
-          { $set: { 'tags.$[elem].name': normalizedName } },
-          { arrayFilters: [{ 'elem.name': tag.name }] }
-        );
       }
     }
 
     console.log('✓ Tag normalization complete');
-
-    // 3. Verify all images use normalized tag names
-    const imagesWithBadTags = await imagesCollection
-      .find({ 'tags.name': /_/ })
-      .toArray();
-
-    if (imagesWithBadTags.length > 0) {
-      console.log(`Fixing ${imagesWithBadTags.length} images with underscored tags...`);
-      for (const image of imagesWithBadTags) {
-        const normalizedTags = image.tags.map((t: any) => ({
-          ...t,
-          name: t.name.replace(/_/g, ' '),
-        }));
-        await imagesCollection.updateOne({ _id: image._id }, { $set: { tags: normalizedTags } });
-      }
-      console.log('✓ Images updated');
-    } else {
-      console.log('✓ All images already have normalized tags');
-    }
 
     console.log('Database update complete!');
   } catch (error) {

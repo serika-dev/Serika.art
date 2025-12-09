@@ -87,9 +87,9 @@ async function importDanbooruPost(post: DanbooruPost) {
       post.id
     );
 
-    // Extract and create tags
+    // Extract and create tags, resolve to ObjectIDs
     const tagData = extractDanbooruTags(post);
-    const imageTags = [];
+    const tagIds: ObjectId[] = [];
 
     for (const tagInfo of tagData) {
       let tag = await tagsCollection.findOne({ name: tagInfo.name });
@@ -97,16 +97,12 @@ async function importDanbooruPost(post: DanbooruPost) {
         const result = await tagsCollection.insertOne({
           name: tagInfo.name,
           type: tagInfo.type,
-          count: 1,
+          count: 0,
           createdAt: new Date(),
         });
-        imageTags.push({ name: tagInfo.name, type: tagInfo.type });
+        tagIds.push(result.insertedId);
       } else {
-        await tagsCollection.updateOne(
-          { _id: tag._id },
-          { $inc: { count: 1 } }
-        );
-        imageTags.push({ name: tagInfo.name, type: tagInfo.type });
+        tagIds.push(tag._id);
       }
     }
 
@@ -120,7 +116,7 @@ async function importDanbooruPost(post: DanbooruPost) {
       width,
       height,
       contentType: `image/${post.file_ext}`,
-      tags: imageTags,
+      tags: tagIds,
       rating: mapDanbooruRating(post.rating),
       isAIGenerated: false,
       source: post.source || `https://danbooru.donmai.us/posts/${post.id}`,
@@ -141,7 +137,13 @@ async function importDanbooruPost(post: DanbooruPost) {
 
     const result = await imagesCollection.insertOne(imageDoc);
 
-    return { success: true, imageId: result.insertedId.toString(), postId: post.id };
+    // Update tag counts
+    for (const tagId of tagIds) {
+      await tagsCollection.updateOne(
+        { _id: tagId },
+        { $inc: { count: 1 } }
+      );
+    }
   } catch (error: any) {
     console.error('Error importing Danbooru post:', error);
     return { success: false, error: error.message, postId: post.id };
@@ -231,7 +233,7 @@ export async function POST(request: NextRequest) {
                 `data: ${JSON.stringify({
                   type: 'complete',
                   total: posts.length,
-                  successful: results.filter((r) => r.success).length,
+                  successful: results.filter((r) => r && r.success).length,
                   results,
                 })}\n\n`
               )

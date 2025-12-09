@@ -78,9 +78,20 @@ export async function POST(request: NextRequest) {
 
     // Fallback: Find commonly co-occurring tags
     const imagesCollection = await getCollection('images');
+    const tagsCollection = await getCollection('tags');
+    
+    // First, find the tag ID for the input tag
+    const targetTag = await tagsCollection.findOne({ name: normalizedTag });
+    if (!targetTag) {
+      return NextResponse.json({
+        success: true,
+        suggestions: [],
+      });
+    }
+
     const coOccurringImages = await imagesCollection
       .find({
-        'tags.name': normalizedTag,
+        tags: targetTag._id,
       })
       .limit(50)
       .toArray();
@@ -88,21 +99,23 @@ export async function POST(request: NextRequest) {
     // Count tag co-occurrences
     const tagCounts: Record<string, number> = {};
     coOccurringImages.forEach(image => {
-      image.tags.forEach((t: any) => {
-        const tagName = typeof t === 'string' ? t : t.name;
-        if (tagName !== normalizedTag) {
-          tagCounts[tagName] = (tagCounts[tagName] || 0) + 1;
-        }
-      });
+      if (Array.isArray(image.tags)) {
+        image.tags.forEach((tagId: any) => {
+          const idString = tagId.toString();
+          if (idString !== targetTag._id.toString()) {
+            tagCounts[idString] = (tagCounts[idString] || 0) + 1;
+          }
+        });
+      }
     });
 
-    // Get top 3 co-occurring tags
-    const topTags = Object.entries(tagCounts)
+    // Get top 3 co-occurring tag IDs
+    const topTagIds = Object.entries(tagCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
-      .map(([name]) => name);
+      .map(([id]) => id);
 
-    if (topTags.length === 0) {
+    if (topTagIds.length === 0) {
       return NextResponse.json({
         success: true,
         suggestions: [],
@@ -110,9 +123,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch tag details
-    const tagsCollection = await getCollection('tags');
+    const { ObjectId } = await import('mongodb');
     const suggestions = await tagsCollection
-      .find({ name: { $in: topTags } })
+      .find({ _id: { $in: topTagIds.map(id => new ObjectId(id)) } })
       .toArray();
 
     return NextResponse.json({

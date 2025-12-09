@@ -9,6 +9,7 @@ export async function GET(
   try {
     const { id } = await params;
     const collection = await getCollection('images');
+    const tagsCollection = await getCollection('tags');
     
     if (!ObjectId.isValid(id)) {
       return NextResponse.json(
@@ -26,6 +27,29 @@ export async function GET(
       );
     }
 
+    // Fetch tag data for display
+    const tags = image.tags || [];
+    let populatedTags: any[] = [];
+    
+    if (Array.isArray(tags) && tags.length > 0) {
+      const tagDocs = await tagsCollection
+        .find({ _id: { $in: tags } })
+        .toArray();
+      
+      // Create a map for quick lookup
+      const tagMap = new Map(tagDocs.map(t => [t._id.toString(), t]));
+      
+      // Populate tags in order
+      populatedTags = tags.map(tagId => {
+        const tag = tagMap.get(tagId.toString());
+        return {
+          _id: tagId,
+          name: tag?.name || 'unknown',
+          type: tag?.type || 'general',
+        };
+      });
+    }
+
     // Increment view count
     await collection.updateOne(
       { _id: new ObjectId(id) },
@@ -34,7 +58,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      image: { ...image, views: image.views + 1 },
+      image: { ...image, tags: populatedTags, views: image.views + 1 },
     });
   } catch (error: any) {
     console.error('Error fetching image:', error);
@@ -54,6 +78,7 @@ export async function DELETE(
     const { userId } = await request.json();
 
     const collection = await getCollection('images');
+    const tagsCollection = await getCollection('tags');
     
     if (!ObjectId.isValid(id)) {
       return NextResponse.json(
@@ -72,7 +97,7 @@ export async function DELETE(
     }
 
     // Check ownership
-    if (image.userId.toString() !== userId) {
+    if (image.userId && userId && image.userId.toString() !== userId) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 403 }
@@ -80,6 +105,15 @@ export async function DELETE(
     }
 
     await collection.deleteOne({ _id: new ObjectId(id) });
+
+    // Update tag counts
+    const tags = image.tags || [];
+    for (const tagId of tags) {
+      await tagsCollection.updateOne(
+        { _id: tagId },
+        { $inc: { count: -1 } }
+      );
+    }
 
     return NextResponse.json({
       success: true,

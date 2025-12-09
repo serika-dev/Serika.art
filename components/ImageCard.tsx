@@ -29,7 +29,11 @@ export default function ImageCard({ image }: ImageCardProps) {
         <div className="relative aspect-square overflow-hidden bg-zinc-950">
           <img
             src={image.thumbnailUrl || image.url}
-            alt={image.tags.map(t => typeof t === 'string' ? t : t.name).join(', ')}
+            alt={image.tags.map(t => {
+              if (typeof t === 'string') return t;
+              if (t && typeof t === 'object' && 'name' in t) return (t as any).name;
+              return 'image';
+            }).join(', ')}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
           {image.isAIGenerated && (
@@ -48,7 +52,7 @@ export default function ImageCard({ image }: ImageCardProps) {
           {/* Tags */}
           <div className="flex flex-wrap gap-1 mb-2">
             {image.tags.slice(0, 3).map((tag) => {
-              const tagName = typeof tag === 'string' ? tag : tag.name;
+              const tagName = typeof tag === 'string' ? tag : (tag && typeof tag === 'object' && 'name' in tag) ? (tag as any).name : 'unknown';
               return (
                 <span
                   key={tagName}

@@ -392,7 +392,11 @@ export default function ImagePage() {
             <div className={`${imageSize === 'fit' ? 'flex justify-center items-center bg-black' : 'overflow-auto'}`}>
               <img
                 src={image.url}
-                alt={image.tags.map(t => typeof t === 'string' ? t : t.name).join(', ')}
+                alt={image.tags.map(t => {
+                  if (typeof t === 'string') return t;
+                  if (t && typeof t === 'object' && 'name' in t) return (t as any).name;
+                  return 'image';
+                }).join(', ')}
                 className={imageSize === 'fit' ? 'max-w-full max-h-[70vh] object-contain' : 'w-auto h-auto'}
               />
             </div>
@@ -544,8 +548,17 @@ export default function ImagePage() {
             <h2 className="text-xl font-bold text-white mb-4">Tags</h2>
             <div className="flex flex-wrap gap-2">
               {image.tags.map((tag) => {
-                const tagName = typeof tag === 'string' ? tag : tag.name;
-                const tagType = typeof tag === 'object' && tag.type ? tag.type : 'general';
+                let tagName = 'unknown';
+                let tagType: 'general' | 'artist' | 'character' | 'copyright' | 'meta' = 'general';
+                
+                if (typeof tag === 'string') {
+                  tagName = tag;
+                } else if (tag && typeof tag === 'object' && 'name' in tag) {
+                  const tagObj = tag as any;
+                  tagName = tagObj.name || 'unknown';
+                  tagType = tagObj.type || 'general';
+                }
+                
                 const typeColors = {
                   artist: 'bg-red-900/30 text-red-200 border-red-800',
                   copyright: 'bg-purple-900/30 text-purple-200 border-purple-800',

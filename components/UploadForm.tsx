@@ -5,9 +5,10 @@ import { Upload, X, Tag, Sparkles, Shield, AlertTriangle, Ban } from 'lucide-rea
 import { useAuth } from '@/lib/AuthContext';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
-import { Tag as TagModel, ImageTag } from '@/lib/models';
+import { Tag as TagModel } from '@/lib/models';
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
+type TagData = { name: string; type: TagType };
 
 export default function UploadForm() {
   const { user } = useAuth();
@@ -17,7 +18,7 @@ export default function UploadForm() {
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [tags, setTags] = useState<ImageTag[]>([]);
+  const [tags, setTags] = useState<TagData[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<TagModel[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -241,10 +242,11 @@ export default function UploadForm() {
                   general: 'bg-blue-500/10 border-blue-500/30 text-blue-300',
                   meta: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300',
                 };
+                const tagType: TagType = (tag.type as TagType) || 'general';
                 return (
                   <span
                     key={tag.name}
-                    className={`${typeColors[tag.type]} px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 border`}
+                    className={`${typeColors[tagType]} px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 border`}
                   >
                     {tag.name}
                     <button
