@@ -15,12 +15,22 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className="bg-zinc-950 text-zinc-50 min-h-screen">
+      <body className="bg-zinc-950 text-zinc-50 min-h-screen flex flex-col">
         <AuthProvider>
           <Navbar />
-          <main className="min-h-[calc(100vh-64px)]">
+          <main className="flex-1">
             {children}
           </main>
+          <footer className="border-t border-zinc-800 bg-zinc-900 py-4 px-6 text-center text-sm text-zinc-400">
+            <div className="flex justify-center gap-6">
+              <a href="https://serika.dev/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-200 transition-colors">
+                Privacy
+              </a>
+              <a href="https://serika.dev/terms" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-200 transition-colors">
+                Terms
+              </a>
+            </div>
+          </footer>
         </AuthProvider>
       </body>
     </html>
