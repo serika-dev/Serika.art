@@ -309,20 +309,20 @@ export default function ImportPage() {
         {bulkResults.length > 0 && (
           <div className="mt-6 space-y-2">
             <h3 className="text-lg font-semibold text-white mb-2">
-              Import Results ({bulkResults.filter((r) => r.success).length} /{' '}
+              Import Results ({bulkResults.filter((r) => r && r.success).length} /{' '}
               {bulkResults.length} successful)
             </h3>
             <div className="max-h-96 overflow-y-auto space-y-2">
-              {bulkResults.map((result, index) => (
+              {bulkResults.filter((r) => r).map((result, index) => (
                 <div
                   key={index}
                   className={`p-3 rounded-lg border text-sm ${
-                    result.success
+                    result?.success
                       ? 'bg-green-900/10 border-green-800/50 text-green-200'
                       : 'bg-red-900/10 border-red-800/50 text-red-200'
                   }`}
                 >
-                  {result.success ? (
+                  {result?.success ? (
                     <>
                       ✓ Post {result.postId} imported
                       {result.imageId && (
@@ -340,7 +340,7 @@ export default function ImportPage() {
                       )}
                     </>
                   ) : (
-                    <>✗ Post {result.postId}: {result.error}</>
+                    <>✗ Post {result?.postId}: {result?.error}</>
                   )}
                 </div>
               ))}

@@ -28,3 +28,14 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #71717a; /* zinc-500 */
 }
+
+/* Hide scrollbar while keeping scrollability */
+.scrollbar-hide {
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+  scrollbar-width: none; /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* WebKit (Chrome, Safari, Edge) */
+}
+

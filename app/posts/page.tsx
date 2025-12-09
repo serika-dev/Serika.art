@@ -33,7 +33,7 @@ export default function PostsPage() {
   const page = parseInt(searchParams.get('page') || '1');
   const sort = searchParams.get('sort') || 'newest';
   const tagsParam = searchParams.get('tags') || '';
-  const ratingsParam = searchParams.get('ratings') || 'safe,questionable,explicit';
+  const ratingsParam = searchParams.get('ratings') || 'safe';
   
   const selectedTags = tagsParam 
     ? tagsParam.split(',').map((tag, idx) => ({ name: tag, type: 'general' as TagType }))
@@ -42,7 +42,6 @@ export default function PostsPage() {
 
   useEffect(() => {
     fetchImages();
-    fetchPopularTags();
   }, [page, sort, tagsParam, ratingsParam]);
 
   useEffect(() => {
@@ -58,17 +57,65 @@ export default function PostsPage() {
     setLoading(true);
     try {
       const tagsQueryParam = tagsParam ? `&tags=${tagsParam}` : '';
-      const ratingsQueryParam = ratingsParam !== 'safe,questionable,explicit' ? `&ratings=${ratingsParam}` : '';
+      const ratingsQueryParam = `&ratings=${ratingsParam}`;
       const response = await axios.get(`/api/images?page=${page}&limit=24&sort=${sort}${tagsQueryParam}${ratingsQueryParam}`);
       if (response.data.success) {
         setImages(response.data.images);
         setTotalPages(response.data.pagination.pages);
+        // Extract and organize tags from current page
+        extractTagsFromImages(response.data.images);
       }
     } catch (error) {
       console.error('Error fetching images:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const extractTagsFromImages = (pageImages: Image[]) => {
+    const tagCounts: Record<string, { count: number; type: TagType; _id: string }> = {};
+    
+    // Collect all tags from current page images
+    pageImages.forEach(image => {
+      image.tags.forEach(tag => {
+        const tagName = typeof tag === 'string' ? tag : (tag && 'name' in tag) ? (tag as any).name : null;
+        const tagType = typeof tag === 'object' && 'type' in tag ? (tag as any).type : 'general';
+        const tagId = (tag && typeof tag === 'object' && '_id' in tag) ? (tag as any)._id : null;
+        
+        if (tagName && tagId) {
+          if (!tagCounts[tagName]) {
+            tagCounts[tagName] = { count: 0, type: tagType || 'general', _id: tagId };
+          }
+          tagCounts[tagName].count++;
+        }
+      });
+    });
+
+    // Organize by type with minimums
+    const organized: Record<TagType, any[]> = {
+      general: [],
+      artist: [],
+      character: [],
+      copyright: [],
+      meta: [],
+    };
+
+    Object.entries(tagCounts).forEach(([name, data]) => {
+      organized[data.type].push({
+        name,
+        type: data.type,
+        count: data.count,
+        _id: data._id,
+      });
+    });
+
+    // Sort by count and limit
+    organized.artist = organized.artist.sort((a, b) => b.count - a.count).slice(0, 5);
+    organized.character = organized.character.sort((a, b) => b.count - a.count).slice(0, 5);
+    organized.copyright = organized.copyright.sort((a, b) => b.count - a.count).slice(0, 5);
+    organized.general = organized.general.sort((a, b) => b.count - a.count).slice(0, 10);
+
+    setTagsByType(organized);
   };
 
   const fetchPopularTags = async () => {
@@ -165,7 +212,7 @@ export default function PostsPage() {
     <div className="flex gap-6 px-4 sm:px-6 lg:px-8 py-8">
       {/* Sidebar - Tags */}
       <aside className="hidden lg:block w-64 shrink-0">
-        <div className="sticky top-20">
+        <div className="sticky top-20 h-[calc(100vh-120px)] overflow-y-auto pr-2 scrollbar-hide">
           {/* Tag Search */}
           <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-4 mb-4">
             <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
@@ -278,8 +325,8 @@ export default function PostsPage() {
                   <h4 className={`text-xs font-semibold uppercase mb-2 ${typeColors[type]}`}>
                     {type}
                   </h4>
-                  <div className="space-y-1 max-h-48 overflow-y-auto">
-                    {tags.slice(0, 20).map((tag) => (
+                  <div className="space-y-1">
+                    {tags.map((tag) => (
                       <button
                         key={tag.name}
                         onClick={() => toggleTag(tag)}
