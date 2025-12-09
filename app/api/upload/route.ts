@@ -107,10 +107,10 @@ export async function POST(request: NextRequest) {
     // Get image metadata
     const metadata = await sharp(buffer).metadata();
 
-    // Create thumbnail
+    // Create aggressively compressed thumbnail for fast previews
     const thumbnailBuffer = await sharp(buffer)
-      .resize(300, 300, { fit: 'cover' })
-      .jpeg({ quality: 80 })
+      .resize(320, 320, { fit: 'cover' })
+      .jpeg({ quality: 45, mozjpeg: true, progressive: true })
       .toBuffer();
 
     // Upload to storage (R2 or local fallback)
@@ -122,12 +122,12 @@ export async function POST(request: NextRequest) {
         console.log('Using local storage for uploads...');
         [imageUrl, thumbnailUrl] = await Promise.all([
           uploadLocally(buffer, file.name, file.type),
-          uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg'),
+          uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
         ]);
       } else {
         [imageUrl, thumbnailUrl] = await Promise.all([
           uploadToR2(buffer, file.name, file.type),
-          uploadToR2(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg'),
+          uploadToR2(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
         ]);
       }
     } catch (uploadError: any) {
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
         try {
           [imageUrl, thumbnailUrl] = await Promise.all([
             uploadLocally(buffer, file.name, file.type),
-            uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg'),
+            uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
           ]);
         } catch (fallbackError) {
           throw new Error('Both R2 and local storage uploads failed. Please check your configuration.');

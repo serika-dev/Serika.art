@@ -4,6 +4,7 @@ import { useState, useEffect, use } from 'react';
 import { Image } from '@/lib/models';
 import ImageCard from '@/components/ImageCard';
 import { Loader2, Calendar, User as UserIcon, Shield, Crown } from 'lucide-react';
+import NextImage from 'next/image';
 
 type UserRank = 'user' | 'moderator' | 'admin' | 'owner';
 
@@ -76,9 +77,11 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
       <div className="bg-zinc-900 rounded-lg shadow-lg p-8 mb-8 border border-zinc-800 flex flex-col md:flex-row items-center gap-8">
         <div className="shrink-0">
           {user.avatarUrl ? (
-            <img
+            <NextImage
               src={user.avatarUrl}
               alt={user.username}
+              width={128}
+              height={128}
               className="w-32 h-32 rounded-full border-4 border-zinc-800"
             />
           ) : (

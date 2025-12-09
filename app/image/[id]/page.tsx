@@ -7,6 +7,7 @@ import axios from 'axios';
 import { Image as ImageType, Comment } from '@/lib/models';
 import { Heart, ThumbsUp, ThumbsDown, Eye, Download, Share2, Trash2, Sparkles, ExternalLink, Calendar, User, Maximize2, Minimize2, MessageCircle, Send } from 'lucide-react';
 import Link from 'next/link';
+import NextImage from 'next/image';
 
 export default function ImagePage() {
   const { id } = useParams();
@@ -219,9 +220,11 @@ export default function ImagePage() {
       {user ? (
         <form onSubmit={handleSubmitComment} className="mb-8">
           <div className="flex gap-3">
-            <img
+            <NextImage
               src={user.avatarUrl || 'https://via.placeholder.com/40'}
               alt={user.username}
+              width={40}
+              height={40}
               className="w-10 h-10 rounded-full"
             />
             <div className="flex-1">
@@ -278,9 +281,11 @@ export default function ImagePage() {
           <div key={comment._id.toString()} className="space-y-4">
             {/* Top-level Comment */}
             <div className="flex gap-3">
-              <img
+              <NextImage
                 src={comment.avatarUrl || 'https://via.placeholder.com/40'}
                 alt={comment.username}
+                width={40}
+                height={40}
                 className="w-10 h-10 rounded-full"
               />
               <div className="flex-1">
@@ -317,9 +322,11 @@ export default function ImagePage() {
               <div className="ml-12 space-y-4">
                 {comment.replies.map((reply) => (
                   <div key={reply._id.toString()} className="flex gap-3">
-                    <img
+                    <NextImage
                       src={reply.avatarUrl || 'https://via.placeholder.com/40'}
                       alt={reply.username}
+                      width={32}
+                      height={32}
                       className="w-8 h-8 rounded-full"
                     />
                     <div className="flex-1">
@@ -390,6 +397,7 @@ export default function ImagePage() {
             </div>
             
             <div className={`${imageSize === 'fit' ? 'flex justify-center items-center bg-black' : 'overflow-auto'}`}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={image.url}
                 alt={image.tags.map(t => {

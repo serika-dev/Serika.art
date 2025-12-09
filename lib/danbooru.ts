@@ -44,8 +44,8 @@ export async function fetchDanbooruPost(postId: number): Promise<DanbooruPost | 
   }
 }
 
-export async function fetchDanbooruPostsByArtist(
-  artistTag: string,
+export async function fetchDanbooruPostsByTags(
+  tags: string,
   limit: number = 100
 ): Promise<DanbooruPost[]> {
   try {
@@ -60,7 +60,7 @@ export async function fetchDanbooruPostsByArtist(
     while (posts.length < limit) {
       const response = await danbooruClient.get('/posts.json', {
         params: {
-          tags: artistTag,
+          tags,
           limit: Math.min(200, limit - posts.length),
           page,
         },
@@ -77,9 +77,16 @@ export async function fetchDanbooruPostsByArtist(
     
     return posts.slice(0, limit);
   } catch (error) {
-    console.error('Error fetching Danbooru posts by artist:', error);
+    console.error('Error fetching Danbooru posts by tags:', error);
     return [];
   }
+}
+
+export async function fetchDanbooruPostsByArtist(
+  artistTag: string,
+  limit: number = 100
+): Promise<DanbooruPost[]> {
+  return fetchDanbooruPostsByTags(artistTag, limit);
 }
 
 export function mapDanbooruRating(rating: string): 'safe' | 'questionable' | 'explicit' {

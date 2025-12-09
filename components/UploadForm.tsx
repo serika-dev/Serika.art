@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
 import { Tag as TagModel } from '@/lib/models';
+import Image from 'next/image';
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 type TagData = { name: string; type: TagType };
@@ -204,6 +205,7 @@ export default function UploadForm() {
           </div>
         ) : (
           <div className="relative rounded-2xl overflow-hidden bg-zinc-950 border-2 border-zinc-800">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={preview} alt="Preview" className="w-full max-h-[32rem] object-contain" />
             <button
               type="button"

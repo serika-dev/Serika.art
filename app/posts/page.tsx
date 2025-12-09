@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import ImageCard from '@/components/ImageCard';
 import { Image, Tag } from '@/lib/models';
 import axios from 'axios';
-import { ChevronLeft, ChevronRight, Loader2, Hash, TrendingUp, X, Search, Shield, AlertTriangle, Ban } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Hash, TrendingUp, X, Search, Shield, AlertTriangle, Ban, Filter } from 'lucide-react';
 import Link from 'next/link';
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
@@ -17,6 +17,8 @@ function PostsPageContent() {
   const [images, setImages] = useState<Image[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalImages, setTotalImages] = useState(0);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [tagsByType, setTagsByType] = useState<Record<TagType, Tag[]>>({
     general: [],
     artist: [],
@@ -62,6 +64,7 @@ function PostsPageContent() {
       if (response.data.success) {
         setImages(response.data.images);
         setTotalPages(response.data.pagination.pages);
+        setTotalImages(response.data.pagination.total);
         // Extract and organize tags from current page
         extractTagsFromImages(response.data.images);
       }
@@ -203,7 +206,12 @@ function PostsPageContent() {
     if (page > 1) params.set('page', page.toString());
     if (sort !== 'newest') params.set('sort', sort);
     if (tagsToUse.length > 0) params.set('tags', tagsToUse.join(','));
-    if (newRatings.length < 3) params.set('ratings', newRatings.join(','));
+    // Persist ratings in URL; when all 3 are selected, store all three so state survives navigation
+    if (newRatings.length === 3) {
+      params.set('ratings', 'safe,questionable,explicit');
+    } else {
+      params.set('ratings', newRatings.join(','));
+    }
     const queryString = params.toString();
     router.push(`/posts${queryString ? '?' + queryString : ''}`);
   };
@@ -353,35 +361,174 @@ function PostsPageContent() {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">Posts</h1>
-          <p className="text-zinc-400">Discover amazing artwork from our community</p>
+          <p className="text-zinc-400">
+            {totalImages > 0 ? `Now serving ${totalImages.toLocaleString()} images` : 'Discover amazing artwork from our community'}
+          </p>
         </div>
 
         {/* Filters */}
         <div className="bg-zinc-900 rounded-lg shadow-sm p-4 mb-6 border border-zinc-800">
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2">
-              <span className="text-sm font-medium text-zinc-300">Sort by:</span>
-              <select
-                value={sort}
-                onChange={(e) => updateUrl(undefined, e.target.value, 1)}
-                className="px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white text-sm"
-              >
-                <option value="newest">Newest</option>
-                <option value="popular">Most Popular</option>
-                <option value="favorites">Most Favorited</option>
-                <option value="views">Most Viewed</option>
-              </select>
-            </label>
-            {(selectedTags.length > 0 || selectedRatings.length < 3 || sort !== 'newest') && (
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3 w-full sm:w-auto">
               <button
-                onClick={clearFilters}
-                className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-300 hover:text-white transition"
+                onClick={() => setShowMobileFilters(!showMobileFilters)}
+                className="lg:hidden flex items-center gap-2 px-3 h-10 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-300 hover:text-white transition flex-1 sm:flex-none justify-center"
               >
-                <X size={16} />
-                Clear Filters
+                <Filter size={16} />
+                Filters
               </button>
-            )}
+
+              <div className="relative flex-1 sm:flex-none">
+                <select
+                  value={sort}
+                  onChange={(e) => updateUrl(undefined, e.target.value, 1)}
+                  className="w-full sm:w-auto appearance-none px-3 h-10 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-center"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="popular">Popular</option>
+                  <option value="favorites">Favorited</option>
+                  <option value="views">Viewed</option>
+                </select>
+              </div>
+            </div>
           </div>
+
+          {/* Mobile Filters Panel */}
+          {showMobileFilters && (
+            <div className="lg:hidden mt-4 pt-4 border-t border-zinc-800 space-y-6">
+              {/* Tag Search */}
+              <div>
+                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                  <Search size={16} />
+                  Search Tags
+                </h3>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    placeholder="Type to search..."
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {showSuggestions && tagSuggestions.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl max-h-64 overflow-y-auto">
+                      {tagSuggestions.map((tag) => {
+                        const typeColors = {
+                          artist: 'text-red-400',
+                          copyright: 'text-purple-400',
+                          character: 'text-green-400',
+                          general: 'text-blue-400',
+                          meta: 'text-yellow-400',
+                        };
+                        return (
+                          <button
+                            key={tag.name}
+                            onClick={() => addTag(tag)}
+                            className="w-full px-3 py-2 text-left hover:bg-zinc-700 transition flex items-center justify-between"
+                          >
+                            <span className="text-sm text-white">{tag.name}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs ${typeColors[tag.type || 'general']}`}>
+                                {tag.type || 'general'}
+                              </span>
+                              <span className="text-xs text-zinc-500">{tag.count}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Content Ratings */}
+              <div>
+                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                  <Shield size={16} />
+                  Content Rating
+                </h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { rating: 'safe' as Rating, icon: Shield, label: 'Safe', color: 'text-green-400' },
+                    { rating: 'questionable' as Rating, icon: AlertTriangle, label: 'Quest.', color: 'text-yellow-400' },
+                    { rating: 'explicit' as Rating, icon: Ban, label: 'Explicit', color: 'text-red-400' },
+                  ].map(({ rating, icon: Icon, label, color }) => (
+                    <button
+                      key={rating}
+                      onClick={() => toggleRating(rating)}
+                      className={`flex flex-col items-center justify-center gap-1 px-2 py-2 rounded transition ${
+                        selectedRatings.includes(rating)
+                          ? 'bg-zinc-800 border border-zinc-700'
+                          : 'bg-zinc-900/50 border border-zinc-800/50 opacity-40'
+                      }`}
+                    >
+                      <Icon size={16} className={color} />
+                      <span className="text-xs text-zinc-300">{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Active Filters */}
+              {selectedTags.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-white mb-3">Active Filters</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedTags.map((tag) => (
+                      <button
+                        key={tag.name}
+                        onClick={() => removeTag(tag.name)}
+                        className="bg-blue-900/50 border border-blue-700 text-blue-200 px-2 py-1 rounded text-xs hover:bg-blue-900 transition flex items-center gap-1"
+                      >
+                        <span>{tag.name}</span>
+                        <X size={12} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Tags by Type */}
+              <div className="space-y-4">
+                {(['artist', 'copyright', 'character', 'general'] as TagType[]).map((type) => {
+                  const tags = tagsByType[type] || [];
+                  if (tags.length === 0) return null;
+                  
+                  const typeColors = {
+                    artist: 'text-red-400',
+                    copyright: 'text-purple-400',
+                    character: 'text-green-400',
+                    general: 'text-blue-400',
+                    meta: 'text-yellow-400',
+                  };
+
+                  return (
+                    <div key={type}>
+                      <h4 className={`text-xs font-semibold uppercase mb-2 ${typeColors[type]}`}>
+                        {type}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        {tags.map((tag) => (
+                          <button
+                            key={tag.name}
+                            onClick={() => toggleTag(tag)}
+                            className={`w-full text-left px-2 py-1 rounded text-sm transition flex items-center justify-between ${
+                              selectedTags.some(t => t.name === tag.name)
+                                ? 'bg-blue-900/50 text-blue-200'
+                                : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-white'
+                            }`}
+                          >
+                            <span className="truncate">{tag.name}</span>
+                            <span className="text-xs text-zinc-600 ml-2">{tag.count}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Loading */}
@@ -396,7 +543,7 @@ function PostsPageContent() {
         ) : (
           <>
             {/* Image Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6 mb-8">
               {images.map((image) => (
                 <ImageCard key={image._id.toString()} image={image} />
               ))}

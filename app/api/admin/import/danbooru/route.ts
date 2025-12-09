@@ -4,13 +4,13 @@ import axios from 'axios';
 import {
   fetchDanbooruPost,
   fetchDanbooruPostsByArtist,
+  fetchDanbooruPostsByTags,
   mapDanbooruRating,
   extractDanbooruTags,
   DanbooruPost,
 } from '@/lib/danbooru';
 import { getCollection } from '@/lib/db';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { r2Client } from '@/lib/r2';
+import { uploadToR2 } from '@/lib/r2';
 import sharp from 'sharp';
 import { ObjectId } from 'mongodb';
 
@@ -32,7 +32,7 @@ async function checkAdminAuth(request: NextRequest) {
 async function downloadAndUploadImage(
   fileUrl: string,
   postId: number
-): Promise<{ mainUrl: string; width: number; height: number }> {
+): Promise<{ mainUrl: string; thumbnailUrl: string; width: number; height: number }> {
   // Download the image
   const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
   let imageBuffer = Buffer.from(imageResponse.data);
@@ -61,21 +61,27 @@ async function downloadAndUploadImage(
   if (ext === 'webp' || ext === 'gif') {
     ext = 'jpg';
   }
-  const mainKey = `uploads/${timestamp}-danbooru-${postId}.${ext}`;
+  const mainFilename = `${timestamp}-danbooru-${postId}.${ext}`;
+  const thumbFilename = `thumb-${timestamp}-danbooru-${postId}.jpg`;
 
-  // Upload main image only
-  await r2Client.send(
-    new PutObjectCommand({
-      Bucket: process.env.R2_BUCKET_NAME,
-      Key: mainKey,
-      Body: imageBuffer,
-      ContentType: `image/${ext}`,
-    })
+  // Upload main image
+  const mainUrl = await uploadToR2(imageBuffer, mainFilename, `image/${ext}`);
+
+  // Create and upload thumbnail (aggressive compression for previews)
+  const thumbnailBuffer = await sharp(imageBuffer)
+    .resize(320, 320, { fit: 'cover' })
+    .jpeg({ quality: 45, mozjpeg: true, progressive: true })
+    .toBuffer();
+  const thumbnailUrl = await uploadToR2(
+    thumbnailBuffer,
+    thumbFilename,
+    'image/jpeg',
+    'thumbnails'
   );
 
-  const r2Domain = process.env.R2_CUSTOM_DOMAIN;
   return {
-    mainUrl: `https://${r2Domain}/${mainKey}`,
+    mainUrl,
+    thumbnailUrl,
     width,
     height,
   };
@@ -98,7 +104,7 @@ async function importDanbooruPost(post: DanbooruPost) {
       return { success: false, error: 'No file URL available', postId: post.id };
     }
 
-    const { mainUrl, width, height } = await downloadAndUploadImage(
+    const { mainUrl, thumbnailUrl, width, height } = await downloadAndUploadImage(
       fileUrl,
       post.id
     );
@@ -127,6 +133,7 @@ async function importDanbooruPost(post: DanbooruPost) {
       userId: null, // Anonymous upload
       username: 'Anonymous',
       url: mainUrl,
+      thumbnailUrl,
       originalFilename: `danbooru-${post.id}.${post.file_ext}`,
       fileSize: post.file_size || 0,
       width,
@@ -177,7 +184,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { type, postId, artistTag, limit } = body;
+    const { type, postId, artistTag, tags, limit, background } = body;
 
     if (type === 'single') {
       // Single post import
@@ -198,8 +205,8 @@ export async function POST(request: NextRequest) {
 
       const result = await importDanbooruPost(post);
       return NextResponse.json(result);
-    } else if (type === 'bulk') {
-      // Bulk artist import with streaming progress
+    } else if (type === 'artist') {
+      // Bulk artist import
       if (!artistTag) {
         return NextResponse.json(
           { success: false, error: 'Artist tag is required' },
@@ -207,10 +214,174 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // If background mode, start the import asynchronously
+      if (background) {
+        console.log(`[BACKGROUND IMPORT] Starting artist import for "${artistTag}" with limit ${limit || 100}`);
+        
+        // Start import in background (don't await)
+        const importPromise = (async () => {
+          try {
+            console.log(`[BACKGROUND IMPORT] Fetching posts for artist "${artistTag}"...`);
+            const posts = await fetchDanbooruPostsByArtist(artistTag, limit || 100);
+            console.log(`[BACKGROUND IMPORT] Found ${posts.length} posts for artist "${artistTag}"`);
+            
+            for (let i = 0; i < posts.length; i++) {
+              const post = posts[i];
+              console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] Processing post ${post.id}...`);
+              const result = await importDanbooruPost(post);
+              
+              if (result.success) {
+                console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✓ Imported post ${post.id}`);
+              } else {
+                console.error(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✗ Failed to import post ${post.id}:`, result.error);
+              }
+              
+              // Add delay between imports
+              await new Promise((resolve) => setTimeout(resolve, 300));
+            }
+            
+            console.log(`[BACKGROUND IMPORT] Complete: ${artistTag}`);
+          } catch (error: any) {
+            console.error(`[BACKGROUND IMPORT] Fatal error for ${artistTag}:`, error);
+          }
+        })();
+        
+        // Keep the promise alive
+        importPromise.catch(err => console.error('[BACKGROUND IMPORT] Unhandled error:', err));
+
+        return NextResponse.json({
+          success: true,
+          message: `Import started in background for "${artistTag}" (${limit || 100} posts)`,
+        });
+      }
+
       const posts = await fetchDanbooruPostsByArtist(artistTag, limit || 100);
       if (posts.length === 0) {
         return NextResponse.json(
           { success: false, error: 'No posts found for this artist' },
+          { status: 404 }
+        );
+      }
+
+      // Use streaming response for real-time progress updates
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          try {
+            // Send initial progress
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start', total: posts.length })}\n\n`));
+
+            const results = [];
+            for (let i = 0; i < posts.length; i++) {
+              const post = posts[i];
+              const result = await importDanbooruPost(post);
+              results.push(result);
+
+              // Send progress update after each import
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'progress',
+                    current: i + 1,
+                    total: posts.length,
+                    result,
+                  })}\n\n`
+                )
+              );
+
+              // Add delay between imports
+              await new Promise((resolve) => setTimeout(resolve, 300));
+            }
+
+            // Send completion with only defined results
+            const validResults = results.filter((r) => r !== undefined && r !== null);
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: 'complete',
+                  total: posts.length,
+                  successful: validResults.filter((r) => r.success).length,
+                  results: validResults,
+                })}\n\n`
+              )
+            );
+
+            controller.close();
+          } catch (error: any) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: 'error',
+                  error: error.message,
+                })}\n\n`
+              )
+            );
+            controller.close();
+          }
+        },
+      });
+
+      return new NextResponse(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      });
+    } else if (type === 'tags') {
+      // Bulk tag search import
+      if (!tags) {
+        return NextResponse.json(
+          { success: false, error: 'Search tags are required' },
+          { status: 400 }
+        );
+      }
+
+      // If background mode, start the import asynchronously
+      if (background) {
+        console.log(`[BACKGROUND IMPORT] Starting tag import for "${tags}" with limit ${limit || 100}`);
+        
+        // Start import in background (don't await)
+        const importPromise = (async () => {
+          try {
+            console.log(`[BACKGROUND IMPORT] Fetching posts for tags "${tags}"...`);
+            const posts = await fetchDanbooruPostsByTags(tags, limit || 100);
+            console.log(`[BACKGROUND IMPORT] Found ${posts.length} posts for tags "${tags}"`);
+            
+            for (let i = 0; i < posts.length; i++) {
+              const post = posts[i];
+              console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] Processing post ${post.id}...`);
+              const result = await importDanbooruPost(post);
+              
+              if (result.success) {
+                console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✓ Imported post ${post.id}`);
+              } else {
+                console.error(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✗ Failed to import post ${post.id}:`, result.error);
+              }
+              
+              // Add delay between imports
+              await new Promise((resolve) => setTimeout(resolve, 300));
+            }
+            
+            console.log(`[BACKGROUND IMPORT] Complete: ${tags}`);
+          } catch (error: any) {
+            console.error(`[BACKGROUND IMPORT] Fatal error for ${tags}:`, error);
+          }
+        })();
+        
+        // Keep the promise alive
+        importPromise.catch(err => console.error('[BACKGROUND IMPORT] Unhandled error:', err));
+
+        return NextResponse.json({
+          success: true,
+          message: `Import started in background for "${tags}" (${limit || 100} posts)`,
+        });
+      }
+
+      const posts = await fetchDanbooruPostsByTags(tags, limit || 100);
+      if (posts.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'No posts found for these tags' },
           { status: 404 }
         );
       }

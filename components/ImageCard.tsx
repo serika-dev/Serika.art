@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import NextImage from 'next/image';
 import { Heart, Eye, ThumbsUp, Sparkles } from 'lucide-react';
 import { Image } from '@/lib/models';
 
@@ -27,13 +28,15 @@ export default function ImageCard({ image }: ImageCardProps) {
       <div className="bg-zinc-900 rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 border border-zinc-800 hover:border-zinc-700">
         {/* Image */}
         <div className="relative aspect-square overflow-hidden bg-zinc-950">
-          <img
+          <NextImage
             src={image.thumbnailUrl || image.url}
             alt={image.tags.map(t => {
               if (typeof t === 'string') return t;
               if (t && typeof t === 'object' && 'name' in t) return (t as any).name;
               return 'image';
             }).join(', ')}
+            width={400}
+            height={400}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
           {image.isAIGenerated && (

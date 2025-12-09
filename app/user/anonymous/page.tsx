@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Image as ImageType } from '@/lib/models';
 import ImageCard from '@/components/ImageCard';
 import { Loader2, Calendar, User as UserIcon, Shield } from 'lucide-react';
+import NextImage from 'next/image';
 
 export default function AnonymousUserPage() {
   const [images, setImages] = useState<ImageType[]>([]);
@@ -48,9 +49,11 @@ export default function AnonymousUserPage() {
       <div className="bg-zinc-900 rounded-lg shadow-lg p-8 mb-8 border border-zinc-800 flex flex-col md:flex-row items-center gap-8">
         <div className="shrink-0">
           {latestImage ? (
-            <img
+            <NextImage
               src={latestImage.url}
               alt="Anonymous User"
+              width={128}
+              height={128}
               className="w-32 h-32 rounded-full border-4 border-zinc-800 object-cover"
             />
           ) : (

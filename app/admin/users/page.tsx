@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Shield, Search, Edit2, Save, X, Loader2, Crown, User as UserIcon } from 'lucide-react';
 import axios from 'axios';
 import Link from 'next/link';
+import Image from 'next/image';
 
 interface User {
   _id: string;
@@ -164,7 +165,7 @@ export default function AdminUsersPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         {u.avatarUrl ? (
-                          <img src={u.avatarUrl} alt={u.username} className="w-10 h-10 rounded-full" />
+                          <Image src={u.avatarUrl} alt={u.username} width={40} height={40} className="w-10 h-10 rounded-full" />
                         ) : (
                           <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold">
                             {u.username[0].toUpperCase()}

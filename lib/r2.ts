@@ -38,9 +38,11 @@ export const r2Client = new S3Client({
 export async function uploadToR2(
   file: Buffer,
   filename: string,
-  contentType: string
+  contentType: string,
+  folder = 'uploads'
 ): Promise<string> {
-  const key = `uploads/${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+  const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+  const key = `${folder}/${Date.now()}-${sanitizedFilename}`;
 
   try {
     const command = new PutObjectCommand({

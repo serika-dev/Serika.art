@@ -1,36 +1,38 @@
 import fs from 'fs/promises';
 import path from 'path';
 
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
+const PUBLIC_DIR = path.join(process.cwd(), 'public');
 
-export async function ensureUploadDir() {
+async function ensureDir(dir: string) {
   try {
-    await fs.access(UPLOAD_DIR);
+    await fs.access(dir);
   } catch {
-    await fs.mkdir(UPLOAD_DIR, { recursive: true });
+    await fs.mkdir(dir, { recursive: true });
   }
 }
 
 export async function uploadLocally(
   file: Buffer,
   filename: string,
-  contentType: string
+  contentType: string,
+  folder = 'uploads'
 ): Promise<string> {
-  await ensureUploadDir();
+  const targetDir = path.join(PUBLIC_DIR, folder);
+  await ensureDir(targetDir);
   
   const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
   const key = `${Date.now()}-${sanitizedFilename}`;
-  const filePath = path.join(UPLOAD_DIR, key);
+  const filePath = path.join(targetDir, key);
   
   await fs.writeFile(filePath, file);
   
-  return `/uploads/${key}`;
+  return `/${folder}/${key}`;
 }
 
 export async function deleteLocal(url: string): Promise<void> {
   try {
-    const filename = url.replace('/uploads/', '');
-    const filePath = path.join(UPLOAD_DIR, filename);
+    const cleanedUrl = url.replace(/^\//, '');
+    const filePath = path.join(PUBLIC_DIR, cleanedUrl);
     await fs.unlink(filePath);
   } catch (error) {
     console.error('Error deleting local file:', error);

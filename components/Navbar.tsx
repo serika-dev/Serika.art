@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useAuth } from '@/lib/AuthContext';
 import { Upload, Search, User, LogOut, Menu, X, Settings, Heart, Shield } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
@@ -36,10 +37,13 @@ export default function Navbar() {
           {/* Logo */}
           <div className="flex items-center">
             <Link href="/" className="flex items-center gap-2">
-              <img
+              <Image
                 src="/logo.svg"
                 alt="Serika Booru"
+                width={32}
+                height={32}
                 className="h-8 w-auto drop-shadow-[0_2px_6px_rgba(0,0,0,0.4)]"
+                priority
               />
             </Link>
           </div>
@@ -58,13 +62,6 @@ export default function Navbar() {
             >
               Tags
             </Link>
-            <Link
-              href="/upload"
-              className="px-3 py-2 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-md transition flex items-center gap-2"
-            >
-              <Upload size={18} />
-              Upload
-            </Link>
             {user ? (
               <div className="relative" ref={dropdownRef}>
                 <button
@@ -72,9 +69,11 @@ export default function Navbar() {
                   className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 rounded-md transition"
                 >
                   {user.avatarUrl ? (
-                    <img
+                    <Image
                       src={user.avatarUrl}
                       alt={user.username}
+                      width={32}
+                      height={32}
                       className="w-8 h-8 rounded-full"
                     />
                   ) : (
@@ -107,20 +106,12 @@ export default function Navbar() {
                       <>
                         <div className="border-t border-zinc-800 my-2"></div>
                         <Link
-                          href="/admin/tags"
+                          href="/admin"
                           className="flex items-center gap-3 px-4 py-2 text-red-400 hover:bg-zinc-800 hover:text-red-300 transition"
                           onClick={() => setProfileDropdownOpen(false)}
                         >
                           <Shield size={18} />
                           <span>Admin Panel</span>
-                        </Link>
-                        <Link
-                          href="/admin/import"
-                          className="flex items-center gap-3 px-4 py-2 text-red-400 hover:bg-zinc-800 hover:text-red-300 transition"
-                          onClick={() => setProfileDropdownOpen(false)}
-                        >
-                          <Upload size={18} />
-                          <span>Import Posts</span>
                         </Link>
                       </>
                     )}
@@ -172,58 +163,133 @@ export default function Navbar() {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-zinc-800 bg-zinc-900">
-          <div className="px-2 pt-2 pb-3 space-y-1">
-            <Link
-              href="/posts"
-              className="block px-3 py-2 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-md"
+        <div className="fixed inset-0 z-50 bg-zinc-950 md:hidden flex flex-col animate-in slide-in-from-right duration-200">
+          {/* Header */}
+          <div className="flex items-center justify-end px-4 h-16">
+            <button
               onClick={() => setMobileMenuOpen(false)}
+              className="p-2 text-zinc-400 hover:text-white"
             >
-              Posts
-            </Link>
-            <Link
-              href="/tags"
-              className="block px-3 py-2 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-md"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              Tags
-            </Link>
+              <X size={28} />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 flex flex-col items-center pt-8 pb-8 px-6">
             {user ? (
               <>
-                <Link
-                  href="/upload"
-                  className="block px-3 py-2 bg-blue-600 text-white hover:bg-blue-500 rounded-md"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Upload
-                </Link>
-                <Link
-                  href={`/user/${user.id}`}
-                  className="block px-3 py-2 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-md"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Profile
-                </Link>
+                {/* Profile Section */}
+                <div className="flex flex-col items-center mb-12">
+                  <div className="w-32 h-32 rounded-full overflow-hidden mb-4 bg-zinc-800 border-4 border-zinc-900 shadow-xl">
+                    {user.avatarUrl ? (
+                      <Image
+                        src={user.avatarUrl}
+                        alt={user.username}
+                        width={128}
+                        height={128}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-5xl text-zinc-500 bg-zinc-800">
+                        {user.username[0].toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                  <h2 className="text-2xl font-bold text-white">{user.username}</h2>
+                </div>
+
+                {/* Navigation Links */}
+                <div className="w-full space-y-4 mb-auto">
+                  <Link
+                    href={`/user/${user.id}`}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center justify-center gap-3 w-full py-3 text-white font-bold text-lg border border-blue-500/30 bg-blue-500/10 rounded-xl hover:bg-blue-500/20 transition"
+                  >
+                    <User size={20} className="text-blue-400" />
+                    My Profile
+                  </Link>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Link
+                      href="/posts"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex flex-col items-center justify-center p-4 bg-zinc-900 rounded-xl border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800 transition"
+                    >
+                      <Search size={24} className="mb-2 text-zinc-400" />
+                      <span className="text-sm font-medium text-zinc-300">Browse</span>
+                    </Link>
+                    <Link
+                      href="/favorites"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex flex-col items-center justify-center p-4 bg-zinc-900 rounded-xl border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800 transition"
+                    >
+                      <Heart size={24} className="mb-2 text-zinc-400" />
+                      <span className="text-sm font-medium text-zinc-300">Favorites</span>
+                    </Link>
+                  </div>
+
+                  <div className="space-y-2">
+                    <a
+                      href={`${ACCOUNTS_URL}/account`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 w-full px-4 py-3 bg-zinc-900 rounded-xl border border-zinc-800 hover:bg-zinc-800 transition text-zinc-300"
+                    >
+                      <Settings size={20} />
+                      Account Settings
+                    </a>
+
+                    {(user.rank === 'admin' || user.rank === 'owner') && (
+                      <Link
+                        href="/admin"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="flex items-center gap-3 w-full px-4 py-3 bg-zinc-900 rounded-xl border border-zinc-800 hover:bg-zinc-800 transition text-red-400"
+                      >
+                        <Shield size={20} />
+                        Admin Panel
+                      </Link>
+                    )}
+                  </div>
+                </div>
+
+                {/* Logout */}
                 <button
                   onClick={() => {
                     logout();
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full text-left px-3 py-2 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-md"
+                  className="flex items-center justify-center gap-2 w-full py-4 text-red-500 font-bold text-lg mt-4 hover:bg-red-500/10 rounded-xl transition"
                 >
-                  Logout
+                  <LogOut size={20} />
+                  Log out
                 </button>
               </>
             ) : (
-              <button
-                onClick={() => {
-                  handleLogin();
-                  setMobileMenuOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 bg-blue-600 text-white hover:bg-blue-500 rounded-md"
-              >
-                Login
-              </button>
+              <div className="flex flex-col items-center justify-center h-full w-full space-y-6">
+                <div className="w-24 h-24 rounded-full bg-zinc-800 flex items-center justify-center mb-4">
+                  <User size={48} className="text-zinc-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-white mb-8">Guest</h2>
+                
+                <button
+                  onClick={() => {
+                    handleLogin();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-blue-500 transition shadow-lg shadow-blue-900/20"
+                >
+                  Log In / Sign Up
+                </button>
+                
+                <Link
+                  href="/posts"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="text-zinc-400 hover:text-white transition"
+                >
+                  Continue as Guest
+                </Link>
+              </div>
             )}
           </div>
         </div>
