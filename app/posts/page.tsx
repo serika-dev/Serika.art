@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import ImageCard from '@/components/ImageCard';
 import { Image, Tag } from '@/lib/models';
@@ -11,7 +11,7 @@ import Link from 'next/link';
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 type Rating = 'safe' | 'questionable' | 'explicit';
 
-export default function PostsPage() {
+function PostsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [images, setImages] = useState<Image[]>([]);
@@ -430,5 +430,13 @@ export default function PostsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function PostsPage() {
+  return (
+    <Suspense fallback={<div className="w-full h-screen flex items-center justify-center"><Loader2 className="animate-spin" size={40} /></div>}>
+      <PostsPageContent />
+    </Suspense>
   );
 }
