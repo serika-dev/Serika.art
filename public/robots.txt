@@ -1,0 +1,21 @@
+# Robots.txt for Serika.art
+# Allow all crawlers to index the site
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /_next/
+
+# Specific rules for search engines
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+# Sitemap location
+Sitemap: https://serika.art/sitemap.xml
+
+# Crawl delay (in seconds)
+Crawl-delay: 1
