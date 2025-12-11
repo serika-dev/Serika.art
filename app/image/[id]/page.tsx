@@ -555,35 +555,44 @@ export default function ImagePage() {
           <div className="bg-zinc-900 rounded-lg shadow-lg p-6 border border-zinc-800">
             <h2 className="text-xl font-bold text-white mb-4">Tags</h2>
             <div className="flex flex-wrap gap-2">
-              {image.tags.map((tag) => {
-                let tagName = 'unknown';
-                let tagType: 'general' | 'artist' | 'character' | 'copyright' | 'meta' = 'general';
-                
-                if (typeof tag === 'string') {
-                  tagName = tag;
-                } else if (tag && typeof tag === 'object' && 'name' in tag) {
-                  const tagObj = tag as any;
-                  tagName = tagObj.name || 'unknown';
-                  tagType = tagObj.type || 'general';
-                }
-                
-                const typeColors = {
-                  artist: 'bg-red-900/30 text-red-200 border-red-800',
-                  copyright: 'bg-purple-900/30 text-purple-200 border-purple-800',
-                  character: 'bg-green-900/30 text-green-200 border-green-800',
-                  general: 'bg-blue-900/30 text-blue-200 border-blue-800',
-                  meta: 'bg-yellow-900/30 text-yellow-200 border-yellow-800',
-                };
-                return (
-                  <Link
-                    key={tagName}
-                    href={`/posts?tags=${encodeURIComponent(tagName)}`}
-                    className={`${typeColors[tagType as keyof typeof typeColors]} border px-3 py-1.5 rounded-md hover:opacity-80 transition text-sm`}
-                  >
-                    {tagName}
-                  </Link>
-                );
-              })}
+              {image.tags
+                .map((tag) => {
+                  let tagName = 'unknown';
+                  let tagType: 'general' | 'artist' | 'character' | 'copyright' | 'meta' = 'general';
+                  
+                  if (typeof tag === 'string') {
+                    tagName = tag;
+                  } else if (tag && typeof tag === 'object' && 'name' in tag) {
+                    const tagObj = tag as any;
+                    tagName = tagObj.name || 'unknown';
+                    tagType = tagObj.type || 'general';
+                  }
+                  
+                  return { tagName, tagType };
+                })
+                .sort((a, b) => {
+                  // Sort order: artist, copyright, character, general, meta
+                  const typeOrder = { artist: 0, copyright: 1, character: 2, general: 3, meta: 4 };
+                  return typeOrder[a.tagType] - typeOrder[b.tagType];
+                })
+                .map(({ tagName, tagType }) => {
+                  const typeColors = {
+                    artist: 'bg-red-900/30 text-red-200 border-red-800',
+                    copyright: 'bg-purple-900/30 text-purple-200 border-purple-800',
+                    character: 'bg-green-900/30 text-green-200 border-green-800',
+                    general: 'bg-blue-900/30 text-blue-200 border-blue-800',
+                    meta: 'bg-yellow-900/30 text-yellow-200 border-yellow-800',
+                  };
+                  return (
+                    <Link
+                      key={tagName}
+                      href={`/posts?tags=${encodeURIComponent(tagName)}`}
+                      className={`${typeColors[tagType as keyof typeof typeColors]} border px-3 py-1.5 rounded-md hover:opacity-80 transition text-sm`}
+                    >
+                      {tagName}
+                    </Link>
+                  );
+                })}
             </div>
           </div>
 
