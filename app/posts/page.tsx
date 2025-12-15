@@ -7,9 +7,9 @@ import { Image, Tag } from '@/lib/models';
 import axios from 'axios';
 import { ChevronLeft, ChevronRight, Loader2, Hash, TrendingUp, X, Search, Shield, AlertTriangle, Ban, Filter } from 'lucide-react';
 import Link from 'next/link';
+import { getRatingsFromCookie, setRatingsCookie, toggleRating as toggleRatingUtil, Rating } from '@/lib/ratingPreferences';
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
-type Rating = 'safe' | 'questionable' | 'explicit';
 
 function PostsPageContent() {
   const searchParams = useSearchParams();
@@ -29,22 +29,31 @@ function PostsPageContent() {
   const [tagInput, setTagInput] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<Tag[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedRatings, setSelectedRatings] = useState<Rating[]>(['safe']);
+  const [ratingsInitialized, setRatingsInitialized] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Get parameters from URL
   const page = parseInt(searchParams.get('page') || '1');
   const sort = searchParams.get('sort') || 'newest';
   const tagsParam = searchParams.get('tags') || '';
-  const ratingsParam = searchParams.get('ratings') || 'safe';
   
   const selectedTags = tagsParam 
     ? tagsParam.split(',').map((tag, idx) => ({ name: tag, type: 'general' as TagType }))
     : [];
-  const selectedRatings = (ratingsParam || '').split(',').filter(Boolean) as Rating[];
+
+  // Initialize ratings from cookie on mount
+  useEffect(() => {
+    const cookieRatings = getRatingsFromCookie();
+    setSelectedRatings(cookieRatings);
+    setRatingsInitialized(true);
+  }, []);
 
   useEffect(() => {
-    fetchImages();
-  }, [page, sort, tagsParam, ratingsParam]);
+    if (ratingsInitialized) {
+      fetchImages();
+    }
+  }, [page, sort, tagsParam, selectedRatings, ratingsInitialized]);
 
   useEffect(() => {
     if (tagInput.trim().length > 0) {
@@ -59,7 +68,7 @@ function PostsPageContent() {
     setLoading(true);
     try {
       const tagsQueryParam = tagsParam ? `&tags=${tagsParam}` : '';
-      const ratingsQueryParam = `&ratings=${ratingsParam}`;
+      const ratingsQueryParam = `&ratings=${selectedRatings.join(',')}`;
       const response = await axios.get(`/api/images?page=${page}&limit=24&sort=${sort}${tagsQueryParam}${ratingsQueryParam}`);
       if (response.data.success) {
         setImages(response.data.images);
@@ -157,7 +166,7 @@ function PostsPageContent() {
     if (pageToUse > 1) params.set('page', pageToUse.toString());
     if (sortToUse !== 'newest') params.set('sort', sortToUse);
     if (tagsToUse.length > 0) params.set('tags', tagsToUse.join(','));
-    if (selectedRatings.length < 3) params.set('ratings', selectedRatings.join(','));
+    // Ratings are now stored in cookies, not URL
     
     const queryString = params.toString();
     router.push(`/posts${queryString ? '?' + queryString : ''}`);
@@ -193,27 +202,9 @@ function PostsPageContent() {
   };
 
   const toggleRating = (rating: Rating) => {
-    let newRatings: Rating[];
-    if (selectedRatings.includes(rating)) {
-      newRatings = selectedRatings.filter(r => r !== rating);
-      if (newRatings.length === 0) newRatings = selectedRatings; // Must keep at least one
-    } else {
-      newRatings = [...selectedRatings, rating];
-    }
-    
-    const params = new URLSearchParams();
-    const tagsToUse = selectedTags.map(t => t.name);
-    if (page > 1) params.set('page', page.toString());
-    if (sort !== 'newest') params.set('sort', sort);
-    if (tagsToUse.length > 0) params.set('tags', tagsToUse.join(','));
-    // Persist ratings in URL; when all 3 are selected, store all three so state survives navigation
-    if (newRatings.length === 3) {
-      params.set('ratings', 'safe,questionable,explicit');
-    } else {
-      params.set('ratings', newRatings.join(','));
-    }
-    const queryString = params.toString();
-    router.push(`/posts${queryString ? '?' + queryString : ''}`);
+    const newRatings = toggleRatingUtil(selectedRatings, rating);
+    setSelectedRatings(newRatings);
+    setRatingsCookie(newRatings);
   };
 
   return (

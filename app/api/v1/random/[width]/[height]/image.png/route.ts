@@ -154,7 +154,9 @@ export async function GET(
     return new NextResponse(new Uint8Array(outputBuffer), {
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=60',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
         'X-Image-Id': image._id.toString(),
         'X-Original-Width': String(image.width),
         'X-Original-Height': String(image.height),

@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     siteName: "Serika.art",
     images: [
       {
-        url: "https://serika.art/og-image.png",
+        url: "https://serika.art/og-image",
         width: 1200,
         height: 630,
         alt: "Serika.art - Modern Art Image Board",
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Serika.art - Modern Art Image Board Community",
     description: "Discover and share beautiful artwork on Serika.art",
-    images: ["https://serika.art/og-image.png"],
+    images: ["https://serika.art/og-image"],
   },
   robots: {
     index: true,
