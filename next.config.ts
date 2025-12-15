@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { hostname } from "os";
 
 const nextConfig: NextConfig = {
   images: {
@@ -30,6 +31,10 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'api.serika.dev',
+      },
+      {
+        protocol: 'https',
+        hostname: 'beta-api.serika.dev',
       },
       {
         protocol: 'https',

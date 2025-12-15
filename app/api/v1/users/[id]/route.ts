@@ -21,24 +21,35 @@ export async function GET(
 
     // Try to find by ObjectId first, then by username
     let user;
-    let userId: ObjectId;
+    let userId: ObjectId | undefined;
     
-    if (ObjectId.isValid(id)) {
-      user = await usersCollection.findOne({ _id: new ObjectId(id) });
-      userId = new ObjectId(id);
+    // Check if it's a valid 24-character hex string (MongoDB ObjectId format)
+    const isValidObjectId = /^[a-fA-F0-9]{24}$/.test(id);
+    
+    if (isValidObjectId) {
+      try {
+        user = await usersCollection.findOne({ _id: new ObjectId(id) });
+        if (user) {
+          userId = new ObjectId(id);
+        }
+      } catch {
+        // Not a valid ObjectId, will try username
+      }
     }
     
     // If not found by ID, try username (case-insensitive)
     if (!user) {
+      // Escape special regex characters in username
+      const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       user = await usersCollection.findOne({ 
-        username: { $regex: new RegExp(`^${id}$`, 'i') }
+        username: { $regex: new RegExp(`^${escapedId}$`, 'i') }
       });
       if (user) {
         userId = user._id;
       }
     }
 
-    if (!user) {
+    if (!user || !userId) {
       return apiError('User not found', 404, 'NOT_FOUND');
     }
 
