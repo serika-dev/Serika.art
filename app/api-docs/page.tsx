@@ -159,6 +159,10 @@ export default function ApiDocsPage() {
                       <td>60</td>
                     </tr>
                     <tr className="border-b border-white/5">
+                      <td className="py-2">Premium User</td>
+                      <td>120</td>
+                    </tr>
+                    <tr className="border-b border-white/5">
                       <td className="py-2">Moderator</td>
                       <td>120</td>
                     </tr>

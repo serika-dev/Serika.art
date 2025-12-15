@@ -12,6 +12,7 @@ export interface AuthUser {
   email: string;
   avatarUrl?: string;
   rank?: UserRank;
+  isPremium?: boolean;
 }
 
 export async function getCurrentUser(): Promise<AuthUser | null> {
@@ -73,6 +74,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
         email: userResponse.data.user.email,
         avatarUrl: userResponse.data.user.avatar,
         rank: localUser?.rank || 'user',
+        isPremium: userResponse.data.user.isPremium || false,
       };
     }
 

@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
     });
     
     const userRank = localUser?.rank || 'user';
+    const isPremium = localUser?.isPremium || false;
     
     // Only moderators+ can get upload permission via API
     if (validPermissions.includes('upload') && !['moderator', 'admin', 'owner'].includes(userRank)) {
@@ -125,8 +126,8 @@ export async function POST(request: NextRequest) {
       expiresAt.setDate(expiresAt.getDate() + expiresIn);
     }
 
-    // Validate rate limit (min 10, max 1000 for regular users)
-    const maxRateLimit = userRank === 'owner' ? 10000 : userRank === 'admin' ? 1000 : 120;
+    // Validate rate limit (min 10, max based on rank/premium)
+    const maxRateLimit = userRank === 'owner' ? 10000 : userRank === 'admin' ? 1000 : (userRank === 'moderator' || isPremium) ? 120 : 60;
     const finalRateLimit = Math.min(Math.max(10, rateLimit), maxRateLimit);
 
     const keyDoc = {
