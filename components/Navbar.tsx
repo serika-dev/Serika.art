@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/lib/AuthContext';
-import { Upload, Search, User, LogOut, Menu, X, Settings, Heart, Shield } from 'lucide-react';
+import { Upload, Search, User, LogOut, Menu, X, Settings, Heart, Shield, Key, BookOpen } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 const ACCOUNTS_URL = process.env.NEXT_PUBLIC_ACCOUNTS_URL || 'https://accounts.serika.dev';
@@ -101,6 +101,22 @@ export default function Navbar() {
                     >
                       <Heart size={18} />
                       <span>Favorites</span>
+                    </Link>
+                    <Link
+                      href="/api-keys"
+                      className="flex items-center gap-3 px-4 py-2 text-zinc-300 hover:bg-zinc-800 hover:text-white transition"
+                      onClick={() => setProfileDropdownOpen(false)}
+                    >
+                      <Key size={18} />
+                      <span>API Keys</span>
+                    </Link>
+                    <Link
+                      href="/api-docs"
+                      className="flex items-center gap-3 px-4 py-2 text-zinc-300 hover:bg-zinc-800 hover:text-white transition"
+                      onClick={() => setProfileDropdownOpen(false)}
+                    >
+                      <BookOpen size={18} />
+                      <span>API Docs</span>
                     </Link>
                     {(user.rank === 'admin' || user.rank === 'owner') && (
                       <>
