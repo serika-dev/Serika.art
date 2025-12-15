@@ -3,7 +3,7 @@ import { getCollection } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
 import { ObjectId } from 'mongodb';
 
-// GET /api/v1/users/[id] - Get user public profile
+// GET /api/v1/users/[id] - Get user public profile (by ID or username)
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -16,14 +16,27 @@ export async function GET(
 
     const { id } = await params;
 
-    if (!ObjectId.isValid(id)) {
-      return apiError('Invalid user ID', 400, 'INVALID_ID');
-    }
-
     const usersCollection = await getCollection('users');
     const imagesCollection = await getCollection('images');
 
-    const user = await usersCollection.findOne({ _id: new ObjectId(id) });
+    // Try to find by ObjectId first, then by username
+    let user;
+    let userId: ObjectId;
+    
+    if (ObjectId.isValid(id)) {
+      user = await usersCollection.findOne({ _id: new ObjectId(id) });
+      userId = new ObjectId(id);
+    }
+    
+    // If not found by ID, try username (case-insensitive)
+    if (!user) {
+      user = await usersCollection.findOne({ 
+        username: { $regex: new RegExp(`^${id}$`, 'i') }
+      });
+      if (user) {
+        userId = user._id;
+      }
+    }
 
     if (!user) {
       return apiError('User not found', 404, 'NOT_FOUND');
@@ -31,13 +44,13 @@ export async function GET(
 
     // Get user stats
     const [imageCount, totalUpvotes, totalViews] = await Promise.all([
-      imagesCollection.countDocuments({ userId: new ObjectId(id) }),
+      imagesCollection.countDocuments({ userId: userId! }),
       imagesCollection.aggregate([
-        { $match: { userId: new ObjectId(id) } },
+        { $match: { userId: userId! } },
         { $group: { _id: null, total: { $sum: '$upvotes' } } },
       ]).toArray(),
       imagesCollection.aggregate([
-        { $match: { userId: new ObjectId(id) } },
+        { $match: { userId: userId! } },
         { $group: { _id: null, total: { $sum: '$views' } } },
       ]).toArray(),
     ]);

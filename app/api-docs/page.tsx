@@ -524,9 +524,25 @@ export default function ApiDocsPage() {
               <div className="bg-[#111] rounded-lg p-6">
                 <div className="flex items-center gap-3 mb-4">
                   <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/users/:id</code>
+                  <code className="text-indigo-400">/users/:identifier</code>
                 </div>
-                <p className="text-gray-300 mb-4">Get a user's public profile and statistics.</p>
+                <p className="text-gray-300 mb-4">Get a user's public profile and statistics by ID or username.</p>
+                
+                <h4 className="font-semibold mb-2">Path Parameters</h4>
+                <table className="w-full text-sm mb-4">
+                  <tbody className="text-gray-300">
+                    <tr>
+                      <td className="py-2"><code>identifier</code></td>
+                      <td>User ID (MongoDB ObjectId) or username (case-insensitive)</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <h4 className="font-semibold mb-2">Example Requests</h4>
+                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm mb-4">
+{`GET /api/v1/users/507f1f77bcf86cd799439012  # By ID
+GET /api/v1/users/artist                     # By username`}
+                </pre>
                 
                 <h4 className="font-semibold mb-2">Example Response</h4>
                 <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
