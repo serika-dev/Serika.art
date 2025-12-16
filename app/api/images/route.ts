@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     const aiOnly = searchParams.get('ai') === 'true';
     const search = searchParams.get('q') || '';
     const userId = searchParams.get('userId');
+    const username = searchParams.get('username');
 
     const skip = (page - 1) * limit;
 
@@ -23,7 +24,10 @@ export async function GET(request: NextRequest) {
     // Build query
     const query: any = {};
     
-    if (userId) {
+    if (username) {
+      // Filter by username
+      query.username = { $regex: new RegExp(`^${username}$`, 'i') };
+    } else if (userId) {
       if (userId === 'null') {
         // Anonymous images
         query.userId = null;

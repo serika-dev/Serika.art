@@ -74,7 +74,7 @@ export default function Navbar() {
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link href={`/user/${user.id}`}>
+                    <Link href={`/user/${user.username}`}>
                       <User className="mr-2 h-4 w-4" />
                       <span>Profile</span>
                     </Link>
@@ -152,7 +152,7 @@ export default function Navbar() {
                       </div>
                       
                       <Button variant="ghost" className="justify-start" asChild>
-                        <Link href={`/user/${user.id}`}>
+                        <Link href={`/user/${user.username}`}>
                           <User className="mr-2 h-4 w-4" />
                           Profile
                         </Link>

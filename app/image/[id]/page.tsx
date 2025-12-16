@@ -283,7 +283,7 @@ export default function ImagePage() {
                 </Avatar>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1.5">
-                    <Link href={`/user/${comment.userId}`} className="font-semibold hover:text-primary transition-colors">
+                  <Link href={`/user/${comment.username}`} className="font-semibold hover:text-primary transition-colors">
                       {comment.username}
                     </Link>
                     {comment.rank && comment.rank !== 'user' && (
@@ -315,7 +315,7 @@ export default function ImagePage() {
                       </Avatar>
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <Link href={reply.userId ? `/user/${reply.userId}` : `/user/anonymous`} className="font-semibold text-sm hover:text-primary transition-colors">
+                          <Link href={`/user/${reply.username}`} className="font-semibold text-sm hover:text-primary transition-colors">
                             {reply.username}
                           </Link>
                           {!reply.userId && (
@@ -466,7 +466,7 @@ export default function ImagePage() {
                 <span className="text-xs text-muted-foreground uppercase tracking-wider">Uploaded by</span>
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-muted-foreground" />
-                  <Link href={image.userId ? `/user/${image.userId}` : `/user/anonymous`} className="text-primary hover:underline font-medium">
+                  <Link href={`/user/${image.username || 'anonymous'}`} className="text-primary hover:underline font-medium">
                     {image.username}
                   </Link>
                   {!image.userId && (
