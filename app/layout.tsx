@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
 import Navbar from "@/components/Navbar";
 import StructuredData from "@/components/StructuredData";
+import { cn } from "@/lib/utils";
+
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Serika.art - Modern Art Image Board Community",
@@ -60,19 +64,19 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#09090b" />
       </head>
-      <body className="bg-zinc-950 text-zinc-50 min-h-screen flex flex-col">
+      <body className={cn("min-h-screen bg-background font-sans antialiased flex flex-col", inter.className)}>
         <StructuredData />
         <AuthProvider>
           <Navbar />
           <main className="flex-1">
             {children}
           </main>
-          <footer className="border-t border-zinc-800 bg-zinc-900 py-4 px-6 text-center text-sm text-zinc-400">
+          <footer className="border-t border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-6 px-6 text-center text-sm text-muted-foreground">
             <div className="flex justify-center gap-6">
-              <a href="https://serika.dev/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-200 transition-colors">
+              <a href="https://serika.dev/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
                 Privacy
               </a>
-              <a href="https://serika.dev/terms" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-200 transition-colors">
+              <a href="https://serika.dev/terms" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
                 Terms
               </a>
             </div>

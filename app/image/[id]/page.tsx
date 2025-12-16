@@ -5,9 +5,16 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import axios from 'axios';
 import { Image as ImageType, Comment } from '@/lib/models';
-import { Heart, ThumbsUp, ThumbsDown, Eye, Download, Share2, Trash2, Sparkles, ExternalLink, Calendar, User, Maximize2, Minimize2, MessageCircle, Send } from 'lucide-react';
+import { Heart, ThumbsUp, ThumbsDown, Eye, Download, Share2, Trash2, Sparkles, ExternalLink, Calendar, User, Maximize2, Minimize2, MessageCircle, Send, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import NextImage from 'next/image';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 
 export default function ImagePage() {
   const { id } = useParams();
@@ -132,20 +139,20 @@ export default function ImagePage() {
   const getRatingColor = (rating: string) => {
     switch (rating) {
       case 'safe':
-        return 'bg-green-900/50 text-green-200 border border-green-800';
+        return 'bg-green-500/10 text-green-400 border-green-500/20';
       case 'questionable':
-        return 'bg-yellow-900/50 text-yellow-200 border border-yellow-800';
+        return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
       case 'explicit':
-        return 'bg-red-900/50 text-red-200 border border-red-800';
+        return 'bg-red-500/10 text-red-400 border-red-500/20';
       default:
-        return 'bg-zinc-800 text-zinc-300';
+        return 'bg-muted text-muted-foreground';
     }
   };
 
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <Loader2 className="animate-spin h-10 w-10 text-primary" />
       </div>
     );
   }
@@ -153,11 +160,11 @@ export default function ImagePage() {
   if (notFound) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-screen">
-        <h1 className="text-2xl font-bold text-white mb-4">Image not found</h1>
-        <p className="text-zinc-400 mb-6">This image doesn't exist or has been deleted.</p>
-        <Link href="/" className="text-blue-500 hover:text-blue-400">
-          Back to gallery
-        </Link>
+        <h1 className="text-2xl font-bold mb-4">Image not found</h1>
+        <p className="text-muted-foreground mb-6">This image doesn't exist or has been deleted.</p>
+        <Button asChild variant="outline">
+          <Link href="/">Back to gallery</Link>
+        </Button>
       </div>
     );
   }
@@ -165,10 +172,10 @@ export default function ImagePage() {
   if (!image) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-screen">
-        <h1 className="text-2xl font-bold text-white mb-4">Image not found</h1>
-        <Link href="/" className="text-blue-500 hover:text-blue-400">
-          Back to gallery
-        </Link>
+        <h1 className="text-2xl font-bold mb-4">Image not found</h1>
+        <Button asChild variant="outline">
+          <Link href="/">Back to gallery</Link>
+        </Button>
       </div>
     );
   }
@@ -176,13 +183,13 @@ export default function ImagePage() {
   const getRankBadge = (rank: string) => {
     switch (rank) {
       case 'owner':
-        return 'bg-gradient-to-r from-yellow-600 to-orange-600 text-white';
+        return 'bg-gradient-to-r from-yellow-600 to-orange-600 text-white border-0';
       case 'admin':
-        return 'bg-red-900/50 text-red-200 border border-red-800';
+        return 'bg-red-500/10 text-red-400 border-red-500/20';
       case 'moderator':
-        return 'bg-blue-900/50 text-blue-200 border border-blue-800';
+        return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
       default:
-        return 'bg-zinc-800 text-zinc-400 border border-zinc-700';
+        return 'bg-muted text-muted-foreground';
     }
   };
 
@@ -210,193 +217,172 @@ export default function ImagePage() {
   };
 
   const commentsSection = (
-    <div className="bg-zinc-900 rounded-lg shadow-lg border border-zinc-800 p-6">
-      <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-        <MessageCircle size={24} />
-        Comments ({comments.length})
-      </h2>
-
-      {/* Comment Form */}
-      {user ? (
-        <form onSubmit={handleSubmitComment} className="mb-8">
-          <div className="flex gap-3">
-            <NextImage
-              src={user.avatarUrl || 'https://via.placeholder.com/40'}
-              alt={user.username}
-              width={40}
-              height={40}
-              className="w-10 h-10 rounded-full"
-            />
-            <div className="flex-1">
-              {replyTo && (
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="text-sm text-zinc-400">Replying to comment</span>
-                  <button
-                    type="button"
-                    onClick={() => setReplyTo(null)}
-                    className="text-xs text-red-400 hover:text-red-300"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-              <textarea
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                placeholder="Write a comment..."
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none"
-                rows={3}
-                maxLength={5000}
-              />
-              <div className="flex items-center justify-between mt-2">
-                <span className="text-xs text-zinc-500">
-                  {commentText.length}/5000
-                </span>
-                <button
-                  type="submit"
-                  disabled={!commentText.trim() || submittingComment}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Send size={16} />
-                  {submittingComment ? 'Posting...' : 'Post Comment'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </form>
-      ) : (
-        <div className="mb-8 p-4 bg-zinc-800 rounded-lg text-center">
-          <p className="text-zinc-400">
-            <Link href="/login" className="text-blue-500 hover:text-blue-400">
-              Log in
-            </Link>{' '}
-            to post a comment
-          </p>
-        </div>
-      )}
-
-      {/* Comments List */}
-      <div className="space-y-6">
-        {organizeComments(comments).map((comment) => (
-          <div key={comment._id.toString()} className="space-y-4">
-            {/* Top-level Comment */}
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <MessageCircle className="h-5 w-5" />
+          Comments ({comments.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Comment Form */}
+        {user ? (
+          <form onSubmit={handleSubmitComment} className="space-y-4">
             <div className="flex gap-3">
-              <NextImage
-                src={comment.avatarUrl || 'https://via.placeholder.com/40'}
-                alt={comment.username}
-                width={40}
-                height={40}
-                className="w-10 h-10 rounded-full"
-              />
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <Link
-                    href={`/user/${comment.userId}`}
-                    className="font-semibold text-white hover:text-blue-400"
-                  >
-                    {comment.username}
-                  </Link>
-                  {comment.rank && comment.rank !== 'user' && (
-                    <span className={`${getRankBadge(comment.rank)} px-2 py-0.5 rounded text-xs uppercase font-medium`}>
-                      {comment.rank}
-                    </span>
-                  )}
-                  <span className="text-xs text-zinc-500">
-                    {new Date(comment.createdAt).toLocaleString()}
-                  </span>
-                </div>
-                <p className="text-zinc-300 whitespace-pre-wrap mb-2">{comment.content}</p>
-                {user && (
-                  <button
-                    onClick={() => setReplyTo(comment._id.toString())}
-                    className="text-xs text-blue-500 hover:text-blue-400"
-                  >
-                    Reply
-                  </button>
+              <Avatar className="h-10 w-10">
+                <AvatarImage src={user.avatarUrl || undefined} />
+                <AvatarFallback>{user.username[0].toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <div className="flex-1 space-y-2">
+                {replyTo && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Replying to comment</span>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setReplyTo(null)} className="h-auto py-0.5 px-2 text-xs text-destructive hover:text-destructive">
+                      Cancel
+                    </Button>
+                  </div>
                 )}
+                <Textarea
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder="Write a comment..."
+                  className="min-h-[80px] resize-none"
+                  maxLength={5000}
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    {commentText.length}/5000
+                  </span>
+                  <Button type="submit" size="sm" disabled={!commentText.trim() || submittingComment}>
+                    <Send className="h-4 w-4 mr-2" />
+                    {submittingComment ? 'Posting...' : 'Post Comment'}
+                  </Button>
+                </div>
               </div>
             </div>
-
-            {/* Replies */}
-            {comment.replies.length > 0 && (
-              <div className="ml-12 space-y-4">
-                {comment.replies.map((reply) => (
-                  <div key={reply._id.toString()} className="flex gap-3">
-                    <NextImage
-                      src={reply.avatarUrl || 'https://via.placeholder.com/40'}
-                      alt={reply.username}
-                      width={32}
-                      height={32}
-                      className="w-8 h-8 rounded-full"
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Link
-                          href={reply.userId ? `/user/${reply.userId}` : `/user/anonymous`}
-                          className="font-semibold text-white hover:text-blue-400 text-sm"
-                        >
-                          {reply.username}
-                        </Link>
-                        {!reply.userId && (
-                          <span className="text-xs text-zinc-500">(system)</span>
-                        )}
-                        {reply.rank && reply.rank !== 'user' && (
-                          <span className={`${getRankBadge(reply.rank)} px-2 py-0.5 rounded text-xs uppercase font-medium`}>
-                            {reply.rank}
-                          </span>
-                        )}
-                        <span className="text-xs text-zinc-500">
-                          {new Date(reply.createdAt).toLocaleString()}
-                        </span>
-                      </div>
-                      <p className="text-zinc-300 whitespace-pre-wrap text-sm">{reply.content}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-
-        {comments.length === 0 && (
-          <div className="text-center py-8 text-zinc-500">
-            No comments yet. Be the first to comment!
+          </form>
+        ) : (
+          <div className="p-4 bg-muted rounded-lg text-center">
+            <p className="text-muted-foreground">
+              <Link href="/login" className="text-primary hover:underline">Log in</Link> to post a comment
+            </p>
           </div>
         )}
-      </div>
-    </div>
+
+        <Separator />
+
+        {/* Comments List */}
+        <div className="space-y-6">
+          {organizeComments(comments).map((comment) => (
+            <div key={comment._id.toString()} className="space-y-4">
+              {/* Top-level Comment */}
+              <div className="flex gap-3">
+                <Avatar className="h-10 w-10">
+                  <AvatarImage src={comment.avatarUrl || undefined} />
+                  <AvatarFallback>{comment.username[0].toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Link href={`/user/${comment.userId}`} className="font-semibold hover:text-primary transition-colors">
+                      {comment.username}
+                    </Link>
+                    {comment.rank && comment.rank !== 'user' && (
+                      <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", getRankBadge(comment.rank))}>
+                        {comment.rank}
+                      </Badge>
+                    )}
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(comment.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-sm text-foreground/90 whitespace-pre-wrap mb-2">{comment.content}</p>
+                  {user && (
+                    <Button variant="ghost" size="sm" onClick={() => setReplyTo(comment._id.toString())} className="h-auto py-0.5 px-2 text-xs text-muted-foreground hover:text-primary">
+                      Reply
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Replies */}
+              {comment.replies.length > 0 && (
+                <div className="ml-12 space-y-4 border-l-2 border-border pl-4">
+                  {comment.replies.map((reply) => (
+                    <div key={reply._id.toString()} className="flex gap-3">
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={reply.avatarUrl || undefined} />
+                        <AvatarFallback>{reply.username[0].toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Link href={reply.userId ? `/user/${reply.userId}` : `/user/anonymous`} className="font-semibold text-sm hover:text-primary transition-colors">
+                            {reply.username}
+                          </Link>
+                          {!reply.userId && (
+                            <span className="text-xs text-muted-foreground">(system)</span>
+                          )}
+                          {reply.rank && reply.rank !== 'user' && (
+                            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", getRankBadge(reply.rank))}>
+                              {reply.rank}
+                            </Badge>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(reply.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-sm text-foreground/90 whitespace-pre-wrap">{reply.content}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+
+          {comments.length === 0 && (
+            <div className="text-center py-8">
+              <MessageCircle className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
+              <p className="text-muted-foreground">No comments yet. Be the first to comment!</p>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Image */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="bg-zinc-900 rounded-lg shadow-lg overflow-hidden border border-zinc-800">
+          <Card className="overflow-hidden">
             {/* Image Size Toggle */}
-            <div className="bg-zinc-800/50 border-b border-zinc-700 px-4 py-2 flex items-center justify-between">
-              <span className="text-sm text-zinc-400">
+            <div className="bg-muted/50 border-b px-4 py-2 flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">
                 {image.width} × {image.height} • {(image.fileSize / 1024 / 1024).toFixed(2)} MB
               </span>
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => setImageSize(imageSize === 'fit' ? 'original' : 'fit')}
-                className="flex items-center gap-2 px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-md transition text-sm"
               >
                 {imageSize === 'fit' ? (
                   <>
-                    <Maximize2 size={16} />
+                    <Maximize2 className="h-4 w-4 mr-2" />
                     View Original
                   </>
                 ) : (
                   <>
-                    <Minimize2 size={16} />
+                    <Minimize2 className="h-4 w-4 mr-2" />
                     Fit to Screen
                   </>
                 )}
-              </button>
+              </Button>
             </div>
             
-            <div className={`${imageSize === 'fit' ? 'flex justify-center items-center bg-black' : 'overflow-auto'}`}>
+            <div className={cn(
+              imageSize === 'fit' ? 'flex justify-center items-center bg-black/50' : 'overflow-auto'
+            )}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={image.url}
@@ -408,205 +394,217 @@ export default function ImagePage() {
                 className={imageSize === 'fit' ? 'max-w-full max-h-[70vh] object-contain' : 'w-auto h-auto'}
               />
             </div>
-          </div>
+          </Card>
 
           {/* Actions */}
-          <div className="bg-zinc-900 rounded-lg shadow-lg p-4 mt-4 border border-zinc-800">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleVote('upvote')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md transition ${
-                    userVote === 'upvote'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                  }`}
-                >
-                  <ThumbsUp size={18} />
-                  {image.upvotes}
-                </button>
-                <button
-                  onClick={() => handleVote('downvote')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md transition ${
-                    userVote === 'downvote'
-                      ? 'bg-red-600 text-white'
-                      : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                  }`}
-                >
-                  <ThumbsDown size={18} />
-                  {image.downvotes}
-                </button>
-                <button
-                  onClick={handleFavorite}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md transition ${
-                    isFavorited
-                      ? 'bg-pink-600 text-white'
-                      : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                  }`}
-                >
-                  <Heart size={18} />
-                  {image.favorites}
-                </button>
-                <div className="flex items-center gap-2 px-4 py-2 bg-zinc-800 rounded-md text-zinc-300">
-                  <Eye size={18} />
-                  {image.views}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant={userVote === 'upvote' ? 'default' : 'secondary'}
+                    size="sm"
+                    onClick={() => handleVote('upvote')}
+                    className={cn(userVote === 'upvote' && "bg-primary")}
+                  >
+                    <ThumbsUp className="h-4 w-4 mr-1.5" />
+                    {image.upvotes}
+                  </Button>
+                  <Button
+                    variant={userVote === 'downvote' ? 'destructive' : 'secondary'}
+                    size="sm"
+                    onClick={() => handleVote('downvote')}
+                  >
+                    <ThumbsDown className="h-4 w-4 mr-1.5" />
+                    {image.downvotes}
+                  </Button>
+                  <Button
+                    variant={isFavorited ? 'default' : 'secondary'}
+                    size="sm"
+                    onClick={handleFavorite}
+                    className={cn(isFavorited && "bg-pink-600 hover:bg-pink-500")}
+                  >
+                    <Heart className={cn("h-4 w-4 mr-1.5", isFavorited && "fill-current")} />
+                    {image.favorites}
+                  </Button>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-muted rounded-md text-muted-foreground text-sm">
+                    <Eye className="h-4 w-4" />
+                    {image.views}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button asChild size="sm">
+                    <a href={image.url} download>
+                      <Download className="h-4 w-4 mr-1.5" />
+                      Download
+                    </a>
+                  </Button>
+                  {user && image.userId && user.id === image.userId.toString() && (
+                    <Button variant="destructive" size="sm" onClick={handleDelete}>
+                      <Trash2 className="h-4 w-4 mr-1.5" />
+                      Delete
+                    </Button>
+                  )}
                 </div>
               </div>
-
-              <div className="flex items-center gap-2">
-                <a
-                  href={image.url}
-                  download
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-500 transition"
-                >
-                  <Download size={18} />
-                  Download
-                </a>
-                {user && image.userId && user.id === image.userId.toString() && (
-                  <button
-                    onClick={handleDelete}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-500 transition"
-                  >
-                    <Trash2 size={18} />
-                    Delete
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
           {imageSize === 'fit' && commentsSection}
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Info */}
-          <div className="bg-zinc-900 rounded-lg shadow-lg p-6 border border-zinc-800">
-            <h2 className="text-xl font-bold text-white mb-4">Information</h2>
-            
-            <div className="space-y-3">
-              <div>
-                <span className="text-sm text-zinc-500">Uploaded by</span>
-                <div className="flex items-center gap-2 mt-1">
-                  <User size={16} className="text-zinc-600" />
-                  <Link href={image.userId ? `/user/${image.userId}` : `/user/anonymous`} className="text-blue-500 hover:text-blue-400 font-medium">
+          <Card>
+            <CardHeader>
+              <CardTitle>Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">Uploaded by</span>
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <Link href={image.userId ? `/user/${image.userId}` : `/user/anonymous`} className="text-primary hover:underline font-medium">
                     {image.username}
                   </Link>
                   {!image.userId && (
-                    <span className="text-xs text-zinc-500">(system)</span>
+                    <span className="text-xs text-muted-foreground">(system)</span>
                   )}
                 </div>
               </div>
 
-              <div>
-                <span className="text-sm text-zinc-500">Date</span>
-                <div className="flex items-center gap-2 mt-1">
-                  <Calendar size={16} className="text-zinc-600" />
-                  <span className="text-zinc-300">{new Date(image.createdAt).toLocaleDateString()}</span>
+              <Separator />
+
+              <div className="space-y-1">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">Date</span>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span>{new Date(image.createdAt).toLocaleDateString()}</span>
                 </div>
               </div>
 
-              <div>
-                <span className="text-sm text-zinc-500">Rating</span>
-                <div className="mt-1">
-                  <span className={`${getRatingColor(image.rating)} px-3 py-1 rounded-full text-sm font-medium uppercase`}>
+              <Separator />
+
+              <div className="space-y-1">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">Rating</span>
+                <div>
+                  <Badge variant="outline" className={cn("uppercase", getRatingColor(image.rating))}>
                     {image.rating}
-                  </span>
+                  </Badge>
                 </div>
               </div>
 
               {image.isAIGenerated && (
-                <div>
-                  <span className="bg-purple-900/50 text-purple-200 border border-purple-800 px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 w-fit">
-                    <Sparkles size={16} />
+                <>
+                  <Separator />
+                  <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20">
+                    <Sparkles className="h-3 w-3 mr-1.5" />
                     AI Generated
-                  </span>
-                </div>
+                  </Badge>
+                </>
               )}
 
-              <div>
-                <span className="text-sm text-zinc-500">Dimensions</span>
-                <p className="text-zinc-300">{image.width} × {image.height}</p>
-              </div>
+              <Separator />
 
-              <div>
-                <span className="text-sm text-zinc-500">File Size</span>
-                <p className="text-zinc-300">{(image.fileSize / 1024 / 1024).toFixed(2)} MB</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Dimensions</span>
+                  <p className="font-medium">{image.width} × {image.height}</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">File Size</span>
+                  <p className="font-medium">{(image.fileSize / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
               </div>
 
               {image.source && (
-                <div>
-                  <span className="text-sm text-zinc-500">Source</span>
-                  <a
-                    href={image.source}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-500 hover:text-blue-400 flex items-center gap-1 mt-1"
-                  >
-                    <ExternalLink size={14} />
-                    View Source
-                  </a>
-                </div>
+                <>
+                  <Separator />
+                  <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Source</span>
+                    <a
+                      href={image.source}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline flex items-center gap-1.5"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      View Source
+                    </a>
+                  </div>
+                </>
               )}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
           {/* Tags */}
-          <div className="bg-zinc-900 rounded-lg shadow-lg p-6 border border-zinc-800">
-            <h2 className="text-xl font-bold text-white mb-4">Tags</h2>
-            <div className="flex flex-wrap gap-2">
-              {image.tags
-                .map((tag) => {
-                  let tagName = 'unknown';
-                  let tagType: 'general' | 'artist' | 'character' | 'copyright' | 'meta' = 'general';
-                  
-                  if (typeof tag === 'string') {
-                    tagName = tag;
-                  } else if (tag && typeof tag === 'object' && 'name' in tag) {
-                    const tagObj = tag as any;
-                    tagName = tagObj.name || 'unknown';
-                    tagType = tagObj.type || 'general';
-                  }
-                  
-                  return { tagName, tagType };
-                })
-                .sort((a, b) => {
-                  // Sort order: artist, copyright, character, general, meta
-                  const typeOrder = { artist: 0, copyright: 1, character: 2, general: 3, meta: 4 };
-                  return typeOrder[a.tagType] - typeOrder[b.tagType];
-                })
-                .map(({ tagName, tagType }) => {
-                  const typeColors = {
-                    artist: 'bg-red-900/30 text-red-200 border-red-800',
-                    copyright: 'bg-purple-900/30 text-purple-200 border-purple-800',
-                    character: 'bg-green-900/30 text-green-200 border-green-800',
-                    general: 'bg-blue-900/30 text-blue-200 border-blue-800',
-                    meta: 'bg-yellow-900/30 text-yellow-200 border-yellow-800',
-                  };
-                  return (
-                    <Link
-                      key={tagName}
-                      href={`/posts?tags=${encodeURIComponent(tagName)}`}
-                      className={`${typeColors[tagType as keyof typeof typeColors]} border px-3 py-1.5 rounded-md hover:opacity-80 transition text-sm`}
-                    >
-                      {tagName}
-                    </Link>
-                  );
-                })}
-            </div>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Tags</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-1.5">
+                {image.tags
+                  .map((tag) => {
+                    let tagName = 'unknown';
+                    let tagType: 'general' | 'artist' | 'character' | 'copyright' | 'meta' = 'general';
+                    
+                    if (typeof tag === 'string') {
+                      tagName = tag;
+                    } else if (tag && typeof tag === 'object' && 'name' in tag) {
+                      const tagObj = tag as any;
+                      tagName = tagObj.name || 'unknown';
+                      tagType = tagObj.type || 'general';
+                    }
+                    
+                    return { tagName, tagType };
+                  })
+                  .sort((a, b) => {
+                    const typeOrder = { artist: 0, copyright: 1, character: 2, general: 3, meta: 4 };
+                    return typeOrder[a.tagType] - typeOrder[b.tagType];
+                  })
+                  .map(({ tagName, tagType }) => {
+                    const typeColors = {
+                      artist: 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20',
+                      copyright: 'bg-purple-500/10 text-purple-400 border-purple-500/20 hover:bg-purple-500/20',
+                      character: 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20',
+                      general: 'bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20',
+                      meta: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20',
+                    };
+                    return (
+                      <Link
+                        key={tagName}
+                        href={`/posts?tags=${encodeURIComponent(tagName)}`}
+                        className={cn(
+                          "px-2.5 py-1 rounded-md border text-sm transition-colors",
+                          typeColors[tagType as keyof typeof typeColors]
+                        )}
+                      >
+                        {tagName}
+                      </Link>
+                    );
+                  })}
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Description */}
           {image.description && (
-            <div className="bg-zinc-900 rounded-lg shadow-lg p-6 border border-zinc-800">
-              <h2 className="text-xl font-bold text-white mb-4">Description</h2>
-              <p className="text-zinc-300 whitespace-pre-wrap">{image.description}</p>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Description</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-foreground/90 whitespace-pre-wrap">{image.description}</p>
+              </CardContent>
+            </Card>
           )}
         </div>
       </div>
       {imageSize === 'original' && (
-        <div className="mt-8">
+        <div className="mt-6">
           {commentsSection}
         </div>
       )}

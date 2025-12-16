@@ -4,29 +4,30 @@ import Link from 'next/link';
 import NextImage from 'next/image';
 import { Heart, Eye, ThumbsUp, Sparkles } from 'lucide-react';
 import { Image } from '@/lib/models';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 interface ImageCardProps {
   image: Image;
 }
 
 export default function ImageCard({ image }: ImageCardProps) {
-  const getRatingColor = (rating: string) => {
-    switch (rating) {
+  const getRatingClass = (rating: string) => {
+      switch (rating) {
       case 'safe':
-        return 'bg-green-900/50 text-green-200 border border-green-800';
+        return 'bg-green-500/20 text-green-400 hover:bg-green-500/30 border-green-500/50';
       case 'questionable':
-        return 'bg-yellow-900/50 text-yellow-200 border border-yellow-800';
+        return 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 border-yellow-500/50';
       case 'explicit':
-        return 'bg-red-900/50 text-red-200 border border-red-800';
+        return 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border-red-500/50';
       default:
-        return 'bg-zinc-800 text-zinc-300';
+        return 'bg-zinc-500/20 text-zinc-400 hover:bg-zinc-500/30 border-zinc-500/50';
     }
-  };
+  }
 
   return (
     <Link href={`/image/${image._id}`} className="group block">
-      <div className="bg-zinc-900 rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 border border-zinc-800 hover:border-zinc-700">
-        {/* Image */}
+      <Card className="overflow-hidden border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 transition-all duration-300 hover:shadow-lg">
         <div className="relative aspect-square overflow-hidden bg-zinc-950">
           <NextImage
             src={image.thumbnailUrl || image.url}
@@ -40,40 +41,39 @@ export default function ImageCard({ image }: ImageCardProps) {
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
           {image.isAIGenerated && (
-            <div className="absolute top-2 right-2 bg-purple-900/80 backdrop-blur-sm text-purple-100 px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 border border-purple-700">
+            <Badge variant="secondary" className="absolute top-2 right-2 bg-purple-500/20 text-purple-300 border-purple-500/50 backdrop-blur-sm gap-1">
               <Sparkles size={12} />
               AI
-            </div>
+            </Badge>
           )}
-          <div className={`absolute top-2 left-2 ${getRatingColor(image.rating)} px-2 py-1 rounded-full text-xs font-medium uppercase backdrop-blur-sm`}>
+          <Badge className={`absolute top-2 left-2 backdrop-blur-sm uppercase ${getRatingClass(image.rating)}`}>
             {image.rating}
-          </div>
+          </Badge>
         </div>
 
-        {/* Info */}
-        <div className="p-3">
-          {/* Tags */}
+        <CardContent className="p-3">
           <div className="flex flex-wrap gap-1 mb-2">
             {image.tags.slice(0, 3).map((tag) => {
               const tagName = typeof tag === 'string' ? tag : (tag && typeof tag === 'object' && 'name' in tag) ? (tag as any).name : 'unknown';
               return (
-                <span
+                <Badge
                   key={tagName}
-                  className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded text-xs hover:bg-zinc-700 transition"
+                  variant="secondary"
+                  className="text-xs px-2 py-0.5 h-auto font-normal bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
                 >
                   {tagName}
-                </span>
+                </Badge>
               );
             })}
             {image.tags.length > 3 && (
-              <span className="text-zinc-500 text-xs px-1">
+              <span className="text-zinc-500 text-xs px-1 flex items-center">
                 +{image.tags.length - 3} more
               </span>
             )}
           </div>
-
-          {/* Stats */}
-          <div className="flex items-center justify-between text-sm text-zinc-500">
+        </CardContent>
+        
+        <CardFooter className="p-3 pt-0 flex items-center justify-between text-sm text-zinc-500">
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1">
                 <ThumbsUp size={14} />
@@ -88,14 +88,11 @@ export default function ImageCard({ image }: ImageCardProps) {
                 {image.views}
               </span>
             </div>
-          </div>
-
-          {/* User */}
-          <div className="mt-2 text-xs text-zinc-500">
-            by <span className="font-medium text-zinc-400 group-hover:text-blue-400 transition">{image.username}</span>
-          </div>
-        </div>
-      </div>
+            <div className="text-xs">
+                by <span className="font-medium text-zinc-400 group-hover:text-primary transition">{image.username}</span>
+            </div>
+        </CardFooter>
+      </Card>
     </Link>
   );
 }

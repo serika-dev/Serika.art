@@ -3,8 +3,11 @@
 import { useState, useEffect, use } from 'react';
 import { Image } from '@/lib/models';
 import ImageCard from '@/components/ImageCard';
-import { Loader2, Calendar, User as UserIcon, Shield, Crown } from 'lucide-react';
-import NextImage from 'next/image';
+import { Loader2, Calendar, User as UserIcon, Shield, Crown, ImageIcon } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 type UserRank = 'user' | 'moderator' | 'admin' | 'owner';
 
@@ -57,7 +60,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        <Loader2 className="animate-spin text-blue-500" size={48} />
+        <Loader2 className="animate-spin h-10 w-10 text-primary" />
       </div>
     );
   }
@@ -65,73 +68,77 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
   if (error || !user) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
-        <h1 className="text-2xl font-bold text-white mb-4">User not found</h1>
-        <p className="text-zinc-400">{error}</p>
+        <h1 className="text-2xl font-bold mb-4">User not found</h1>
+        <p className="text-muted-foreground">{error}</p>
       </div>
     );
   }
 
+  const getRankStyles = (rank: UserRank) => {
+    switch (rank) {
+      case 'owner':
+        return 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white border-0';
+      case 'admin':
+        return 'bg-red-500/10 text-red-400 border-red-500/20';
+      case 'moderator':
+        return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+      default:
+        return '';
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Profile Header */}
-      <div className="bg-zinc-900 rounded-lg shadow-lg p-8 mb-8 border border-zinc-800 flex flex-col md:flex-row items-center gap-8">
-        <div className="shrink-0">
-          {user.avatarUrl ? (
-            <NextImage
-              src={user.avatarUrl}
-              alt={user.username}
-              width={128}
-              height={128}
-              className="w-32 h-32 rounded-full border-4 border-zinc-800"
-            />
-          ) : (
-            <div className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center text-white text-4xl font-bold border-4 border-zinc-800">
-              {user.username[0].toUpperCase()}
-            </div>
-          )}
-        </div>
-        
-        <div className="text-center md:text-left">
-          <div className="flex items-center justify-center md:justify-start gap-3 mb-2">
-            <h1 className="text-3xl font-bold text-white">{user.username}</h1>
-            {user.rank && user.rank !== 'user' && (
-              <span
-                className={`px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1 ${
-                  user.rank === 'owner'
-                    ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white'
-                    : user.rank === 'admin'
-                    ? 'bg-red-600 text-white'
-                    : 'bg-blue-600 text-white'
-                }`}
-              >
-                {user.rank === 'owner' && <Crown size={14} />}
-                {user.rank !== 'owner' && <Shield size={14} />}
-                {user.rank.toUpperCase()}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center justify-center md:justify-start gap-4 text-zinc-400">
-            <div className="flex items-center gap-1">
-              <Calendar size={16} />
-              <span>Joined {new Date(user.createdAt).toLocaleDateString()}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <UserIcon size={16} />
-              <span>{images.length} Uploads</span>
+      <Card className="mb-8">
+        <CardContent className="p-8">
+          <div className="flex flex-col md:flex-row items-center gap-8">
+            <Avatar className="h-32 w-32 border-4 border-border">
+              <AvatarImage src={user.avatarUrl} />
+              <AvatarFallback className="text-4xl bg-primary text-primary-foreground">
+                {user.username[0].toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            
+            <div className="text-center md:text-left space-y-3">
+              <div className="flex items-center justify-center md:justify-start gap-3">
+                <h1 className="text-3xl font-bold tracking-tight">{user.username}</h1>
+                {user.rank && user.rank !== 'user' && (
+                  <Badge variant="outline" className={cn("font-semibold", getRankStyles(user.rank))}>
+                    {user.rank === 'owner' ? <Crown className="h-3 w-3 mr-1" /> : <Shield className="h-3 w-3 mr-1" />}
+                    {user.rank.toUpperCase()}
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center justify-center md:justify-start gap-6 text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4" />
+                  <span>Joined {new Date(user.createdAt).toLocaleDateString()}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4" />
+                  <span>{images.length} Uploads</span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* User's Images */}
-      <h2 className="text-2xl font-bold text-white mb-6">Uploads</h2>
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold tracking-tight">Uploads</h2>
+      </div>
       
       {images.length === 0 ? (
-        <div className="text-center py-12 bg-zinc-900 rounded-lg border border-zinc-800">
-          <p className="text-zinc-500">No uploads yet</p>
-        </div>
+        <Card>
+          <CardContent className="py-12 text-center">
+            <ImageIcon className="h-12 w-12 text-muted-foreground/50 mx-auto mb-3" />
+            <p className="text-muted-foreground">No uploads yet</p>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
           {images.map((image) => (
             <ImageCard key={image._id.toString()} image={image} />
           ))}

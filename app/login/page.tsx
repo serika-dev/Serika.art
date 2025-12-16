@@ -3,6 +3,12 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, AlertCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
 
 const ACCOUNTS_URL = process.env.NEXT_PUBLIC_ACCOUNTS_URL || 'https://accounts.serika.dev';
 
@@ -95,120 +101,118 @@ function LoginForm() {
           <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">
             Serika.art
           </h1>
-          <p className="text-zinc-400 mt-2">Sign in to continue</p>
+          <p className="text-muted-foreground mt-2">Sign in to continue</p>
         </div>
 
         {/* Login Card */}
-        <div className="bg-zinc-900 rounded-lg shadow-xl p-8 border border-zinc-800">
-          <h2 className="text-2xl font-semibold text-white mb-6">Login</h2>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">Login</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {error && (
+              <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg mb-6 flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+                <p className="text-sm">{error}</p>
+              </div>
+            )}
 
-          {error && (
-            <div className="bg-red-900/30 border border-red-800 text-red-200 px-4 py-3 rounded-lg mb-6 flex items-start gap-3">
-              <AlertCircle size={20} className="shrink-0 mt-0.5" />
-              <p className="text-sm">{error}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Email */}
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-zinc-300 mb-2">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={loading}
-                className="w-full px-4 py-3 bg-zinc-950 border border-zinc-700 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                placeholder="you@example.com"
-              />
-            </div>
-
-            {/* Password */}
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-zinc-300 mb-2">
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={loading}
-                className="w-full px-4 py-3 bg-zinc-950 border border-zinc-700 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                placeholder="••••••••"
-              />
-            </div>
-
-            {/* Remember Me */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Email */}
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
                   disabled={loading}
-                  className="mr-2 w-4 h-4 text-purple-600 border-zinc-700 rounded focus:ring-purple-500 bg-zinc-950 disabled:opacity-50"
+                  placeholder="you@example.com"
                 />
-                <span className="text-sm text-zinc-400">Remember me</span>
-              </label>
-              <a
-                href={`${ACCOUNTS_URL}/forgot-password`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-purple-500 hover:text-purple-400"
+              </div>
+
+              {/* Password */}
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                  placeholder="••••••••"
+                />
+              </div>
+
+              {/* Remember Me */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="remember"
+                    checked={rememberMe}
+                    onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+                    disabled={loading}
+                  />
+                  <Label htmlFor="remember" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                    Remember me
+                  </Label>
+                </div>
+                <a
+                  href={`${ACCOUNTS_URL}/forgot-password`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-primary hover:underline"
+                >
+                  Forgot password?
+                </a>
+              </div>
+
+              {/* Submit Button */}
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500"
               >
-                Forgot password?
-              </a>
-            </div>
+                {loading ? (
+                  <>
+                    <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                    Signing in...
+                  </>
+                ) : (
+                  'Sign In'
+                )}
+              </Button>
+            </form>
+          </CardContent>
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-500 hover:to-pink-500 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="animate-spin" size={20} />
-                  Signing in...
-                </>
-              ) : (
-                'Sign In'
-              )}
-            </button>
-          </form>
-
-          {/* Divider */}
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-zinc-800"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-zinc-900 text-zinc-500">or</span>
+          <div className="px-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <Separator />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">or</span>
+              </div>
             </div>
           </div>
 
-          {/* Register Link */}
-          <div className="text-center">
-            <p className="text-sm text-zinc-400">
+          <CardFooter className="flex justify-center pt-6">
+            <p className="text-sm text-muted-foreground">
               Don't have an account?{' '}
               <a
                 href={`${ACCOUNTS_URL}/register`}
-                className="text-purple-500 hover:text-purple-400 font-medium"
+                className="text-primary hover:underline font-medium"
               >
                 Sign up
               </a>
             </p>
-          </div>
-        </div>
+          </CardFooter>
+        </Card>
 
         {/* Footer */}
-        <p className="text-center text-xs text-zinc-600 mt-6">
+        <p className="text-center text-xs text-muted-foreground/70 mt-6">
           By signing in, you agree to our Terms of Service and Privacy Policy
         </p>
       </div>
@@ -220,7 +224,7 @@ export default function LoginPage() {
   return (
     <Suspense fallback={
       <div className="flex justify-center items-center min-h-screen">
-        <Loader2 className="animate-spin text-blue-600" size={48} />
+        <Loader2 className="animate-spin h-10 w-10 text-primary" />
       </div>
     }>
       <LoginForm />

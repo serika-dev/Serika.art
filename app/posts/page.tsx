@@ -5,9 +5,24 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import ImageCard from '@/components/ImageCard';
 import { Image, Tag } from '@/lib/models';
 import axios from 'axios';
-import { ChevronLeft, ChevronRight, Loader2, Hash, TrendingUp, X, Search, Shield, AlertTriangle, Ban, Filter } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Hash, TrendingUp, X, Search, Shield, AlertTriangle, Ban, Filter, SlidersHorizontal, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { getRatingsFromCookie, setRatingsCookie, toggleRating as toggleRatingUtil, Rating } from '@/lib/ratingPreferences';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 
@@ -206,143 +221,178 @@ function PostsPageContent() {
     setRatingsCookie(newRatings);
   };
 
-  return (
-    <div className="flex gap-6 px-4 sm:px-6 lg:px-8 py-8">
-      {/* Sidebar - Tags */}
-      <aside className="hidden lg:block w-64 shrink-0">
-        <div className="sticky top-20 h-[calc(100vh-120px)] overflow-y-auto pr-2 scrollbar-hide">
-          {/* Tag Search */}
-          <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-4 mb-4">
-            <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-              <Search size={16} />
-              Search Tags
-            </h3>
-            <div className="relative">
-              <input
-                ref={inputRef}
-                type="text"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                placeholder="Type to search..."
-                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              {showSuggestions && tagSuggestions.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl max-h-64 overflow-y-auto">
-                  {tagSuggestions.map((tag) => {
-                    const typeColors = {
-                      artist: 'text-red-400',
-                      copyright: 'text-purple-400',
-                      character: 'text-green-400',
-                      general: 'text-blue-400',
-                      meta: 'text-yellow-400',
-                    };
-                    return (
-                      <button
-                        key={tag.name}
-                        onClick={() => addTag(tag)}
-                        className="w-full px-3 py-2 text-left hover:bg-zinc-700 transition flex items-center justify-between"
-                      >
-                        <span className="text-sm text-white">{tag.name}</span>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs ${typeColors[tag.type || 'general']}`}>
-                            {tag.type || 'general'}
-                          </span>
-                          <span className="text-xs text-zinc-500">{tag.count}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
+  const typeColors: Record<TagType, string> = {
+    artist: 'text-red-400',
+    copyright: 'text-purple-400',
+    character: 'text-green-400',
+    general: 'text-blue-400',
+    meta: 'text-yellow-400',
+  };
 
-          {/* Content Ratings */}
-          <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-4 mb-4">
-            <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-              <Shield size={16} />
-              Content Rating
-            </h3>
-            <div className="space-y-2">
-              {[
-                { rating: 'safe' as Rating, icon: Shield, label: 'Safe', color: 'text-green-400' },
-                { rating: 'questionable' as Rating, icon: AlertTriangle, label: 'Questionable', color: 'text-yellow-400' },
-                { rating: 'explicit' as Rating, icon: Ban, label: 'Explicit', color: 'text-red-400' },
-              ].map(({ rating, icon: Icon, label, color }) => (
-                <button
-                  key={rating}
-                  onClick={() => toggleRating(rating)}
-                  className={`w-full flex items-center gap-2 px-3 py-2 rounded transition ${
-                    selectedRatings.includes(rating)
-                      ? 'bg-zinc-800 border border-zinc-700'
-                      : 'bg-zinc-900/50 border border-zinc-800/50 opacity-40'
-                  }`}
+  const tagBadgeColors: Record<TagType, string> = {
+    artist: 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20',
+    copyright: 'bg-purple-500/10 text-purple-400 border-purple-500/20 hover:bg-purple-500/20',
+    character: 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20',
+    general: 'bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20',
+    meta: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20',
+  };
+
+  // Sidebar content component for reuse
+  const SidebarContent = () => (
+    <div className="space-y-6">
+      {/* Tag Search */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          Search Tags
+        </h3>
+        <div className="relative">
+          <Input
+            ref={inputRef}
+            type="text"
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            placeholder="Type to search..."
+            className="h-9 bg-background"
+          />
+          {showSuggestions && tagSuggestions.length > 0 && (
+            <Card className="absolute z-50 w-full mt-1 max-h-64 overflow-hidden">
+              <ScrollArea className="max-h-64">
+                <div className="p-1">
+                  {tagSuggestions.map((tag) => (
+                    <button
+                      key={tag.name}
+                      onClick={() => addTag(tag)}
+                      className="w-full px-3 py-2 text-left hover:bg-accent rounded-sm transition-colors flex items-center justify-between text-sm"
+                    >
+                      <span className="font-medium">{tag.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-xs font-medium", typeColors[tag.type || 'general'])}>
+                          {tag.type || 'general'}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{tag.count}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </ScrollArea>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      <Separator />
+
+      {/* Content Ratings */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <Shield className="h-4 w-4 text-muted-foreground" />
+          Content Rating
+        </h3>
+        <div className="space-y-1.5">
+          {[
+            { rating: 'safe' as Rating, icon: Shield, label: 'Safe', color: 'text-green-400', activeClass: 'border-green-500/50 bg-green-500/10' },
+            { rating: 'questionable' as Rating, icon: AlertTriangle, label: 'Questionable', color: 'text-yellow-400', activeClass: 'border-yellow-500/50 bg-yellow-500/10' },
+            { rating: 'explicit' as Rating, icon: Ban, label: 'Explicit', color: 'text-red-400', activeClass: 'border-red-500/50 bg-red-500/10' },
+          ].map(({ rating, icon: Icon, label, color, activeClass }) => (
+            <button
+              key={rating}
+              onClick={() => toggleRating(rating)}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2 rounded-md border transition-all text-sm",
+                selectedRatings.includes(rating)
+                  ? activeClass
+                  : "border-transparent opacity-50 hover:opacity-75 hover:bg-muted"
+              )}
+            >
+              <Icon className={cn("h-4 w-4", color)} />
+              <span className="font-medium">{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Selected Tags */}
+      {selectedTags.length > 0 && (
+        <>
+          <Separator />
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Active Filters</h3>
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-auto py-1 px-2 text-xs text-muted-foreground hover:text-foreground">
+                Clear all
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {selectedTags.map((tag) => (
+                <Badge
+                  key={tag.name}
+                  variant="secondary"
+                  className="pl-2 pr-1 py-1 gap-1 cursor-pointer bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
+                  onClick={() => removeTag(tag.name)}
                 >
-                  <Icon size={16} className={color} />
-                  <span className="text-sm text-zinc-300">{label}</span>
-                </button>
+                  {tag.name}
+                  <X className="h-3 w-3" />
+                </Badge>
               ))}
             </div>
           </div>
+        </>
+      )}
 
-          {/* Selected Tags */}
-          {selectedTags.length > 0 && (
-            <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-4 mb-4">
-              <h3 className="text-sm font-semibold text-white mb-3">Active Filters</h3>
-              <div className="flex flex-wrap gap-2">
-                {selectedTags.map((tag) => (
-                  <button
-                    key={tag.name}
-                    onClick={() => removeTag(tag.name)}
-                    className="bg-blue-900/50 border border-blue-700 text-blue-200 px-2 py-1 rounded text-xs hover:bg-blue-900 transition flex items-center gap-1"
-                  >
-                    <span>{tag.name}</span>
-                    <X size={12} />
-                  </button>
-                ))}
+      <Separator />
+
+      {/* Tags by Type */}
+      <div className="space-y-5">
+        {(['artist', 'copyright', 'character', 'general'] as TagType[]).map((type) => {
+          const tags = tagsByType[type] || [];
+          if (tags.length === 0) return null;
+
+          return (
+            <div key={type} className="space-y-2">
+              <h4 className={cn("text-xs font-semibold uppercase tracking-wider", typeColors[type])}>
+                {type}
+              </h4>
+              <div className="space-y-0.5">
+                {tags.map((tag) => {
+                  const isSelected = selectedTags.some(t => t.name === tag.name);
+                  return (
+                    <button
+                      key={tag.name}
+                      onClick={() => toggleTag(tag)}
+                      className={cn(
+                        "w-full text-left px-2.5 py-1.5 rounded-md text-sm transition-all flex items-center justify-between group",
+                        isSelected
+                          ? "bg-primary/15 text-primary font-medium"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      )}
+                    >
+                      <span className="truncate">{tag.name}</span>
+                      <span className={cn(
+                        "text-xs tabular-nums ml-2 transition-colors",
+                        isSelected ? "text-primary/70" : "text-muted-foreground/50 group-hover:text-muted-foreground"
+                      )}>
+                        {tag.count}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          )}
+          );
+        })}
+      </div>
+    </div>
+  );
 
-          {/* Tags by Type */}
-          <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-4 space-y-4">
-            {(['artist', 'copyright', 'character', 'general'] as TagType[]).map((type) => {
-              const tags = tagsByType[type] || [];
-              if (tags.length === 0) return null;
-              
-              const typeColors = {
-                artist: 'text-red-400',
-                copyright: 'text-purple-400',
-                character: 'text-green-400',
-                general: 'text-blue-400',
-                meta: 'text-yellow-400',
-              };
-
-              return (
-                <div key={type}>
-                  <h4 className={`text-xs font-semibold uppercase mb-2 ${typeColors[type]}`}>
-                    {type}
-                  </h4>
-                  <div className="space-y-1">
-                    {tags.map((tag) => (
-                      <button
-                        key={tag.name}
-                        onClick={() => toggleTag(tag)}
-                        className={`w-full text-left px-2 py-1 rounded text-sm transition flex items-center justify-between ${
-                          selectedTags.some(t => t.name === tag.name)
-                            ? 'bg-blue-900/50 text-blue-200'
-                            : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
-                        }`}
-                      >
-                        <span className="truncate">{tag.name}</span>
-                        <span className="text-xs text-zinc-600 ml-2">{tag.count}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+  return (
+    <div className="flex gap-6 px-4 sm:px-6 lg:px-8 py-8 max-w-[1800px] mx-auto">
+      {/* Sidebar - Desktop */}
+      <aside className="hidden lg:block w-64 shrink-0">
+        <div className="sticky top-20">
+          <ScrollArea className="h-[calc(100vh-120px)] pr-4">
+            <SidebarContent />
+          </ScrollArea>
         </div>
       </aside>
 
@@ -350,173 +400,69 @@ function PostsPageContent() {
       <div className="flex-1 min-w-0">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-white mb-2">Posts</h1>
-          <p className="text-zinc-400">
-            {totalImages > 0 ? `Now serving ${totalImages.toLocaleString()} images` : 'Discover amazing artwork from our community'}
+          <h1 className="text-3xl font-bold tracking-tight mb-1">Posts</h1>
+          <p className="text-muted-foreground">
+            {totalImages > 0 ? `${totalImages.toLocaleString()} images` : 'Discover amazing artwork'}
           </p>
         </div>
 
-        {/* Filters */}
-        <div className="bg-zinc-900 rounded-lg shadow-sm p-4 mb-6 border border-zinc-800">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <button
-                onClick={() => setShowMobileFilters(!showMobileFilters)}
-                className="lg:hidden flex items-center gap-2 px-3 h-10 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-300 hover:text-white transition flex-1 sm:flex-none justify-center"
-              >
-                <Filter size={16} />
-                Filters
-              </button>
+        {/* Filters Bar */}
+        <div className="flex items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-2">
+            {/* Mobile Filter Button */}
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="lg:hidden gap-2">
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Filters
+                  {selectedTags.length > 0 && (
+                    <Badge variant="secondary" className="ml-1 h-5 px-1.5">
+                      {selectedTags.length}
+                    </Badge>
+                  )}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-80">
+                <SheetHeader>
+                  <SheetTitle>Filters</SheetTitle>
+                </SheetHeader>
+                <ScrollArea className="h-[calc(100vh-100px)] mt-6 pr-4">
+                  <SidebarContent />
+                </ScrollArea>
+              </SheetContent>
+            </Sheet>
 
-              <div className="relative flex-1 sm:flex-none">
-                <select
-                  value={sort}
-                  onChange={(e) => updateUrl(undefined, e.target.value, 1)}
-                  className="w-full sm:w-auto appearance-none px-3 h-10 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-center"
-                >
-                  <option value="newest">Newest</option>
-                  <option value="popular">Popular</option>
-                  <option value="favorites">Favorited</option>
-                  <option value="views">Viewed</option>
-                </select>
-              </div>
-            </div>
+            {/* Sort Select */}
+            <Select value={sort} onValueChange={(value) => updateUrl(undefined, value, 1)}>
+              <SelectTrigger className="w-[140px] h-9">
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="newest">Newest</SelectItem>
+                <SelectItem value="popular">Popular</SelectItem>
+                <SelectItem value="favorites">Most Favorited</SelectItem>
+                <SelectItem value="views">Most Viewed</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* Mobile Filters Panel */}
-          {showMobileFilters && (
-            <div className="lg:hidden mt-4 pt-4 border-t border-zinc-800 space-y-6">
-              {/* Tag Search */}
-              <div>
-                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                  <Search size={16} />
-                  Search Tags
-                </h3>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    placeholder="Type to search..."
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  {showSuggestions && tagSuggestions.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl max-h-64 overflow-y-auto">
-                      {tagSuggestions.map((tag) => {
-                        const typeColors = {
-                          artist: 'text-red-400',
-                          copyright: 'text-purple-400',
-                          character: 'text-green-400',
-                          general: 'text-blue-400',
-                          meta: 'text-yellow-400',
-                        };
-                        return (
-                          <button
-                            key={tag.name}
-                            onClick={() => addTag(tag)}
-                            className="w-full px-3 py-2 text-left hover:bg-zinc-700 transition flex items-center justify-between"
-                          >
-                            <span className="text-sm text-white">{tag.name}</span>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs ${typeColors[tag.type || 'general']}`}>
-                                {tag.type || 'general'}
-                              </span>
-                              <span className="text-xs text-zinc-500">{tag.count}</span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Content Ratings */}
-              <div>
-                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                  <Shield size={16} />
-                  Content Rating
-                </h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { rating: 'safe' as Rating, icon: Shield, label: 'Safe', color: 'text-green-400' },
-                    { rating: 'questionable' as Rating, icon: AlertTriangle, label: 'Quest.', color: 'text-yellow-400' },
-                    { rating: 'explicit' as Rating, icon: Ban, label: 'Explicit', color: 'text-red-400' },
-                  ].map(({ rating, icon: Icon, label, color }) => (
-                    <button
-                      key={rating}
-                      onClick={() => toggleRating(rating)}
-                      className={`flex flex-col items-center justify-center gap-1 px-2 py-2 rounded transition ${
-                        selectedRatings.includes(rating)
-                          ? 'bg-zinc-800 border border-zinc-700'
-                          : 'bg-zinc-900/50 border border-zinc-800/50 opacity-40'
-                      }`}
-                    >
-                      <Icon size={16} className={color} />
-                      <span className="text-xs text-zinc-300">{label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Active Filters */}
-              {selectedTags.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-white mb-3">Active Filters</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedTags.map((tag) => (
-                      <button
-                        key={tag.name}
-                        onClick={() => removeTag(tag.name)}
-                        className="bg-blue-900/50 border border-blue-700 text-blue-200 px-2 py-1 rounded text-xs hover:bg-blue-900 transition flex items-center gap-1"
-                      >
-                        <span>{tag.name}</span>
-                        <X size={12} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
+          {/* Active filter badges on desktop */}
+          {selectedTags.length > 0 && (
+            <div className="hidden md:flex items-center gap-2 flex-wrap justify-end">
+              {selectedTags.slice(0, 3).map((tag) => (
+                <Badge
+                  key={tag.name}
+                  variant="secondary"
+                  className="pl-2 pr-1 py-1 gap-1 cursor-pointer"
+                  onClick={() => removeTag(tag.name)}
+                >
+                  {tag.name}
+                  <X className="h-3 w-3" />
+                </Badge>
+              ))}
+              {selectedTags.length > 3 && (
+                <span className="text-xs text-muted-foreground">+{selectedTags.length - 3} more</span>
               )}
-
-              {/* Tags by Type */}
-              <div className="space-y-4">
-                {(['artist', 'copyright', 'character', 'general'] as TagType[]).map((type) => {
-                  const tags = tagsByType[type] || [];
-                  if (tags.length === 0) return null;
-                  
-                  const typeColors = {
-                    artist: 'text-red-400',
-                    copyright: 'text-purple-400',
-                    character: 'text-green-400',
-                    general: 'text-blue-400',
-                    meta: 'text-yellow-400',
-                  };
-
-                  return (
-                    <div key={type}>
-                      <h4 className={`text-xs font-semibold uppercase mb-2 ${typeColors[type]}`}>
-                        {type}
-                      </h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {tags.map((tag) => (
-                          <button
-                            key={tag.name}
-                            onClick={() => toggleTag(tag)}
-                            className={`w-full text-left px-2 py-1 rounded text-sm transition flex items-center justify-between ${
-                              selectedTags.some(t => t.name === tag.name)
-                                ? 'bg-blue-900/50 text-blue-200'
-                                : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-white'
-                            }`}
-                          >
-                            <span className="truncate">{tag.name}</span>
-                            <span className="text-xs text-zinc-600 ml-2">{tag.count}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
           )}
         </div>
@@ -524,16 +470,20 @@ function PostsPageContent() {
         {/* Loading */}
         {loading ? (
           <div className="flex justify-center items-center py-20">
-            <Loader2 className="animate-spin text-blue-500" size={48} />
+            <Loader2 className="animate-spin text-primary h-10 w-10" />
           </div>
         ) : images.length === 0 ? (
           <div className="text-center py-20">
-            <p className="text-zinc-500 text-lg">No images found</p>
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+              <Sparkles className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <p className="text-muted-foreground text-lg">No images found</p>
+            <p className="text-sm text-muted-foreground/70 mt-1">Try adjusting your filters</p>
           </div>
         ) : (
           <>
             {/* Image Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6 mb-8">
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 mb-8">
               {images.map((image) => (
                 <ImageCard key={image._id.toString()} image={image} />
               ))}
@@ -541,26 +491,30 @@ function PostsPageContent() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex justify-center items-center gap-4">
-                <button
+              <div className="flex justify-center items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => updateUrl(undefined, undefined, Math.max(1, page - 1))}
                   disabled={page === 1}
-                  className="px-4 py-2 bg-zinc-900 border border-zinc-700 rounded-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-zinc-300"
                 >
-                  <ChevronLeft size={20} />
+                  <ChevronLeft className="h-4 w-4 mr-1" />
                   Previous
-                </button>
-                <span className="text-zinc-300">
-                  Page {page} of {totalPages}
-                </span>
-                <button
+                </Button>
+                <div className="flex items-center gap-1 px-2">
+                  <span className="text-sm text-muted-foreground">
+                    Page <span className="font-medium text-foreground">{page}</span> of <span className="font-medium text-foreground">{totalPages}</span>
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => updateUrl(undefined, undefined, Math.min(totalPages, page + 1))}
                   disabled={page === totalPages}
-                  className="px-4 py-2 bg-zinc-900 border border-zinc-700 rounded-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-zinc-300"
                 >
                   Next
-                  <ChevronRight size={20} />
-                </button>
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
               </div>
             )}
           </>
@@ -572,7 +526,11 @@ function PostsPageContent() {
 
 export default function PostsPage() {
   return (
-    <Suspense fallback={<div className="w-full h-screen flex items-center justify-center"><Loader2 className="animate-spin" size={40} /></div>}>
+    <Suspense fallback={
+      <div className="w-full h-screen flex items-center justify-center">
+        <Loader2 className="animate-spin h-10 w-10 text-primary" />
+      </div>
+    }>
       <PostsPageContent />
     </Suspense>
   );

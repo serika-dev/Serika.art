@@ -4,7 +4,11 @@ import { useState, useEffect } from 'react';
 import { Tag as TagModel } from '@/lib/models';
 import axios from 'axios';
 import Link from 'next/link';
-import { Hash, TrendingUp } from 'lucide-react';
+import { Hash, Search, Loader2, Sparkles } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 
@@ -37,99 +41,106 @@ export default function TagsPage() {
     }
   };
 
-  const getTagTypeColor = (type: TagType) => {
-    switch (type) {
-      case 'artist':
-        return 'bg-red-900/30 text-red-200 border-red-800 hover:bg-red-900/50';
-      case 'copyright':
-        return 'bg-purple-900/30 text-purple-200 border-purple-800 hover:bg-purple-900/50';
-      case 'character':
-        return 'bg-green-900/30 text-green-200 border-green-800 hover:bg-green-900/50';
-      case 'general':
-        return 'bg-blue-900/30 text-blue-200 border-blue-800 hover:bg-blue-900/50';
-      case 'meta':
-        return 'bg-yellow-900/30 text-yellow-200 border-yellow-800 hover:bg-yellow-900/50';
-      default:
-        return 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700';
-    }
+  const tagTypeStyles: Record<TagType, string> = {
+    artist: 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30',
+    copyright: 'bg-purple-500/10 text-purple-400 border-purple-500/20 hover:bg-purple-500/20 hover:border-purple-500/30',
+    character: 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20 hover:border-green-500/30',
+    general: 'bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20 hover:border-blue-500/30',
+    meta: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20 hover:border-yellow-500/30',
   };
 
-  const filterOptions: { value: TagType | 'all'; label: string; icon?: any }[] = [
-    { value: 'all', label: 'All Tags', icon: Hash },
-    { value: 'general', label: 'General' },
-    { value: 'artist', label: 'Artist' },
-    { value: 'character', label: 'Character' },
-    { value: 'copyright', label: 'Copyright' },
-    { value: 'meta', label: 'Meta' },
+  const filterOptions: { value: TagType | 'all'; label: string; color?: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'general', label: 'General', color: 'text-blue-400' },
+    { value: 'artist', label: 'Artist', color: 'text-red-400' },
+    { value: 'character', label: 'Character', color: 'text-green-400' },
+    { value: 'copyright', label: 'Copyright', color: 'text-purple-400' },
+    { value: 'meta', label: 'Meta', color: 'text-yellow-400' },
   ];
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Header */}
       <div className="mb-8">
-        <h1 className="text-4xl font-bold text-white mb-2 flex items-center gap-3">
-          <Hash size={36} className="text-blue-500" />
-          Tags
-        </h1>
-        <p className="text-zinc-400">Browse and search tags</p>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="p-2 rounded-lg bg-primary/10">
+            <Hash className="h-7 w-7 text-primary" />
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight">Tags</h1>
+        </div>
+        <p className="text-muted-foreground">Browse and search all available tags</p>
       </div>
 
       {/* Search and Filters */}
-      <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
-        <div className="flex flex-col gap-4">
-          {/* Search Input */}
-          <input
+      <div className="space-y-4 mb-8">
+        {/* Search Input */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
             type="text"
             placeholder="Search tags..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            className="pl-10 h-11 bg-background"
           />
+        </div>
 
-          {/* Filter Buttons */}
-          <div className="flex flex-wrap gap-2">
-            {filterOptions.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => setFilter(option.value)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition flex items-center gap-2 ${
-                  filter === option.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                }`}
-              >
-                {option.icon && <option.icon size={16} />}
-                {option.label}
-              </button>
-            ))}
-          </div>
+        {/* Filter Buttons */}
+        <div className="flex flex-wrap gap-2">
+          {filterOptions.map((option) => (
+            <Button
+              key={option.value}
+              variant={filter === option.value ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilter(option.value)}
+              className={cn(
+                "transition-all",
+                filter !== option.value && option.color && option.color
+              )}
+            >
+              {option.label}
+            </Button>
+          ))}
         </div>
       </div>
 
+      {/* Results count */}
+      {!loading && tags.length > 0 && (
+        <p className="text-sm text-muted-foreground mb-4">
+          Showing <span className="font-medium text-foreground">{tags.length}</span> tags
+        </p>
+      )}
+
       {/* Tags Grid */}
       {loading ? (
-        <div className="flex justify-center items-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="flex justify-center items-center py-20">
+          <Loader2 className="animate-spin h-10 w-10 text-primary" />
         </div>
       ) : tags.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-zinc-500">No tags found</p>
+        <div className="text-center py-20">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+            <Sparkles className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <p className="text-muted-foreground text-lg">No tags found</p>
+          <p className="text-sm text-muted-foreground/70 mt-1">Try a different search term</p>
         </div>
       ) : (
-        <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-6">
-          <div className="flex flex-wrap gap-3">
-            {tags.map((tag) => (
-              <Link
-                key={tag._id.toString()}
-                href={`/posts?tags=${encodeURIComponent(tag.name)}`}
-                className={`${getTagTypeColor(tag.type)} border px-4 py-2 rounded-lg transition flex items-center gap-2 group`}
-              >
-                <span className="font-medium">{tag.name}</span>
-                <span className="text-xs opacity-75 group-hover:opacity-100">
-                  ({tag.count})
-                </span>
-              </Link>
-            ))}
-          </div>
+        <div className="flex flex-wrap gap-2">
+          {tags.map((tag) => (
+            <Link
+              key={tag._id.toString()}
+              href={`/posts?tags=${encodeURIComponent(tag.name)}`}
+              className={cn(
+                "px-3 py-1.5 rounded-md border text-sm font-medium transition-all inline-flex items-center gap-2",
+                tagTypeStyles[tag.type]
+              )}
+            >
+              <span>{tag.name}</span>
+              <span className="text-xs opacity-60">
+                {tag.count}
+              </span>
+            </Link>
+          ))}
         </div>
       )}
     </div>

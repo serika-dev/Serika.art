@@ -3,7 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
-import { Key, Plus, Trash2, Copy, Check, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Key, Plus, Trash2, Copy, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import { cn } from '@/lib/utils';
 
 interface ApiKey {
   _id: string;
@@ -145,8 +152,8 @@ export default function ApiKeysPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="animate-spin h-10 w-10 text-primary" />
       </div>
     );
   }
@@ -156,85 +163,88 @@ export default function ApiKeysPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <Key className="text-indigo-400" />
-              API Keys
-            </h1>
-            <p className="text-gray-400 mt-2">
-              Manage your API keys for programmatic access to Serika
-            </p>
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 rounded-lg bg-primary/10">
+              <Key className="h-7 w-7 text-primary" />
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight">API Keys</h1>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg transition"
-          >
-            <Plus size={20} />
-            Create Key
-          </button>
+          <p className="text-muted-foreground">
+            Manage your API keys for programmatic access to Serika
+          </p>
         </div>
+        <Button onClick={() => setShowCreateModal(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Create Key
+        </Button>
+      </div>
 
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 mb-6 flex items-center gap-3">
-            <AlertCircle className="text-red-400" />
-            <span className="text-red-400">{error}</span>
-          </div>
-        )}
+      {error && (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 mb-6 flex items-center gap-3">
+          <AlertCircle className="h-5 w-5 text-destructive" />
+          <span className="text-destructive">{error}</span>
+        </div>
+      )}
 
-        {/* New key display */}
-        {newKey && (
-          <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 mb-6">
+      {/* New key display */}
+      {newKey && (
+        <Card className="mb-6 border-green-500/20 bg-green-500/5">
+          <CardContent className="pt-6">
             <h3 className="font-semibold text-green-400 mb-2">New API Key Created!</h3>
-            <p className="text-gray-400 text-sm mb-3">
+            <p className="text-muted-foreground text-sm mb-3">
               Copy this key now - it will not be shown again.
             </p>
-            <div className="flex items-center gap-2 bg-black/50 rounded p-3">
-              <code className="flex-1 text-green-300 break-all">{newKey}</code>
-              <button
+            <div className="flex items-center gap-2 bg-background rounded-lg p-3 border">
+              <code className="flex-1 text-green-400 break-all text-sm">{newKey}</code>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => copyToClipboard(newKey, 'new')}
-                className="p-2 hover:bg-white/10 rounded transition"
               >
                 {copiedId === 'new' ? (
-                  <Check size={18} className="text-green-400" />
+                  <Check className="h-4 w-4 text-green-400" />
                 ) : (
-                  <Copy size={18} />
+                  <Copy className="h-4 w-4" />
                 )}
-              </button>
+              </Button>
             </div>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setNewKey(null)}
-              className="mt-3 text-sm text-gray-400 hover:text-white"
+              className="mt-3 text-muted-foreground"
             >
               I've saved this key
-            </button>
-          </div>
-        )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
-        {/* Keys list */}
-        {keys.length === 0 ? (
-          <div className="bg-[#111] rounded-lg p-8 text-center">
-            <Key size={48} className="mx-auto text-gray-600 mb-4" />
+      {/* Keys list */}
+      {keys.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Key className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
             <h3 className="text-xl font-semibold mb-2">No API Keys</h3>
-            <p className="text-gray-400">Create your first API key to get started.</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {keys.map((key) => (
-              <div
-                key={key._id}
-                className="bg-[#111] border border-white/10 rounded-lg p-4"
-              >
+            <p className="text-muted-foreground">Create your first API key to get started.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {keys.map((key) => (
+            <Card key={key._id}>
+              <CardContent className="pt-6">
                 <div className="flex items-start justify-between">
                   <div>
                     <h3 className="font-semibold text-lg">{key.name}</h3>
-                    <p className="text-gray-400 text-sm mt-1">
+                    <p className="text-muted-foreground text-sm mt-1">
                       Created: {new Date(key.createdAt).toLocaleDateString()}
                     </p>
                     {key.lastUsedAt && (
-                      <p className="text-gray-400 text-sm">
+                      <p className="text-muted-foreground text-sm">
                         Last used: {new Date(key.lastUsedAt).toLocaleDateString()}
                       </p>
                     )}
@@ -245,134 +255,130 @@ export default function ApiKeysPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-400 text-sm">
+                    <span className="text-muted-foreground text-sm">
                       {key.usageCount.toLocaleString()} uses
                     </span>
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => deleteKey(key._id)}
-                      className="p-2 text-red-400 hover:bg-red-400/10 rounded transition"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
                     >
-                      <Trash2 size={18} />
-                    </button>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-3 flex flex-wrap gap-1.5">
                   {key.permissions.map((perm) => (
-                    <span
-                      key={perm}
-                      className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded"
-                    >
+                    <Badge key={perm} variant="secondary" className="text-xs">
                       {PERMISSION_LABELS[perm] || perm}
-                    </span>
+                    </Badge>
                   ))}
                 </div>
-                <div className="mt-2 text-gray-500 text-sm">
+                <p className="mt-2 text-muted-foreground text-sm">
                   Rate limit: {key.rateLimit} requests/min
-                </div>
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Create Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <Card className="max-w-md w-full">
+            <CardHeader>
+              <CardTitle>Create API Key</CardTitle>
+              <CardDescription>Create a new API key with custom permissions</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input
+                  type="text"
+                  value={createForm.name}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, name: e.target.value })
+                  }
+                  placeholder="My API Key"
+                />
               </div>
-            ))}
-          </div>
-        )}
 
-        {/* Create Modal */}
-        {showCreateModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-[#111] border border-white/10 rounded-lg max-w-md w-full p-6">
-              <h2 className="text-2xl font-bold mb-4">Create API Key</h2>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Name</label>
-                  <input
-                    type="text"
-                    value={createForm.name}
-                    onChange={(e) =>
-                      setCreateForm({ ...createForm, name: e.target.value })
-                    }
-                    placeholder="My API Key"
-                    className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Permissions</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {Object.entries(PERMISSION_LABELS).map(([perm, label]) => (
-                      <label
-                        key={perm}
-                        className="flex items-center gap-2 text-sm cursor-pointer"
+              <div className="space-y-2">
+                <Label>Permissions</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {Object.entries(PERMISSION_LABELS).map(([perm, label]) => (
+                    <div key={perm} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={perm}
+                        checked={createForm.permissions.includes(perm)}
+                        onCheckedChange={() => togglePermission(perm)}
+                      />
+                      <Label
+                        htmlFor={perm}
+                        className={cn(
+                          "text-sm font-normal cursor-pointer",
+                          !createForm.permissions.includes(perm) && "text-muted-foreground"
+                        )}
                       >
-                        <input
-                          type="checkbox"
-                          checked={createForm.permissions.includes(perm)}
-                          onChange={() => togglePermission(perm)}
-                          className="rounded"
-                        />
-                        <span className={createForm.permissions.includes(perm) ? 'text-white' : 'text-gray-400'}>
-                          {label}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Rate Limit (requests/minute)
-                  </label>
-                  <input
-                    type="number"
-                    value={createForm.rateLimit}
-                    onChange={(e) =>
-                      setCreateForm({
-                        ...createForm,
-                        rateLimit: parseInt(e.target.value) || 60,
-                      })
-                    }
-                    min={10}
-                    max={120}
-                    className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Expiration (days, 0 = never)
-                  </label>
-                  <input
-                    type="number"
-                    value={createForm.expiresIn}
-                    onChange={(e) =>
-                      setCreateForm({
-                        ...createForm,
-                        expiresIn: parseInt(e.target.value) || 0,
-                      })
-                    }
-                    min={0}
-                    className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2 focus:outline-none focus:border-indigo-500"
-                  />
+                        {label}
+                      </Label>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-gray-400 hover:text-white transition"
-                >
+              <div className="space-y-2">
+                <Label>Rate Limit (requests/minute)</Label>
+                <Input
+                  type="number"
+                  value={createForm.rateLimit}
+                  onChange={(e) =>
+                    setCreateForm({
+                      ...createForm,
+                      rateLimit: parseInt(e.target.value) || 60,
+                    })
+                  }
+                  min={10}
+                  max={120}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Expiration (days, 0 = never)</Label>
+                <Input
+                  type="number"
+                  value={createForm.expiresIn}
+                  onChange={(e) =>
+                    setCreateForm({
+                      ...createForm,
+                      expiresIn: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  min={0}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <Button variant="outline" onClick={() => setShowCreateModal(false)}>
                   Cancel
-                </button>
-                <button
-                  onClick={createKey}
-                  disabled={creating}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition disabled:opacity-50"
-                >
-                  {creating ? 'Creating...' : 'Create Key'}
-                </button>
+                </Button>
+                <Button onClick={createKey} disabled={creating}>
+                  {creating ? (
+                    <>
+                      <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Key'
+                  )}
+                </Button>
               </div>
-            </div>
-          </div>
-        )}
-      </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
