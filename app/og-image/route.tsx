@@ -2,7 +2,9 @@ import { ImageResponse } from "next/og";
 import { getCollection } from "@/lib/db";
 
 export const runtime = "nodejs";
-export const revalidate = 3600; // Revalidate every hour
+// No caching - always get a fresh random image
+export const revalidate = 0;
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
@@ -10,12 +12,14 @@ export async function GET() {
 
     let backgroundImage: string | null = null;
 
-    // Get a random safe 16:9 image
+    // Get a random safe 16:9 image (ensure width/height exist and are valid)
     const images = await imagesCollection
       .aggregate([
         {
           $match: {
             rating: "safe",
+            width: { $exists: true, $gt: 0 },
+            height: { $exists: true, $gt: 0 },
           },
         },
         {

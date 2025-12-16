@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
       tagMap = new Map(tagDocs.map(t => [t._id.toString(), t]));
     }
 
-    // Map images to replace tag IDs with populated tag data
+    // Map images to replace tag IDs with populated tag data (including count)
     const populatedImages = images.map((img: any) => ({
       ...img,
       tags: (img.tags || []).map((tagId: any) => {
@@ -121,6 +121,7 @@ export async function GET(request: NextRequest) {
           _id: tagId,
           name: tag?.name || 'unknown',
           type: tag?.type || 'general',
+          count: tag?.count || 0,
         };
       }),
     }));

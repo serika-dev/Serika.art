@@ -85,25 +85,24 @@ function PostsPageContent() {
   };
 
   const extractTagsFromImages = (pageImages: Image[]) => {
-    const tagCounts: Record<string, { count: number; type: TagType; _id: string }> = {};
+    const tagMap: Record<string, { count: number; type: TagType; _id: string }> = {};
     
-    // Collect all tags from current page images
+    // Collect unique tags from current page images (using database count, not page count)
     pageImages.forEach(image => {
       image.tags.forEach(tag => {
         const tagName = typeof tag === 'string' ? tag : (tag && 'name' in tag) ? (tag as any).name : null;
         const tagType = typeof tag === 'object' && 'type' in tag ? (tag as any).type : 'general';
         const tagId = (tag && typeof tag === 'object' && '_id' in tag) ? (tag as any)._id : null;
+        // Use the database count, not page count
+        const tagCount = (tag && typeof tag === 'object' && 'count' in tag) ? (tag as any).count : 0;
         
-        if (tagName && tagId) {
-          if (!tagCounts[tagName]) {
-            tagCounts[tagName] = { count: 0, type: tagType || 'general', _id: tagId };
-          }
-          tagCounts[tagName].count++;
+        if (tagName && tagId && !tagMap[tagName]) {
+          tagMap[tagName] = { count: tagCount, type: tagType || 'general', _id: tagId };
         }
       });
     });
 
-    // Organize by type with minimums
+    // Organize by type
     const organized: Record<TagType, any[]> = {
       general: [],
       artist: [],
@@ -112,7 +111,7 @@ function PostsPageContent() {
       meta: [],
     };
 
-    Object.entries(tagCounts).forEach(([name, data]) => {
+    Object.entries(tagMap).forEach(([name, data]) => {
       organized[data.type].push({
         name,
         type: data.type,
@@ -121,7 +120,7 @@ function PostsPageContent() {
       });
     });
 
-    // Sort by count and limit
+    // Sort by total count (database count) and limit
     organized.artist = organized.artist.sort((a, b) => b.count - a.count).slice(0, 5);
     organized.character = organized.character.sort((a, b) => b.count - a.count).slice(0, 5);
     organized.copyright = organized.copyright.sort((a, b) => b.count - a.count).slice(0, 5);
