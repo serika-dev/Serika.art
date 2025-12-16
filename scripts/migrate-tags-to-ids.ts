@@ -12,6 +12,7 @@ interface OldImage {
   tags: Array<{ name: string; type: string }>;
 }
 
+// Note: This script is compatible with sequential IDs as it only updates tag references
 async function migrateTagsToIds() {
   const client = new MongoClient(MONGO_URI);
   

@@ -26,7 +26,7 @@ export default function ImageCard({ image }: ImageCardProps) {
   }
 
   return (
-    <Link href={`/image/${image._id}`} className="group block">
+    <Link href={`/image/${image.sequentialId}`} className="group block">
       <Card className="overflow-hidden border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 transition-all duration-300 hover:shadow-lg">
         <div className="relative aspect-square overflow-hidden bg-zinc-950">
           <NextImage

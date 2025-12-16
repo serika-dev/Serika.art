@@ -85,6 +85,8 @@ function shuffle<T>(array: T[]): T[] {
   return arr;
 }
 
+// Note: This script is compatible with sequential IDs as it only updates createdAt timestamps
+
 // Generate random time on a specific day
 function randomTimeOnDay(date: Date): Date {
   const day = new Date(date);

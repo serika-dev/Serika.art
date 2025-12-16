@@ -22,6 +22,7 @@ export interface Tag {
 
 export interface Image {
   _id: ObjectId;
+  sequentialId: number;
   userId: ObjectId;
   username: string;
   url: string;

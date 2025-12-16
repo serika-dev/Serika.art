@@ -128,8 +128,13 @@ async function importDanbooruPost(post: DanbooruPost) {
       }
     }
 
+    // Get the next sequential ID
+    const lastImage = await imagesCollection.findOne({}, { sort: { sequentialId: -1 } });
+    const nextSequentialId = lastImage?.sequentialId ? lastImage.sequentialId + 1 : 1;
+
     // Create image document with full metadata
     const imageDoc = {
+      sequentialId: nextSequentialId,
       userId: null, // Anonymous upload
       username: 'Anonymous',
       url: mainUrl,

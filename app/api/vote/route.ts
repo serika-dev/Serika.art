@@ -8,7 +8,8 @@ export async function POST(request: NextRequest) {
     const user = await requireAuth();
     const { imageId, type } = await request.json();
 
-    if (!ObjectId.isValid(imageId)) {
+    const sequentialId = parseInt(imageId, 10);
+    if (isNaN(sequentialId)) {
       return NextResponse.json(
         { success: false, error: 'Invalid image ID' },
         { status: 400 }
@@ -25,7 +26,16 @@ export async function POST(request: NextRequest) {
     const votesCollection = await getCollection('votes');
     const imagesCollection = await getCollection('images');
 
-    const imageObjectId = new ObjectId(imageId);
+    // Get the image by sequential ID
+    const image = await imagesCollection.findOne({ sequentialId });
+    if (!image) {
+      return NextResponse.json(
+        { success: false, error: 'Image not found' },
+        { status: 404 }
+      );
+    }
+
+    const imageObjectId = image._id;
     const userObjectId = new ObjectId(user.id);
 
     // Check if user already voted

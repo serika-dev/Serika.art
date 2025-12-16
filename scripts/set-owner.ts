@@ -4,6 +4,7 @@ const MONGODB_URI = process.env.MONGO_URI!;
 const DB_NAME = process.env.MONGO_DB!;
 const OWNER_ID = '692ad0df032c62f79b57a08d';
 
+// Note: This script is compatible with sequential IDs as it only updates user ranks
 async function setOwner() {
   const client = new MongoClient(MONGODB_URI);
   

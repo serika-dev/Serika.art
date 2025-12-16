@@ -8,6 +8,8 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
+// Note: This script is compatible with sequential IDs
+// After removing images, you may want to re-run add-sequential-ids.ts to maintain sequential order
 async function removeAnonImages() {
   const client = new MongoClient(MONGO_URI);
 

@@ -10,9 +10,26 @@ export async function GET(
     const { id } = await params;
     const { ObjectId } = await import('mongodb');
     
+    const sequentialId = parseInt(id, 10);
+    if (isNaN(sequentialId)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid image ID' },
+        { status: 400 }
+      );
+    }
+
+    const imagesCollection = await getCollection('images');
+    const image = await imagesCollection.findOne({ sequentialId });
+    if (!image) {
+      return NextResponse.json(
+        { success: false, error: 'Image not found' },
+        { status: 404 }
+      );
+    }
+    
     const commentsCollection = await getCollection('comments');
     const comments = await commentsCollection
-      .find({ imageId: new ObjectId(id) })
+      .find({ imageId: image._id })
       .sort({ createdAt: 1 })
       .toArray();
     
@@ -73,6 +90,23 @@ export async function POST(
 
     const { ObjectId } = await import('mongodb');
     
+    const sequentialId = parseInt(id, 10);
+    if (isNaN(sequentialId)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid image ID' },
+        { status: 400 }
+      );
+    }
+
+    const imagesCollection = await getCollection('images');
+    const image = await imagesCollection.findOne({ sequentialId });
+    if (!image) {
+      return NextResponse.json(
+        { success: false, error: 'Image not found' },
+        { status: 404 }
+      );
+    }
+    
     // Get user details
     const usersCollection = await getCollection('users');
     const userDoc = await usersCollection.findOne({ _id: new ObjectId(user.id) });
@@ -87,7 +121,7 @@ export async function POST(
     // Create comment
     const commentsCollection = await getCollection('comments');
     const comment = {
-      imageId: new ObjectId(id),
+      imageId: image._id,
       userId: new ObjectId(user.id),
       username: userDoc.username,
       avatarUrl: userDoc.avatarUrl,

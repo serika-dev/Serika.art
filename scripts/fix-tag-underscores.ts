@@ -8,6 +8,7 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
+// Note: This script is compatible with sequential IDs as it only updates tag names and references
 async function fixTagNamesAndImages() {
   const client = new MongoClient(MONGO_URI);
 

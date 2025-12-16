@@ -51,6 +51,7 @@ async function saveThumbnail(buffer: Buffer, filename: string) {
   return uploadToR2(buffer, sanitized, 'image/jpeg', 'thumbnails');
 }
 
+// Note: This script is compatible with sequential IDs as it only updates thumbnailUrl field
 async function processImage(doc: any, collection: any, index: number, total: number) {
   if (!doc.url) {
     console.warn(`[${index}/${total}] Skipping ${doc._id} - no url`);

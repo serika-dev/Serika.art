@@ -11,14 +11,15 @@ export async function GET(
     const collection = await getCollection('images');
     const tagsCollection = await getCollection('tags');
     
-    if (!ObjectId.isValid(id)) {
+    const sequentialId = parseInt(id, 10);
+    if (isNaN(sequentialId)) {
       return NextResponse.json(
         { success: false, error: 'Invalid image ID' },
         { status: 400 }
       );
     }
 
-    const image = await collection.findOne({ _id: new ObjectId(id) });
+    const image = await collection.findOne({ sequentialId });
 
     if (!image) {
       return NextResponse.json(
@@ -52,7 +53,7 @@ export async function GET(
 
     // Increment view count
     await collection.updateOne(
-      { _id: new ObjectId(id) },
+      { sequentialId },
       { $inc: { views: 1 } }
     );
 
@@ -80,14 +81,15 @@ export async function DELETE(
     const collection = await getCollection('images');
     const tagsCollection = await getCollection('tags');
     
-    if (!ObjectId.isValid(id)) {
+    const sequentialId = parseInt(id, 10);
+    if (isNaN(sequentialId)) {
       return NextResponse.json(
         { success: false, error: 'Invalid image ID' },
         { status: 400 }
       );
     }
 
-    const image = await collection.findOne({ _id: new ObjectId(id) });
+    const image = await collection.findOne({ sequentialId });
 
     if (!image) {
       return NextResponse.json(
@@ -104,7 +106,7 @@ export async function DELETE(
       );
     }
 
-    await collection.deleteOne({ _id: new ObjectId(id) });
+    await collection.deleteOne({ sequentialId });
 
     // Update tag counts
     const tags = image.tags || [];

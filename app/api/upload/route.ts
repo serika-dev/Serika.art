@@ -149,8 +149,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const collection = await getCollection('images');
+    
+    // Get the next sequential ID
+    const lastImage = await collection.findOne({}, { sort: { sequentialId: -1 } });
+    const nextSequentialId = lastImage?.sequentialId ? lastImage.sequentialId + 1 : 1;
+    
     // Create image document
     const imageDoc = {
+      sequentialId: nextSequentialId,
       userId: user ? new ObjectId(user.id) : null,
       username: user ? user.username : 'Anonymous',
       url: imageUrl,
@@ -173,7 +180,6 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date(),
     };
 
-    const collection = await getCollection('images');
     const result = await collection.insertOne(imageDoc);
 
     // Update tag counts
