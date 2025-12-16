@@ -149,7 +149,12 @@ export async function POST(request: NextRequest) {
     // Get user info
     const user = await usersCollection.findOne({ _id: validation.apiKey!.userId });
 
+    // Get the next sequential ID
+    const lastImage = await imagesCollection.findOne({}, { sort: { sequentialId: -1 } });
+    const nextSequentialId = lastImage?.sequentialId ? lastImage.sequentialId + 1 : 1;
+
     const imageDoc = {
+      sequentialId: nextSequentialId,
       userId: validation.apiKey!.userId,
       username: user?.username || validation.apiKey!.username,
       url: imageUrl,
@@ -185,6 +190,7 @@ export async function POST(request: NextRequest) {
 
     return apiResponse({
       id: result.insertedId.toString(),
+      sequential_id: nextSequentialId,
       url: imageUrl,
       thumbnail_url: thumbnailUrl,
       width: metadata.width || 0,
