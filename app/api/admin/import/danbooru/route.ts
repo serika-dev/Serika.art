@@ -95,13 +95,13 @@ async function importDanbooruPost(post: DanbooruPost) {
     // Check if already imported
     const existing = await imagesCollection.findOne({ 'metadata.danbooruId': post.id });
     if (existing) {
-      return { success: false, error: 'Post already imported', postId: post.id };
+      return { success: false, error: 'Post already imported', postId: post.id, skipped: true };
     }
 
     // Download and upload image
     const fileUrl = post.file_url || post.large_file_url;
     if (!fileUrl) {
-      return { success: false, error: 'No file URL available', postId: post.id };
+      return { success: false, error: 'No file URL available (post may be deleted or restricted)', postId: post.id, skipped: true };
     }
 
     const { mainUrl, thumbnailUrl, width, height } = await downloadAndUploadImage(
@@ -237,6 +237,8 @@ export async function POST(request: NextRequest) {
               
               if (result.success) {
                 console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✓ Imported post ${post.id}`);
+              } else if ((result as any).skipped) {
+                console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ⊘ Skipped post ${post.id}:`, result.error);
               } else {
                 console.error(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✗ Failed to import post ${post.id}:`, result.error);
               }
@@ -360,6 +362,8 @@ export async function POST(request: NextRequest) {
               
               if (result.success) {
                 console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✓ Imported post ${post.id}`);
+              } else if ((result as any).skipped) {
+                console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ⊘ Skipped post ${post.id}:`, result.error);
               } else {
                 console.error(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✗ Failed to import post ${post.id}:`, result.error);
               }

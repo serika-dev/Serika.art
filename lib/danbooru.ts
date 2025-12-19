@@ -58,26 +58,52 @@ export async function fetchDanbooruPostsByTags(
     const rateLimit = hasAuth ? 100 : 1000;
     
     while (posts.length < limit) {
-      const response = await danbooruClient.get('/posts.json', {
-        params: {
-          tags,
-          limit: Math.min(200, limit - posts.length),
-          page,
-        },
-      });
-      
-      if (!response.data || response.data.length === 0) break;
-      
-      posts.push(...response.data);
-      page++;
-      
-      // Rate limiting
-      await new Promise((resolve) => setTimeout(resolve, rateLimit));
+      try {
+        const response = await danbooruClient.get('/posts.json', {
+          params: {
+            tags,
+            limit: Math.min(200, limit - posts.length),
+            page,
+          },
+        });
+        
+        if (!response.data || response.data.length === 0) break;
+        
+        posts.push(...response.data);
+        page++;
+        
+        // Rate limiting
+        await new Promise((resolve) => setTimeout(resolve, rateLimit));
+      } catch (pageError: any) {
+        // Handle specific HTTP errors
+        if (pageError.response?.status === 410) {
+          console.error(`Error fetching Danbooru posts by tags: HTTP 410 Gone - Resource deleted or unavailable for tags "${tags}"`);
+          break; // Stop pagination if resource is gone
+        } else if (pageError.response?.status === 421) {
+          console.error(`Error fetching Danbooru posts by tags: HTTP 421 User Throttled - Rate limit exceeded for tags "${tags}"`);
+          await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5s and retry
+          continue;
+        } else if (pageError.response) {
+          console.error(`Error fetching Danbooru posts by tags: HTTP ${pageError.response.status} for tags "${tags}":`, pageError.message);
+          break; // Stop on other HTTP errors
+        } else {
+          console.error(`Error fetching Danbooru posts by tags "${tags}":`, pageError.message);
+          throw pageError; // Re-throw network errors
+        }
+      }
     }
     
     return posts.slice(0, limit);
-  } catch (error) {
-    console.error('Error fetching Danbooru posts by tags:', error);
+  } catch (error: any) {
+    if (axios.isAxiosError(error)) {
+      console.error(`Error fetching Danbooru posts by tags: ${error.message}`, {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+      });
+    } else {
+      console.error('Error fetching Danbooru posts by tags:', error);
+    }
     return [];
   }
 }
