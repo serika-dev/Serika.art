@@ -17,6 +17,14 @@ import { ObjectId } from 'mongodb';
 const ACCOUNTS_API = process.env.ACCOUNTS_URL || 'https://accounts.serika.dev';
 const ACCOUNTS_KEY = process.env.ACCOUNTS_INTERNAL_KEY || '';
 
+interface ImportResult {
+  success: boolean;
+  error?: string;
+  postId: number;
+  imageId?: string;
+  skipped?: boolean;
+}
+
 async function checkAdminAuth(request: NextRequest) {
   try {
     const { getCurrentUser } = await import('@/lib/auth');
@@ -87,7 +95,7 @@ async function downloadAndUploadImage(
   };
 }
 
-async function importDanbooruPost(post: DanbooruPost) {
+async function importDanbooruPost(post: DanbooruPost): Promise<ImportResult> {
   try {
     const imagesCollection = await getCollection('images');
     const tagsCollection = await getCollection('tags');
@@ -237,7 +245,7 @@ export async function POST(request: NextRequest) {
               
               if (result.success) {
                 console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✓ Imported post ${post.id}`);
-              } else if ((result as any).skipped) {
+              } else if (result.skipped) {
                 console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ⊘ Skipped post ${post.id}:`, result.error);
               } else {
                 console.error(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✗ Failed to import post ${post.id}:`, result.error);
@@ -362,7 +370,7 @@ export async function POST(request: NextRequest) {
               
               if (result.success) {
                 console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✓ Imported post ${post.id}`);
-              } else if ((result as any).skipped) {
+              } else if (result.skipped) {
                 console.log(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ⊘ Skipped post ${post.id}:`, result.error);
               } else {
                 console.error(`[BACKGROUND IMPORT] [${i + 1}/${posts.length}] ✗ Failed to import post ${post.id}:`, result.error);
