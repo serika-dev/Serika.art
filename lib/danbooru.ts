@@ -15,6 +15,99 @@ const danbooruClient = axios.create({
     : undefined,
 });
 
+// Rate limiting - Danbooru allows 10 req/s with API key, 1 req/s without
+const hasAuth = !!DANBOORU_API_KEY;
+const MAX_CONCURRENT_REQUESTS = hasAuth ? 8 : 1; // Leave some headroom
+const MIN_REQUEST_INTERVAL = hasAuth ? 100 : 1000; // ms between requests
+
+// Request queue for proper rate limiting
+let activeRequests = 0;
+let lastRequestTime = 0;
+let rateLimitBackoff = 0;
+const requestQueue: Array<{
+  requestFn: () => Promise<any>;
+  resolve: (value: any) => void;
+  reject: (error: any) => void;
+  retries: number;
+}> = [];
+let processingQueue = false;
+
+async function processRequestQueue() {
+  if (processingQueue) return;
+  processingQueue = true;
+
+  while (requestQueue.length > 0) {
+    // Check if we can make more requests
+    if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      continue;
+    }
+
+    // Check rate limit backoff
+    if (rateLimitBackoff > Date.now()) {
+      const waitTime = rateLimitBackoff - Date.now();
+      console.log(`[DANBOORU] Global rate limit, waiting ${waitTime}ms...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      continue;
+    }
+
+    // Ensure minimum interval between requests
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+      await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL - timeSinceLastRequest));
+    }
+
+    const item = requestQueue.shift();
+    if (!item) continue;
+
+    lastRequestTime = Date.now();
+    activeRequests++;
+
+    // Execute request without blocking the queue
+    executeRequest(item);
+  }
+
+  processingQueue = false;
+}
+
+async function executeRequest(item: typeof requestQueue[0]) {
+  try {
+    const result = await item.requestFn();
+    item.resolve(result);
+  } catch (error: any) {
+    if (error.response?.status === 429 || error.response?.status === 421) {
+      // Rate limited - apply exponential backoff
+      const backoffTime = Math.min(1000 * Math.pow(2, 3 - item.retries), 30000);
+      console.log(`[DANBOORU] Rate limited (${item.retries} retries left), backoff ${backoffTime}ms`);
+      rateLimitBackoff = Date.now() + backoffTime;
+      
+      if (item.retries > 0) {
+        // Re-queue with reduced retries
+        requestQueue.unshift({ ...item, retries: item.retries - 1 });
+      } else {
+        item.reject(error);
+      }
+    } else if (error.response?.status === 410 || error.response?.status === 404) {
+      // Post deleted or not found - return null
+      item.resolve(null);
+    } else {
+      item.reject(error);
+    }
+  } finally {
+    activeRequests--;
+    // Trigger queue processing again
+    processRequestQueue();
+  }
+}
+
+async function rateLimitedRequest<T>(requestFn: () => Promise<T>, retries = 3): Promise<T> {
+  return new Promise((resolve, reject) => {
+    requestQueue.push({ requestFn, resolve, reject, retries });
+    processRequestQueue();
+  });
+}
+
 export interface DanbooruPost {
   id: number;
   image_width: number;
@@ -36,10 +129,14 @@ export interface DanbooruPost {
 
 export async function fetchDanbooruPost(postId: number): Promise<DanbooruPost | null> {
   try {
-    const response = await danbooruClient.get(`/posts/${postId}.json`);
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching Danbooru post:', error);
+    return await rateLimitedRequest(async () => {
+      const response = await danbooruClient.get(`/posts/${postId}.json`);
+      return response.data;
+    });
+  } catch (error: any) {
+    if (error.response?.status !== 429) {
+      console.error(`Error fetching Danbooru post ${postId}:`, error.message);
+    }
     return null;
   }
 }
@@ -50,64 +147,64 @@ export async function fetchDanbooruPostsByTags(
 ): Promise<DanbooruPost[]> {
   try {
     const posts: DanbooruPost[] = [];
-    let page = 1;
-    const hasAuth = !!DANBOORU_API_KEY;
     const unlimited = limit === 0;
-    
-    // With API key: 10 requests/second
-    // Without API key: 1 request/second
-    const rateLimit = hasAuth ? 100 : 1000;
     
     // Safety max to prevent infinite loops (100k posts max)
     const maxPosts = unlimited ? 100000 : limit;
     
+    // Use "before ID" pagination (page=b{id}) to bypass the 1000 page limit
+    // This allows fetching ALL posts, not just the first 1000
+    let beforeId: number | null = null;
+    
     while (posts.length < maxPosts) {
       try {
-        const response = await danbooruClient.get('/posts.json', {
-          params: {
-            tags,
-            limit: unlimited ? 200 : Math.min(200, limit - posts.length),
-            page,
-          },
+        const params: Record<string, any> = {
+          tags,
+          limit: unlimited ? 200 : Math.min(200, maxPosts - posts.length),
+        };
+        
+        // Use b{id} pagination for unlimited fetching
+        if (beforeId !== null) {
+          params.page = `b${beforeId}`;
+        }
+        
+        const response = await rateLimitedRequest(async () => {
+          return danbooruClient.get('/posts.json', {
+            params,
+          });
         });
         
-        if (!response.data || response.data.length === 0) break;
+        if (!response?.data || response.data.length === 0) break;
         
         posts.push(...response.data);
-        page++;
         
-        // Rate limiting
-        await new Promise((resolve) => setTimeout(resolve, rateLimit));
+        // Get the lowest ID for next page (posts are returned newest first)
+        const lastPost = response.data[response.data.length - 1];
+        beforeId = lastPost.id;
+        
+        console.log(`[DANBOORU] Fetched batch for "${tags}" (${posts.length} posts so far, next before ID: ${beforeId})`);
       } catch (pageError: any) {
         // Handle specific HTTP errors
         if (pageError.response?.status === 410) {
-          console.error(`Error fetching Danbooru posts by tags: HTTP 410 Gone - Resource deleted or unavailable for tags "${tags}"`);
-          break; // Stop pagination if resource is gone
-        } else if (pageError.response?.status === 421) {
-          console.error(`Error fetching Danbooru posts by tags: HTTP 421 User Throttled - Rate limit exceeded for tags "${tags}"`);
-          await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5s and retry
+          console.error(`[DANBOORU] 410 Gone for tags "${tags}"`);
+          break;
+        } else if (pageError.response?.status === 429) {
+          console.log(`[DANBOORU] 429 Rate limited, will retry after backoff`);
+          // rateLimitedRequest handles the retry
           continue;
         } else if (pageError.response) {
-          console.error(`Error fetching Danbooru posts by tags: HTTP ${pageError.response.status} for tags "${tags}":`, pageError.message);
-          break; // Stop on other HTTP errors
+          console.error(`[DANBOORU] HTTP ${pageError.response.status} for tags "${tags}"`);
+          break;
         } else {
-          console.error(`Error fetching Danbooru posts by tags "${tags}":`, pageError.message);
-          throw pageError; // Re-throw network errors
+          console.error(`[DANBOORU] Error for tags "${tags}":`, pageError.message);
+          throw pageError;
         }
       }
     }
     
     return unlimited ? posts : posts.slice(0, limit);
   } catch (error: any) {
-    if (axios.isAxiosError(error)) {
-      console.error(`Error fetching Danbooru posts by tags: ${error.message}`, {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-      });
-    } else {
-      console.error('Error fetching Danbooru posts by tags:', error);
-    }
+    console.error('[DANBOORU] Error fetching posts by tags:', error.message);
     return [];
   }
 }

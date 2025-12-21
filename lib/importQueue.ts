@@ -39,13 +39,60 @@ export interface ImportJob {
 }
 
 // ============================================
-// 🔥 INSANE MODE - ABSOLUTELY UNHINGED 🔥
+// CONFIGURABLE SPEED MODES
 // ============================================
-const CONCURRENT_JOBS = 10;         // 10 jobs simultaneously
-const CONCURRENT_IMPORTS = 50;      // 50 parallel imports per job (500 TOTAL!)
-const BATCH_SIZE = 100;             // Prefetch 100 posts at a time
-const IMPORT_DELAY = 0;             // ZERO DELAY - PURE CHAOS
-const DB_UPDATE_INTERVAL = 20;      // Update DB every 20 imports
+export type SpeedMode = 'default' | 'turbo' | 'insane' | 'custom';
+
+export interface SpeedSettings {
+  concurrentJobs: number;
+  concurrentImports: number;
+  batchSize: number;
+  importDelay: number;
+  dbUpdateInterval: number;
+}
+
+const SPEED_PRESETS: Record<Exclude<SpeedMode, 'custom'>, SpeedSettings> = {
+  default: {
+    concurrentJobs: 2,
+    concurrentImports: 5,
+    batchSize: 10,
+    importDelay: 50,
+    dbUpdateInterval: 5,
+  },
+  turbo: {
+    concurrentJobs: 5,
+    concurrentImports: 20,
+    batchSize: 50,
+    importDelay: 10,
+    dbUpdateInterval: 10,
+  },
+  insane: {
+    concurrentJobs: 10,
+    concurrentImports: 50,
+    batchSize: 100,
+    importDelay: 0,
+    dbUpdateInterval: 20,
+  },
+};
+
+// Current active settings (can be changed at runtime)
+let currentMode: SpeedMode = 'insane';
+let currentSettings: SpeedSettings = { ...SPEED_PRESETS.insane };
+
+// Getters for current settings
+export function getCurrentMode(): SpeedMode { return currentMode; }
+export function getCurrentSettings(): SpeedSettings { return { ...currentSettings }; }
+
+// Set speed mode (will take effect on next batch)
+export function setSpeedMode(mode: SpeedMode, customSettings?: SpeedSettings): void {
+  currentMode = mode;
+  if (mode === 'custom' && customSettings) {
+    currentSettings = { ...customSettings };
+  } else if (mode !== 'custom') {
+    currentSettings = { ...SPEED_PRESETS[mode] };
+  }
+  console.log(`[IMPORT] Speed mode changed to ${mode}:`, currentSettings);
+}
 
 // Global tracking
 let workerRunning = false;
@@ -92,11 +139,47 @@ async function initializeCounter(): Promise<void> {
 
 // Initialize on module load
 let counterInitialized = false;
+let indexesEnsured = false;
+
 async function ensureCounterInitialized(): Promise<void> {
   if (!counterInitialized) {
     await initializeCounter();
     counterInitialized = true;
   }
+}
+
+// Ensure indexes exist for fast duplicate checking
+async function ensureIndexes(): Promise<void> {
+  if (indexesEnsured) return;
+  
+  try {
+    const imagesCollection = await getCollection('images');
+    // Create index on metadata.danbooruId for fast duplicate lookups
+    await imagesCollection.createIndex(
+      { 'metadata.danbooruId': 1 },
+      { sparse: true, background: true }
+    );
+    console.log('[IMPORT] Ensured index on metadata.danbooruId');
+    indexesEnsured = true;
+  } catch (error) {
+    // Index might already exist, that's fine
+    indexesEnsured = true;
+  }
+}
+
+// Batch check for existing posts - much faster than checking one by one
+async function filterAlreadyImported(
+  postIds: number[],
+  imagesCollection: any
+): Promise<Set<number>> {
+  const existing = await imagesCollection
+    .find(
+      { 'metadata.danbooruId': { $in: postIds } },
+      { projection: { 'metadata.danbooruId': 1 } }
+    )
+    .toArray();
+  
+  return new Set(existing.map((doc: any) => doc.metadata?.danbooruId).filter(Boolean));
 }
 
 async function getOrCreateTagsBulk(
@@ -278,30 +361,24 @@ async function importSinglePost(
 }
 
 // Prefetch posts in batches for speed
+// Now properly rate limited by danbooru.ts request queue
 async function prefetchPosts(postIds: number[]): Promise<Map<number, DanbooruPost>> {
   const results = new Map<number, DanbooruPost>();
   
-  // Fetch 20 at a time in parallel - INSANE SPEED
-  const chunks = [];
-  for (let i = 0; i < postIds.length; i += 20) {
-    chunks.push(postIds.slice(i, i + 20));
-  }
-
-  for (const chunk of chunks) {
-    const posts = await Promise.all(
-      chunk.map(async (id) => {
-        try {
-          return await fetchDanbooruPost(id);
-        } catch {
-          return null;
-        }
-      })
-    );
-    
-    posts.forEach((post, idx) => {
-      if (post) results.set(chunk[idx], post);
-    });
-  }
+  // Fetch all in parallel - the danbooru module handles rate limiting internally
+  const posts = await Promise.all(
+    postIds.map(async (id) => {
+      try {
+        return await fetchDanbooruPost(id);
+      } catch {
+        return null;
+      }
+    })
+  );
+  
+  posts.forEach((post, idx) => {
+    if (post) results.set(postIds[idx], post);
+  });
 
   return results;
 }
@@ -311,6 +388,9 @@ async function processJob(job: ImportJob): Promise<void> {
   const jobsCollection = await getCollection('import_jobs');
   const imagesCollection = await getCollection('images');
   const tagsCollection = await getCollection('tags');
+
+  // Ensure indexes exist for fast duplicate checking
+  await ensureIndexes();
 
   console.log(`[JOB ${job._id}] Starting: ${job.type} - "${job.query}"`);
 
@@ -333,19 +413,33 @@ async function processJob(job: ImportJob): Promise<void> {
 
       postIds = posts.map(p => p.id);
       
+      // Pre-filter already imported posts before saving
+      const alreadyImported = await filterAlreadyImported(postIds, imagesCollection);
+      const newPostIds = postIds.filter(id => !alreadyImported.has(id));
+      
+      console.log(`[JOB ${job._id}] Found ${postIds.length} posts, ${alreadyImported.size} already imported, ${newPostIds.length} new`);
+      
       await jobsCollection.updateOne(
         { _id: job._id },
-        { $set: { posts: postIds, 'progress.total': postIds.length, currentPostIndex: 0 } }
+        { 
+          $set: { 
+            posts: newPostIds, 
+            'progress.total': newPostIds.length,
+            'progress.skipped': alreadyImported.size,
+            currentPostIndex: 0 
+          } 
+        }
       );
-
-      console.log(`[JOB ${job._id}] Found ${postIds.length} posts`);
+      
+      postIds = newPostIds;
     }
 
     if (postIds.length === 0) {
       await jobsCollection.updateOne(
         { _id: job._id },
-        { $set: { status: 'failed', error: 'No posts found', completedAt: new Date() } }
+        { $set: { status: 'completed', completedAt: new Date() } }
       );
+      console.log(`[JOB ${job._id}] All posts already imported, marking complete`);
       return;
     }
 
@@ -357,12 +451,13 @@ async function processJob(job: ImportJob): Promise<void> {
 
     let successful = 0;
     let failed = 0;
-    let skipped = 0;
+    let skipped = job.progress?.skipped || 0;
     let processedSinceUpdate = 0;
 
     // Process in large batches with prefetching
-    for (let i = 0; i < remainingPostIds.length; i += BATCH_SIZE) {
-      const batchIds = remainingPostIds.slice(i, i + BATCH_SIZE);
+    const { batchSize, concurrentImports, importDelay, dbUpdateInterval } = currentSettings;
+    for (let i = 0; i < remainingPostIds.length; i += batchSize) {
+      const batchIds = remainingPostIds.slice(i, i + batchSize);
       
       // Prefetch post data for this batch
       const postDataMap = await prefetchPosts(batchIds);
@@ -370,9 +465,9 @@ async function processJob(job: ImportJob): Promise<void> {
         .map(id => postDataMap.get(id))
         .filter((p): p is DanbooruPost => p !== null);
 
-      // Process posts in parallel (CONCURRENT_IMPORTS at a time)
-      for (let j = 0; j < validPosts.length; j += CONCURRENT_IMPORTS) {
-        const chunk = validPosts.slice(j, j + CONCURRENT_IMPORTS);
+      // Process posts in parallel
+      for (let j = 0; j < validPosts.length; j += concurrentImports) {
+        const chunk = validPosts.slice(j, j + concurrentImports);
         
         const results = await Promise.allSettled(
           chunk.map(post => importSinglePost(post, imagesCollection, tagsCollection))
@@ -390,7 +485,7 @@ async function processJob(job: ImportJob): Promise<void> {
         }
 
         // Update progress periodically
-        if (processedSinceUpdate >= DB_UPDATE_INTERVAL) {
+        if (processedSinceUpdate >= dbUpdateInterval) {
           const currentIndex = startIndex + i + j + chunk.length;
           await jobsCollection.updateOne(
             { _id: job._id },
@@ -409,8 +504,8 @@ async function processJob(job: ImportJob): Promise<void> {
           console.log(`[JOB ${job._id}] Progress: ${currentIndex}/${postIds.length} (✓${successful} ✗${failed} ⊘${skipped})`);
         }
 
-        if (IMPORT_DELAY > 0) {
-          await new Promise(resolve => setTimeout(resolve, IMPORT_DELAY));
+        if (importDelay > 0) {
+          await new Promise(resolve => setTimeout(resolve, importDelay));
         }
       }
     }
@@ -450,14 +545,23 @@ async function processImportQueue(): Promise<void> {
 
   workerRunning = true;
   activeJobCount = 0;
-  console.log(`[IMPORT WORKER] 🚀 TURBO MODE - ${CONCURRENT_JOBS} concurrent jobs, ${CONCURRENT_IMPORTS} imports each`);
+  console.log(`[IMPORT WORKER] 🔥 ${currentMode.toUpperCase()} MODE - ${currentSettings.concurrentJobs} jobs × ${currentSettings.concurrentImports} imports`);
 
   try {
     const jobsCollection = await getCollection('import_jobs');
 
+    // First, reset any stuck "running" jobs to "paused" (from previous crash/restart)
+    const stuckJobs = await jobsCollection.updateMany(
+      { status: 'running' },
+      { $set: { status: 'paused' } }
+    );
+    if (stuckJobs.modifiedCount > 0) {
+      console.log(`[IMPORT WORKER] Reset ${stuckJobs.modifiedCount} stuck running jobs to paused`);
+    }
+
     while (true) {
       // Check how many jobs we can start
-      const slotsAvailable = CONCURRENT_JOBS - activeJobCount;
+      const slotsAvailable = currentSettings.concurrentJobs - activeJobCount;
       
       if (slotsAvailable <= 0) {
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -475,6 +579,14 @@ async function processImportQueue(): Promise<void> {
         console.log('[IMPORT WORKER] No more jobs, stopping');
         break;
       }
+
+      if (pendingJobs.length === 0) {
+        // No new jobs but some are still running, wait a bit
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        continue;
+      }
+
+      console.log(`[IMPORT WORKER] Starting ${pendingJobs.length} new jobs (${activeJobCount} already running)`);
 
       // Start jobs in parallel
       for (const job of pendingJobs) {
@@ -574,10 +686,15 @@ export async function pauseRunningJobs(): Promise<void> {
 export async function resumePausedJobs(): Promise<void> {
   const jobsCollection = await getCollection('import_jobs');
   const pausedJobs = await jobsCollection.countDocuments({ status: 'paused' });
+  const pendingJobs = await jobsCollection.countDocuments({ status: 'pending' });
   
-  if (pausedJobs > 0) {
-    console.log(`[IMPORT] Found ${pausedJobs} paused jobs, resuming...`);
+  console.log(`[IMPORT] Jobs status: ${pausedJobs} paused, ${pendingJobs} pending`);
+  
+  if (pausedJobs > 0 || pendingJobs > 0) {
+    console.log(`[IMPORT] Starting worker to process ${pausedJobs + pendingJobs} jobs...`);
     startImportWorker();
+  } else {
+    console.log('[IMPORT] No jobs to process');
   }
 }
 

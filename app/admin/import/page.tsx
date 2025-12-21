@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Download, AlertCircle, CheckCircle, Loader2, Play, Pause, Trash2, RefreshCw, Clock, List, Plus, X, Zap, Infinity, Flame } from 'lucide-react';
+import { Download, AlertCircle, CheckCircle, Loader2, Play, Pause, Trash2, RefreshCw, Clock, List, Plus, X, Zap, Infinity, Flame, Settings, Gauge } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+type SpeedMode = 'default' | 'turbo' | 'insane' | 'custom';
+
+interface SpeedSettings {
+  concurrentJobs: number;
+  concurrentImports: number;
+  batchSize: number;
+  importDelay: number;
+  dbUpdateInterval: number;
+}
 
 interface ImportJob {
   _id: string;
@@ -55,6 +66,17 @@ export default function ImportPage() {
   const [unlimited, setUnlimited] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Speed mode
+  const [speedMode, setSpeedMode] = useState<SpeedMode>('insane');
+  const [speedSettings, setSpeedSettings] = useState<SpeedSettings>({
+    concurrentJobs: 10,
+    concurrentImports: 50,
+    batchSize: 100,
+    importDelay: 0,
+    dbUpdateInterval: 20,
+  });
+  const [changingSpeed, setChangingSpeed] = useState(false);
+
   useEffect(() => {
     checkAdminStatus();
   }, []);
@@ -93,9 +115,33 @@ export default function ImportPage() {
       const response = await axios.get('/api/admin/import/queue');
       if (response.data.success) {
         setJobs(response.data.jobs);
+        if (response.data.speedMode) {
+          setSpeedMode(response.data.speedMode);
+        }
+        if (response.data.speedSettings) {
+          setSpeedSettings(response.data.speedSettings);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch jobs:', error);
+    }
+  };
+
+  const changeSpeedMode = async (mode: SpeedMode, customSettings?: SpeedSettings) => {
+    setChangingSpeed(true);
+    try {
+      const response = await axios.put('/api/admin/import/queue', {
+        mode,
+        customSettings: mode === 'custom' ? customSettings : undefined,
+      });
+      if (response.data.success) {
+        setSpeedMode(response.data.mode);
+        setSpeedSettings(response.data.settings);
+      }
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to change speed mode');
+    } finally {
+      setChangingSpeed(false);
     }
   };
 
@@ -221,6 +267,24 @@ export default function ImportPage() {
   const pendingJobs = jobs.filter(j => j.status === 'pending');
   const pausedJobs = jobs.filter(j => j.status === 'paused');
 
+  const getModeLabel = (mode: SpeedMode) => {
+    switch (mode) {
+      case 'default': return '🐢 Default';
+      case 'turbo': return '🚀 Turbo';
+      case 'insane': return '🔥 Insane';
+      case 'custom': return '⚙️ Custom';
+    }
+  };
+
+  const getModeColor = (mode: SpeedMode) => {
+    switch (mode) {
+      case 'default': return 'bg-gray-500';
+      case 'turbo': return 'bg-blue-500';
+      case 'insane': return 'bg-gradient-to-r from-red-600 to-orange-500';
+      case 'custom': return 'bg-purple-500';
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
@@ -230,14 +294,49 @@ export default function ImportPage() {
             <Flame size={16} className="absolute -top-1 -right-1 text-orange-500 animate-pulse" />
           </div>
           Danbooru Import
-          <Badge className="bg-gradient-to-r from-red-600 to-orange-500 text-white border-0 text-xs font-bold animate-pulse">
-            🔥 INSANE MODE
+          <Badge className={`${getModeColor(speedMode)} text-white border-0 text-xs font-bold ${speedMode === 'insane' ? 'animate-pulse' : ''}`}>
+            {getModeLabel(speedMode)}
           </Badge>
         </h1>
         <p className="text-muted-foreground">
-          <span className="text-red-400 font-bold">🔥 10 jobs × 50 imports = 500 CONCURRENT 🔥</span> • Zero delay • Batch 100 • Unhinged
+          <span className={speedMode === 'insane' ? 'text-red-400 font-bold' : 'text-primary font-semibold'}>
+            {speedSettings.concurrentJobs} jobs × {speedSettings.concurrentImports} imports = {speedSettings.concurrentJobs * speedSettings.concurrentImports} concurrent
+          </span>
+          {' • '}Delay: {speedSettings.importDelay}ms • Batch: {speedSettings.batchSize}
         </p>
       </div>
+
+      {/* Speed Mode Selector */}
+      <Card className="mb-6 border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Gauge className="h-5 w-5" />
+            Speed Mode
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-3">
+            {(['default', 'turbo', 'insane'] as SpeedMode[]).map((mode) => (
+              <Button
+                key={mode}
+                variant={speedMode === mode ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => changeSpeedMode(mode)}
+                disabled={changingSpeed}
+                className={speedMode === mode ? getModeColor(mode) : ''}
+              >
+                {changingSpeed && speedMode !== mode ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                {getModeLabel(mode)}
+              </Button>
+            ))}
+            <div className="text-xs text-muted-foreground ml-2">
+              {speedMode === 'default' && '2×5 (10 concurrent) - Safe for low resources'}
+              {speedMode === 'turbo' && '5×20 (100 concurrent) - Fast'}
+              {speedMode === 'insane' && '10×50 (500 concurrent) - Maximum speed'}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Status Bar */}
       {(runningJobs.length > 0 || pendingJobs.length > 0 || pausedJobs.length > 0) && (

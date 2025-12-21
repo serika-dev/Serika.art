@@ -6,6 +6,12 @@ import {
   cancelImportJob,
   startImportWorker,
   resumePausedJobs,
+  getCurrentMode,
+  getCurrentSettings,
+  setSpeedMode,
+  pauseRunningJobs,
+  SpeedMode,
+  SpeedSettings,
 } from '@/lib/importQueue';
 
 // Auto-resume flag - will resume paused jobs on first request after server restart
@@ -58,6 +64,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, message: 'Worker started' });
   }
 
+  // Get current speed settings
+  if (action === 'get-speed') {
+    return NextResponse.json({
+      success: true,
+      mode: getCurrentMode(),
+      settings: getCurrentSettings(),
+    });
+  }
+
   if (jobId) {
     const job = await getImportJob(jobId);
     if (!job) {
@@ -67,7 +82,55 @@ export async function GET(request: NextRequest) {
   }
 
   const jobs = await getImportJobs(50);
-  return NextResponse.json({ success: true, jobs });
+  return NextResponse.json({ 
+    success: true, 
+    jobs,
+    speedMode: getCurrentMode(),
+    speedSettings: getCurrentSettings(),
+  });
+}
+
+// PUT - Change speed mode
+export async function PUT(request: NextRequest) {
+  const user = await checkAdminAuth();
+  if (!user) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 });
+  }
+
+  try {
+    const body = await request.json();
+    const { mode, customSettings } = body;
+
+    if (!mode || !['default', 'turbo', 'insane', 'custom'].includes(mode)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid mode. Must be: default, turbo, insane, or custom' },
+        { status: 400 }
+      );
+    }
+
+    // Pause all running jobs first
+    await pauseRunningJobs();
+    console.log('[IMPORT] Paused all running jobs for speed mode change');
+
+    // Change the speed mode
+    setSpeedMode(mode as SpeedMode, customSettings as SpeedSettings | undefined);
+
+    // Resume jobs with new settings
+    await resumePausedJobs();
+
+    return NextResponse.json({
+      success: true,
+      message: `Speed mode changed to ${mode}`,
+      mode: getCurrentMode(),
+      settings: getCurrentSettings(),
+    });
+  } catch (error: any) {
+    console.error('Error changing speed mode:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to change speed mode' },
+      { status: 500 }
+    );
+  }
 }
 
 // POST - Create a new import job
