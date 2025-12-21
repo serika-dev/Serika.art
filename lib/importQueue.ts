@@ -55,6 +55,50 @@ let activeJobCount = 0;
 // Tag cache to reduce DB lookups
 const tagCache = new Map<string, ObjectId>();
 
+// Atomic counter for sequential IDs - prevents race conditions
+async function getNextSequentialId(): Promise<number> {
+  const countersCollection = await getCollection('counters');
+  
+  const result = await countersCollection.findOneAndUpdate(
+    { name: 'imageSequentialId' },
+    { $inc: { value: 1 } },
+    { upsert: true, returnDocument: 'after' }
+  );
+  
+  return result?.value || 1;
+}
+
+// Initialize counter if needed (run once on startup)
+async function initializeCounter(): Promise<void> {
+  const countersCollection = await getCollection('counters');
+  const imagesCollection = await getCollection('images');
+  
+  const existing = await countersCollection.findOne({ name: 'imageSequentialId' });
+  if (!existing) {
+    // Find the highest existing sequentialId
+    const lastImage = await imagesCollection.findOne(
+      {},
+      { sort: { sequentialId: -1 }, projection: { sequentialId: 1 } }
+    );
+    const maxId = lastImage?.sequentialId || 0;
+    
+    await countersCollection.insertOne({
+      name: 'imageSequentialId',
+      value: maxId
+    });
+    console.log(`[IMPORT] Initialized sequential ID counter at ${maxId}`);
+  }
+}
+
+// Initialize on module load
+let counterInitialized = false;
+async function ensureCounterInitialized(): Promise<void> {
+  if (!counterInitialized) {
+    await initializeCounter();
+    counterInitialized = true;
+  }
+}
+
 async function getOrCreateTagsBulk(
   tagsCollection: any,
   tagData: Array<{ name: string; type: string }>
@@ -183,9 +227,9 @@ async function importSinglePost(
     const tagData = extractDanbooruTags(post);
     const tagIds = await getOrCreateTagsBulk(tagsCollection, tagData);
 
-    // Get next sequential ID
-    const lastImage = await imagesCollection.findOne({}, { sort: { sequentialId: -1 }, projection: { sequentialId: 1 } });
-    const nextSequentialId = lastImage?.sequentialId ? lastImage.sequentialId + 1 : 1;
+    // Get next sequential ID using ATOMIC counter (no race conditions!)
+    await ensureCounterInitialized();
+    const nextSequentialId = await getNextSequentialId();
 
     const imageDoc = {
       sequentialId: nextSequentialId,
