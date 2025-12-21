@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
 
     const favoritesCollection = await getCollection('favorites');
     const imagesCollection = await getCollection('images');
+    const tagsCollection = await getCollection('tags');
     const userObjectId = new ObjectId(user.id);
 
     // Get user's favorited image IDs
@@ -30,9 +31,39 @@ export async function GET(request: NextRequest) {
       .find({ _id: { $in: imageIds } })
       .toArray();
 
+    // Populate tags for all images
+    const allTagIds = new Set<string>();
+    images.forEach(img => {
+      if (Array.isArray(img.tags)) {
+        img.tags.forEach((tagId: any) => allTagIds.add(tagId.toString()));
+      }
+    });
+
+    let tagMap = new Map();
+    if (allTagIds.size > 0) {
+      const tagDocs = await tagsCollection
+        .find({ _id: { $in: Array.from(allTagIds).map(id => new ObjectId(id)) } })
+        .toArray();
+      tagMap = new Map(tagDocs.map(t => [t._id.toString(), t]));
+    }
+
+    // Map images to replace tag IDs with populated tag data
+    const populatedImages = images.map((img: any) => ({
+      ...img,
+      tags: (img.tags || []).map((tagId: any) => {
+        const tag = tagMap.get(tagId.toString());
+        return {
+          _id: tagId,
+          name: tag?.name || 'unknown',
+          type: tag?.type || 'general',
+          count: tag?.count || 0,
+        };
+      }),
+    }));
+
     return NextResponse.json({
       success: true,
-      favorites: images,
+      favorites: populatedImages,
     });
   } catch (error: any) {
     console.error('Error fetching favorites:', error);

@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     const ratings = searchParams.get('ratings')?.split(',').filter(Boolean) || [];
     const sort = searchParams.get('sort') || 'newest';
     const aiOnly = searchParams.get('ai') === 'true';
+    const hideAI = searchParams.get('hideAI') === 'true';
     const search = searchParams.get('q') || '';
     const userId = searchParams.get('userId');
     const username = searchParams.get('username');
@@ -65,6 +66,10 @@ export async function GET(request: NextRequest) {
     
     if (aiOnly) {
       query.isAIGenerated = true;
+    }
+    
+    if (hideAI) {
+      query.isAIGenerated = { $ne: true };
     }
     
     if (search) {

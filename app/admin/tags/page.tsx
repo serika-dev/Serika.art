@@ -86,11 +86,11 @@ export default function AdminTagsPage() {
   }
 
   const typeColors = {
-    artist: 'bg-red-900/50 border-red-800 text-red-200',
-    copyright: 'bg-purple-900/50 border-purple-800 text-purple-200',
-    character: 'bg-green-900/50 border-green-800 text-green-200',
-    general: 'bg-blue-900/50 border-blue-800 text-blue-200',
-    meta: 'bg-yellow-900/50 border-yellow-800 text-yellow-200',
+    artist: 'bg-red-500/10 border-red-500/20 text-red-400',
+    copyright: 'bg-purple-500/10 border-purple-500/20 text-purple-400',
+    character: 'bg-green-500/10 border-green-500/20 text-green-400',
+    general: 'bg-blue-500/10 border-blue-500/20 text-blue-400',
+    meta: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400',
   };
 
   return (

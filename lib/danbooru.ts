@@ -171,3 +171,28 @@ export function extractDanbooruTags(post: DanbooruPost) {
   
   return tags;
 }
+
+// AI-related tags on Danbooru (with underscores as they appear in the API)
+const AI_TAGS = [
+  'ai-generated',
+  'ai-assisted',
+  'ai_generated',
+  'ai_assisted',
+  'stable_diffusion',
+  'midjourney',
+  'novelai',
+  'nai_diffusion',
+  'dalle',
+  'dall-e',
+];
+
+/**
+ * Check if a Danbooru post has AI-related tags
+ */
+export function isAIPost(post: DanbooruPost): boolean {
+  const metaTags = post.tag_string_meta?.toLowerCase() || '';
+  const generalTags = post.tag_string_general?.toLowerCase() || '';
+  const allTags = `${metaTags} ${generalTags}`;
+  
+  return AI_TAGS.some(aiTag => allTags.includes(aiTag.replace('-', '_')) || allTags.includes(aiTag.replace('_', '-')));
+}

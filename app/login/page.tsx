@@ -94,33 +94,54 @@ function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">
-            Serika.art
+    <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden bg-background">
+      {/* Background Decorative Elements */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-[0.02] dark:invert" />
+      </div>
+
+      <div className="w-full max-w-[440px] space-y-8">
+        {/* Logo & Header */}
+        <div className="text-center space-y-2">
+          <div className="inline-flex items-center justify-center mb-4">
+            <img
+              src="/logo.svg"
+              alt="Serika Logo"
+              className="w-16 h-16 drop-shadow-sm"
+            />
+          </div>
+          <h1 className="text-4xl font-black tracking-tight text-foreground">
+            Welcome Back
           </h1>
-          <p className="text-muted-foreground mt-2">Sign in to continue</p>
+          <p className="text-muted-foreground font-medium">
+            Sign in to your account
+          </p>
         </div>
 
         {/* Login Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Login</CardTitle>
+        <Card className="border-border/50 shadow-2xl shadow-primary/5 bg-card/50 backdrop-blur-xl">
+          <CardHeader className="space-y-1 pb-4">
+            <CardTitle className="text-xl font-bold">Login</CardTitle>
+            <CardDescription>
+              Enter your credentials to access your profile
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {error && (
-              <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg mb-6 flex items-start gap-3">
+              <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-xl mb-6 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
                 <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
-                <p className="text-sm">{error}</p>
+                <p className="text-sm font-medium">{error}</p>
               </div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-5">
               {/* Email */}
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="text-sm font-bold uppercase tracking-wider text-muted-foreground/70">
+                  Email Address
+                </Label>
                 <Input
                   id="email"
                   type="email"
@@ -128,13 +149,26 @@ function LoginForm() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={loading}
-                  placeholder="you@example.com"
+                  placeholder="name@example.com"
+                  className="h-12 bg-background/50 border-border/50 focus:ring-primary/20 rounded-xl transition-all"
                 />
               </div>
 
               {/* Password */}
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-sm font-bold uppercase tracking-wider text-muted-foreground/70">
+                    Password
+                  </Label>
+                  <a
+                    href={`${ACCOUNTS_URL}/forgot-password`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-bold text-primary hover:text-primary/80 transition-colors"
+                  >
+                    Forgot password?
+                  </a>
+                </div>
                 <Input
                   id="password"
                   type="password"
@@ -143,42 +177,34 @@ function LoginForm() {
                   required
                   disabled={loading}
                   placeholder="••••••••"
+                  className="h-12 bg-background/50 border-border/50 focus:ring-primary/20 rounded-xl transition-all"
                 />
               </div>
 
               {/* Remember Me */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="remember"
-                    checked={rememberMe}
-                    onCheckedChange={(checked) => setRememberMe(checked as boolean)}
-                    disabled={loading}
-                  />
-                  <Label htmlFor="remember" className="text-sm font-normal text-muted-foreground cursor-pointer">
-                    Remember me
-                  </Label>
-                </div>
-                <a
-                  href={`${ACCOUNTS_URL}/forgot-password`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-primary hover:underline"
-                >
-                  Forgot password?
-                </a>
+              <div className="flex items-center space-x-2 py-1">
+                <Checkbox
+                  id="remember"
+                  checked={rememberMe}
+                  onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+                  disabled={loading}
+                  className="rounded-md"
+                />
+                <Label htmlFor="remember" className="text-sm font-medium text-muted-foreground cursor-pointer select-none">
+                  Keep me signed in
+                </Label>
               </div>
 
               {/* Submit Button */}
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500"
+                className="w-full h-12 text-base font-bold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 transition-all active:scale-[0.98]"
               >
                 {loading ? (
                   <>
-                    <Loader2 className="animate-spin h-4 w-4 mr-2" />
-                    Signing in...
+                    <Loader2 className="animate-spin h-5 w-5 mr-2" />
+                    Authenticating...
                   </>
                 ) : (
                   'Sign In'
@@ -190,30 +216,30 @@ function LoginForm() {
           <div className="px-6">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <Separator />
+                <Separator className="bg-border/50" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">or</span>
+                <span className="bg-card px-4 text-muted-foreground font-bold tracking-widest">
+                  New here?
+                </span>
               </div>
             </div>
           </div>
 
-          <CardFooter className="flex justify-center pt-6">
-            <p className="text-sm text-muted-foreground">
-              Don't have an account?{' '}
-              <a
-                href={`${ACCOUNTS_URL}/register`}
-                className="text-primary hover:underline font-medium"
-              >
-                Sign up
+          <CardFooter className="flex justify-center pt-6 pb-8">
+            <Button variant="outline" asChild className="w-full h-12 rounded-xl border-border/50 hover:bg-accent/50 font-bold transition-all">
+              <a href={`${ACCOUNTS_URL}/register`}>
+                Create an Account
               </a>
-            </p>
+            </Button>
           </CardFooter>
         </Card>
 
         {/* Footer */}
-        <p className="text-center text-xs text-muted-foreground/70 mt-6">
-          By signing in, you agree to our Terms of Service and Privacy Policy
+        <p className="text-center text-xs text-muted-foreground/60 font-medium">
+          By signing in, you agree to our{' '}
+          <a href="https://serika.dev/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground transition-colors">Terms</a> and{' '}
+          <a href="https://serika.dev/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground transition-colors">Privacy Policy</a>
         </p>
       </div>
     </div>

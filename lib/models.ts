@@ -43,6 +43,23 @@ export interface Image {
   views: number;
   createdAt: Date;
   updatedAt: Date;
+  // Moderation fields
+  deleted?: boolean;
+  deletedAt?: Date;
+  deletedBy?: ObjectId;
+  deletedByUsername?: string;
+  deletionReason?: string;
+  deletionReversibleUntil?: Date;
+  unlisted?: boolean;
+  unlistedAt?: Date;
+  unlistedBy?: ObjectId;
+  unlistedByUsername?: string;
+  unlistReason?: string;
+  unlistReversibleUntil?: Date;
+  restoredAt?: Date;
+  restoredBy?: ObjectId;
+  restoredByUsername?: string;
+  dmcaRequestId?: ObjectId;
 }
 
 export interface Vote {

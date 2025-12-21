@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { Tags, Upload, Users, Settings, AlertCircle } from 'lucide-react';
+import { Tags, Upload, Users, Settings, AlertCircle, Shield, Scale, History } from 'lucide-react';
 
 export default function AdminDashboard() {
   const { user, loading } = useAuth();
@@ -49,6 +49,20 @@ export default function AdminDashboard() {
       icon: Users,
       href: '/admin/users',
       color: 'from-purple-600 to-purple-700',
+    },
+    {
+      title: 'DMCA Requests',
+      description: 'Review and process DMCA takedown requests',
+      icon: Scale,
+      href: '/admin/dmca',
+      color: 'from-amber-600 to-amber-700',
+    },
+    {
+      title: 'Moderation Logs',
+      description: 'View all moderation actions and undo if needed',
+      icon: History,
+      href: '/admin/moderation',
+      color: 'from-red-600 to-red-700',
     },
   ];
 

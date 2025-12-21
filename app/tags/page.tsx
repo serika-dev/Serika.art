@@ -42,11 +42,11 @@ export default function TagsPage() {
   };
 
   const tagTypeStyles: Record<TagType, string> = {
-    artist: 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30',
-    copyright: 'bg-purple-500/10 text-purple-400 border-purple-500/20 hover:bg-purple-500/20 hover:border-purple-500/30',
-    character: 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20 hover:border-green-500/30',
-    general: 'bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20 hover:border-blue-500/30',
-    meta: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20 hover:border-yellow-500/30',
+    artist: 'bg-red-600/20 text-red-300 border-red-500/40 hover:bg-red-600/30 hover:border-red-500/50',
+    copyright: 'bg-purple-600/20 text-purple-300 border-purple-500/40 hover:bg-purple-600/30 hover:border-purple-500/50',
+    character: 'bg-green-600/20 text-green-300 border-green-500/40 hover:bg-green-600/30 hover:border-green-500/50',
+    general: 'bg-blue-600/20 text-blue-300 border-blue-500/40 hover:bg-blue-600/30 hover:border-blue-500/50',
+    meta: 'bg-yellow-600/20 text-yellow-300 border-yellow-500/40 hover:bg-yellow-600/30 hover:border-yellow-500/50',
   };
 
   const filterOptions: { value: TagType | 'all'; label: string; color?: string }[] = [

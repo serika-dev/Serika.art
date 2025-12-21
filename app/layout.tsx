@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
 import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import StructuredData from "@/components/StructuredData";
 import { cn } from "@/lib/utils";
 
@@ -71,16 +72,7 @@ export default function RootLayout({
           <main className="flex-1">
             {children}
           </main>
-          <footer className="border-t border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-6 px-6 text-center text-sm text-muted-foreground">
-            <div className="flex justify-center gap-6">
-              <a href="https://serika.dev/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
-                Privacy
-              </a>
-              <a href="https://serika.dev/terms" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
-                Terms
-              </a>
-            </div>
-          </footer>
+          <Footer />
         </AuthProvider>
       </body>
     </html>

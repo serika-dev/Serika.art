@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
     }
     const rating = formData.get('rating') as 'safe' | 'questionable' | 'explicit';
     const isAIGenerated = formData.get('isAIGenerated') === 'true';
+    const postAnonymously = formData.get('postAnonymously') === 'true';
     const source = formData.get('source') as string || '';
     const description = formData.get('description') as string || '';
 
@@ -158,8 +159,8 @@ export async function POST(request: NextRequest) {
     // Create image document
     const imageDoc = {
       sequentialId: nextSequentialId,
-      userId: user ? new ObjectId(user.id) : null,
-      username: user ? user.username : 'Anonymous',
+      userId: (user && !postAnonymously) ? new ObjectId(user.id) : null,
+      username: (user && !postAnonymously) ? user.username : 'Anonymous',
       url: imageUrl,
       thumbnailUrl,
       originalFilename: file.name,

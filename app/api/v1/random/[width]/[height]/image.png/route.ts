@@ -20,8 +20,8 @@ export async function GET(
       return new NextResponse('Invalid dimensions', { status: 400 });
     }
     
-    // Limit dimensions (max 4000x4000)
-    const maxDim = 4000;
+    // Support up to 8K resolution
+    const maxDim = 8000;
     const minDim = 16;
     
     if (width < minDim || height < minDim || width > maxDim || height > maxDim) {
@@ -35,11 +35,16 @@ export async function GET(
     const searchParams = request.nextUrl.searchParams;
     const ratings = searchParams.get('ratings')?.split(',').filter(Boolean) || ['safe'];
     const tagNames = searchParams.get('tags')?.split(',').filter(Boolean) || [];
+    const excludeTags = searchParams.get('exclude_tags')?.split(',').filter(Boolean) || [];
     const fit = searchParams.get('fit') || 'cover'; // cover, contain, fill, inside, outside
     const format = searchParams.get('format') || 'png'; // png, jpeg, webp
     const quality = Math.min(100, Math.max(1, parseInt(searchParams.get('quality') || '85')));
     const blur = searchParams.get('blur') === 'true';
     const grayscale = searchParams.get('grayscale') === 'true';
+    const aiOnly = searchParams.get('ai') === 'true';
+    const noAI = searchParams.get('no_ai') === 'true';
+    const matchSize = searchParams.get('match_size') !== 'false'; // Default: try to match dimensions
+    const aspectTolerance = parseFloat(searchParams.get('aspect_tolerance') || '0.2'); // 20% tolerance
     
     const collection = await getCollection('images');
     const tagsCollection = await getCollection('tags');
@@ -55,6 +60,13 @@ export async function GET(
       query.rating = { $in: validRatings };
     }
     
+    // AI filter
+    if (aiOnly) {
+      query.isAIGenerated = true;
+    } else if (noAI) {
+      query.isAIGenerated = { $ne: true };
+    }
+    
     // Tag filter
     if (tagNames.length > 0) {
       const tagDocs = await tagsCollection
@@ -66,13 +78,71 @@ export async function GET(
       }
     }
     
-    // Get random image
-    const images = await collection
-      .aggregate([
-        { $match: query },
-        { $sample: { size: 1 } },
-      ])
-      .toArray();
+    // Exclude tags
+    if (excludeTags.length > 0) {
+      const excludeTagDocs = await tagsCollection
+        .find({ name: { $in: excludeTags.map((t) => t.toLowerCase()) } })
+        .toArray();
+      const excludeTagIds = excludeTagDocs.map((t) => t._id);
+      if (excludeTagIds.length > 0) {
+        query.tags = { ...query.tags, $nin: excludeTagIds };
+      }
+    }
+    
+    // Calculate requested aspect ratio
+    const requestedAspect = width / height;
+    
+    // Try to find images that match the requested dimensions/aspect ratio
+    let images: any[] = [];
+    
+    if (matchSize) {
+      // First, try to find images that match or exceed the requested dimensions
+      const sizeQuery = {
+        ...query,
+        width: { $gte: Math.min(width, 400) }, // At least 400px or requested width
+        height: { $gte: Math.min(height, 400) }, // At least 400px or requested height
+      };
+      
+      // Get candidates that are close to the requested aspect ratio
+      const candidates = await collection
+        .aggregate([
+          { $match: sizeQuery },
+          {
+            $addFields: {
+              aspectRatio: { $divide: ['$width', '$height'] },
+              aspectDiff: {
+                $abs: {
+                  $subtract: [
+                    { $divide: ['$width', '$height'] },
+                    requestedAspect
+                  ]
+                }
+              }
+            }
+          },
+          {
+            $match: {
+              aspectDiff: { $lte: aspectTolerance }
+            }
+          },
+          { $sample: { size: 1 } }
+        ])
+        .toArray();
+      
+      if (candidates.length > 0) {
+        images = candidates;
+      }
+    }
+    
+    // If no matching size found, fall back to random
+    if (images.length === 0) {
+      images = await collection
+        .aggregate([
+          { $match: query },
+          { $sample: { size: 1 } },
+        ])
+        .toArray();
+    }
     
     if (images.length === 0) {
       // Return a placeholder image

@@ -1,15 +1,35 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Download, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { Download, AlertCircle, CheckCircle, Loader2, Play, Pause, Trash2, RefreshCw, Clock, List, Plus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 
-interface ImportResult {
-  success: boolean;
-  imageId?: string;
+interface ImportJob {
+  _id: string;
+  type: 'artist' | 'tags' | 'single';
+  query: string;
+  limit: number;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'paused';
+  progress: {
+    current: number;
+    total: number;
+    successful: number;
+    failed: number;
+    skipped: number;
+  };
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
   error?: string;
-  postId?: number;
+  createdBy: string;
 }
 
 export default function ImportPage() {
@@ -17,30 +37,33 @@ export default function ImportPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   
+  // Job queue
+  const [jobs, setJobs] = useState<ImportJob[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(false);
+  
   // Single post import
   const [postId, setPostId] = useState('');
   const [importingSingle, setImportingSingle] = useState(false);
-  const [singleResult, setSingleResult] = useState<ImportResult | null>(null);
+  const [singleResult, setSingleResult] = useState<{ success: boolean; error?: string; imageId?: string } | null>(null);
   
-  // Bulk artist import
-  const [artistTag, setArtistTag] = useState('');
-  const [artistLimit, setArtistLimit] = useState(100);
-  const [artistBackground, setArtistBackground] = useState(true);
-  const [importingArtist, setImportingArtist] = useState(false);
-  const [artistResults, setArtistResults] = useState<ImportResult[]>([]);
-  const [artistProgress, setArtistProgress] = useState({ current: 0, total: 0 });
-
-  // Bulk tag import
-  const [searchTags, setSearchTags] = useState('');
-  const [tagLimit, setTagLimit] = useState(100);
-  const [tagBackground, setTagBackground] = useState(true);
-  const [importingTag, setImportingTag] = useState(false);
-  const [tagResults, setTagResults] = useState<ImportResult[]>([]);
-  const [tagProgress, setTagProgress] = useState({ current: 0, total: 0 });
+  // Bulk import form
+  const [importType, setImportType] = useState<'artist' | 'tags'>('tags');
+  const [queries, setQueries] = useState(''); // Newline-separated queries
+  const [limit, setLimit] = useState(100);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     checkAdminStatus();
   }, []);
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchJobs();
+      // Poll for updates every 5 seconds
+      const interval = setInterval(fetchJobs, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [isAdmin]);
 
   const checkAdminStatus = async () => {
     try {
@@ -59,6 +82,17 @@ export default function ImportPage() {
       router.push('/login');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchJobs = async () => {
+    try {
+      const response = await axios.get('/api/admin/import/queue');
+      if (response.data.success) {
+        setJobs(response.data.jobs);
+      }
+    } catch (error) {
+      console.error('Failed to fetch jobs:', error);
     }
   };
 
@@ -89,299 +123,89 @@ export default function ImportPage() {
     }
   };
 
-  const handleArtistImport = async (e: React.FormEvent) => {
+  const handleBulkImport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!artistTag.trim()) return;
+    if (!queries.trim()) return;
 
-    setImportingArtist(true);
-    setArtistResults([]);
-    setArtistProgress({ current: 0, total: 0 });
-
-    // If background mode, start async import
-    if (artistBackground) {
-      try {
-        await fetch('/api/admin/import/danbooru', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            type: 'artist',
-            artistTag: artistTag.trim(),
-            limit: artistLimit,
-            background: true,
-          }),
-        });
-
-      // Show success message
-      setArtistResults([
-        {
-          success: true,
-          postId: 0,
-          imageId: undefined,
-          error: undefined,
-        },
-      ]);
-      setArtistProgress({ current: 0, total: artistLimit });
-      
-      // Add informational message
-      setTimeout(() => {
-        setArtistResults((prev) => [
-          ...prev,
-          {
-            success: false,
-            error: `ℹ️  Import is now running in the background. Importing up to ${artistLimit.toLocaleString()} posts for artist "${artistTag}". You can safely leave this page - check your server logs or the Posts page to see new images appear.`,
-          },
-        ]);
-      }, 100);
-      
-      setImportingArtist(false);
-    } catch (error: any) {
-      setArtistResults([
-        {
-          success: false,
-          error: error.message || 'Failed to start import',
-        },
-      ]);
-      setImportingArtist(false);
-    }
-      return;
-    }
-
-    // Normal mode with streaming
-    handleArtistImportOld(e);
-  };
-
-  const handleArtistImportOld = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!artistTag.trim()) return;
-
-    setImportingArtist(true);
-    setArtistResults([]);
-    setArtistProgress({ current: 0, total: 0 });
+    setSubmitting(true);
 
     try {
-      const response = await fetch('/api/admin/import/danbooru', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'artist',
-          artistTag: artistTag.trim(),
-          limit: artistLimit,
-        }),
-      });
+      // Split by newlines and filter empty lines
+      const queryList = queries
+        .split('\n')
+        .map(q => q.trim())
+        .filter(q => q.length > 0);
 
-      if (!response.body) {
-        console.error('No response body');
+      if (queryList.length === 0) {
+        alert('Please enter at least one query');
+        setSubmitting(false);
         return;
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              if (data.type === 'start') {
-                setArtistProgress({ current: 0, total: data.total });
-              } else if (data.type === 'progress') {
-                setArtistProgress({ current: data.current, total: data.total });
-                if (data.result && (data.result.success || data.result.error)) {
-                  setArtistResults((prev) => [...prev, data.result]);
-                }
-              } else if (data.type === 'complete') {
-                setArtistProgress({ current: data.total, total: data.total });
-                // Use the complete results array which is already filtered
-                setArtistResults(data.results || []);
-              } else if (data.type === 'error') {
-                console.error('Import error:', data.error);
-                setArtistResults([
-                  {
-                    success: false,
-                    error: data.error,
-                  },
-                ]);
-              }
-            } catch (parseError) {
-              console.error('Failed to parse SSE data:', parseError);
-            }
-          }
-        }
-      }
-    } catch (error: any) {
-      console.error('Artist import error:', error);
-      setArtistResults([
-        {
-          success: false,
-          error: error.message || 'Artist import failed',
-        },
-      ]);
-    } finally {
-      setImportingArtist(false);
-    }
-  };
-
-  const handleTagImport = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchTags.trim()) return;
-
-    setImportingTag(true);
-    setTagResults([]);
-    setTagProgress({ current: 0, total: 0 });
-
-    // If background mode, start async import
-    if (tagBackground) {
-      try {
-        await fetch('/api/admin/import/danbooru', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            type: 'tags',
-            tags: searchTags.trim(),
-            limit: tagLimit,
-            background: true,
-          }),
-        });
-
-      // Show success message
-      setTagResults([
-        {
-          success: true,
-          postId: 0,
-          imageId: undefined,
-          error: undefined,
-        },
-      ]);
-      setTagProgress({ current: 0, total: tagLimit });
-      
-      // Add informational message
-      setTimeout(() => {
-        setTagResults((prev) => [
-          ...prev,
-          {
-            success: false,
-            error: `ℹ️  Import is now running in the background. Importing up to ${tagLimit.toLocaleString()} posts for "${searchTags}". You can safely leave this page - check your server logs or the Posts page to see new images appear.`,
-          },
-        ]);
-      }, 100);
-      
-      setImportingTag(false);
-    } catch (error: any) {
-      setTagResults([
-        {
-          success: false,
-          error: error.message || 'Failed to start import',
-        },
-      ]);
-      setImportingTag(false);
-    }
-      return;
-    }
-
-    // Normal mode with streaming
-    handleTagImportOld(e);
-  };
-
-  const handleTagImportOld = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchTags.trim()) return;
-
-    setImportingTag(true);
-    setTagResults([]);
-    setTagProgress({ current: 0, total: 0 });
-
-    try {
-      const response = await fetch('/api/admin/import/danbooru', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'tags',
-          tags: searchTags.trim(),
-          limit: tagLimit,
-        }),
+      const response = await axios.post('/api/admin/import/queue', {
+        type: importType,
+        queries: queryList,
+        limit,
       });
 
-      if (!response.body) {
-        console.error('No response body');
-        return;
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              if (data.type === 'start') {
-                setTagProgress({ current: 0, total: data.total });
-              } else if (data.type === 'progress') {
-                setTagProgress({ current: data.current, total: data.total });
-                if (data.result && (data.result.success || data.result.error)) {
-                  setTagResults((prev) => [...prev, data.result]);
-                }
-              } else if (data.type === 'complete') {
-                setTagProgress({ current: data.total, total: data.total });
-                setTagResults(data.results || []);
-              } else if (data.type === 'error') {
-                console.error('Import error:', data.error);
-                setTagResults([
-                  {
-                    success: false,
-                    error: data.error,
-                  },
-                ]);
-              }
-            } catch (err) {
-              console.error('Failed to parse SSE message:', err);
-            }
-          }
-        }
+      if (response.data.success) {
+        setQueries('');
+        fetchJobs();
+        alert(`Created ${response.data.jobs?.length || 1} import job(s)`);
       }
     } catch (error: any) {
-      console.error('Tag import error:', error);
-      setTagResults([
-        {
-          success: false,
-          error: error.message || 'Tag import failed',
-        },
-      ]);
+      alert(error.response?.data?.error || 'Failed to create import jobs');
     } finally {
-      setImportingTag(false);
+      setSubmitting(false);
     }
+  };
+
+  const cancelJob = async (jobId: string) => {
+    if (!confirm('Are you sure you want to cancel this job?')) return;
+
+    try {
+      await axios.delete(`/api/admin/import/queue?jobId=${jobId}`);
+      fetchJobs();
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to cancel job');
+    }
+  };
+
+  const resumeWorker = async () => {
+    try {
+      await axios.get('/api/admin/import/queue?action=resume');
+      fetchJobs();
+      alert('Worker started to resume paused jobs');
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to resume worker');
+    }
+  };
+
+  const getStatusBadge = (status: ImportJob['status']) => {
+    const variants: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string }> = {
+      pending: { variant: 'secondary', className: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' },
+      running: { variant: 'default', className: 'bg-blue-500/10 text-blue-400 border-blue-500/20 animate-pulse' },
+      completed: { variant: 'default', className: 'bg-green-500/10 text-green-400 border-green-500/20' },
+      failed: { variant: 'destructive', className: 'bg-red-500/10 text-red-400 border-red-500/20' },
+      paused: { variant: 'outline', className: 'bg-orange-500/10 text-orange-400 border-orange-500/20' },
+    };
+    const config = variants[status] || variants.pending;
+    return (
+      <Badge variant={config.variant} className={config.className}>
+        {status}
+      </Badge>
+    );
+  };
+
+  const getProgressPercent = (job: ImportJob) => {
+    if (job.progress.total === 0) return 0;
+    return Math.round((job.progress.current / job.progress.total) * 100);
   };
 
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        <Loader2 className="animate-spin text-blue-500" size={48} />
+        <Loader2 className="animate-spin text-primary" size={48} />
       </div>
     );
   }
@@ -390,335 +214,252 @@ export default function ImportPage() {
     return null;
   }
 
+  const runningJobs = jobs.filter(j => j.status === 'running');
+  const pendingJobs = jobs.filter(j => j.status === 'pending');
+  const pausedJobs = jobs.filter(j => j.status === 'paused');
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
-        <h1 className="text-4xl font-bold text-white mb-2 flex items-center gap-3">
-          <Download size={36} className="text-blue-500" />
+        <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
+          <Download size={36} className="text-primary" />
           Danbooru Import
         </h1>
-        <p className="text-zinc-400">Import posts from Danbooru (uploaded as anonymous)</p>
+        <p className="text-muted-foreground">Import posts from Danbooru with persistent queue (survives server restarts)</p>
       </div>
 
-      {/* Single Post Import */}
-      <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
-        <h2 className="text-2xl font-bold text-white mb-4">Import Single Post</h2>
-        <form onSubmit={handleSingleImport} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Danbooru Post ID
-            </label>
-            <input
-              type="number"
-              value={postId}
-              onChange={(e) => setPostId(e.target.value)}
-              placeholder="e.g., 7654321"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
-              disabled={importingSingle}
-            />
-          </div>
-          
-          <button
-            type="submit"
-            disabled={importingSingle || !postId.trim()}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition flex items-center justify-center gap-2"
-          >
-            {importingSingle ? (
-              <>
-                <Loader2 className="animate-spin" size={20} />
-                Importing...
-              </>
-            ) : (
-              <>
-                <Download size={20} />
-                Import Post
-              </>
-            )}
-          </button>
-        </form>
-
-        {singleResult && (
-          <div
-            className={`mt-4 p-4 rounded-lg border ${
-              singleResult.success
-                ? 'bg-green-900/20 border-green-800 text-green-200'
-                : 'bg-red-900/20 border-red-800 text-red-200'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              {singleResult.success ? (
-                <>
-                  <CheckCircle size={20} />
-                  <span>
-                    Successfully imported!{' '}
-                    {singleResult.imageId && (
-                      <a
-                        href={`/image/${singleResult.imageId}`}
-                        className="underline hover:text-green-100"
-                      >
-                        View post
-                      </a>
-                    )}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle size={20} />
-                  <span>{singleResult.error}</span>
-                </>
+      {/* Status Bar */}
+      {(runningJobs.length > 0 || pendingJobs.length > 0 || pausedJobs.length > 0) && (
+        <Card className="mb-6 border-primary/30 bg-primary/5">
+          <CardContent className="py-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                {runningJobs.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                    <span className="text-sm text-blue-400">{runningJobs.length} running</span>
+                  </div>
+                )}
+                {pendingJobs.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-yellow-400" />
+                    <span className="text-sm text-yellow-400">{pendingJobs.length} pending</span>
+                  </div>
+                )}
+                {pausedJobs.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Pause className="h-4 w-4 text-orange-400" />
+                    <span className="text-sm text-orange-400">{pausedJobs.length} paused</span>
+                  </div>
+                )}
+              </div>
+              {pausedJobs.length > 0 && (
+                <Button size="sm" onClick={resumeWorker} className="gap-2">
+                  <Play className="h-4 w-4" />
+                  Resume Paused Jobs
+                </Button>
               )}
             </div>
-          </div>
-        )}
-      </div>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Bulk Artist Import */}
-      <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
-        <h2 className="text-2xl font-bold text-white mb-4">Bulk Import by Artist</h2>
-        <form onSubmit={handleArtistImport} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Artist Tag
-            </label>
-            <input
-              type="text"
-              value={artistTag}
-              onChange={(e) => setArtistTag(e.target.value)}
-              placeholder="e.g., wlop"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
-              disabled={importingArtist}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Number of Posts
-            </label>
-            <input
-              type="number"
-              value={artistLimit}
-              onChange={(e) => {
-                const val = Math.max(1, parseInt(e.target.value) || 100);
-                setArtistLimit(artistBackground ? val : Math.min(val, 1000));
-              }}
-              min="1"
-              max={artistBackground ? undefined : 1000}
-              placeholder="100"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
-              disabled={importingArtist}
-            />
-            <p className="text-sm text-zinc-500 mt-1">
-              {artistBackground ? 'No limit - will run as background process' : 'Maximum 1,000 posts in normal mode'}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="artistBackground"
-              checked={artistBackground}
-              onChange={(e) => {
-                setArtistBackground(e.target.checked);
-                if (!e.target.checked && artistLimit > 1000) {
-                  setArtistLimit(1000);
-                }
-              }}
-              disabled={importingArtist}
-              className="w-4 h-4 text-blue-600 bg-zinc-800 border-zinc-700 rounded focus:ring-blue-600 focus:ring-2"
-            />
-            <label htmlFor="artistBackground" className="text-sm text-zinc-300">
-              Background mode (can leave page, unlimited posts)
-            </label>
-          </div>
-
-          <button
-            type="submit"
-            disabled={importingArtist || !artistTag.trim()}
-            className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition flex items-center justify-center gap-2"
-          >
-            {importingArtist ? (
-              <>
-                <Loader2 className="animate-spin" size={20} />
-                {artistBackground ? 'Started - Running in Background' : 'Importing...'}
-              </>
-            ) : (
-              <>
-                <Download size={20} />
-                {artistBackground ? 'Start Import (Background)' : 'Import with Progress'}
-              </>
-            )}
-          </button>
-        </form>
-
-        {artistResults.length > 0 && (
-          <div className="mt-6 space-y-2">
-            <h3 className="text-lg font-semibold text-white mb-2">
-              Import Status
-            </h3>
-            <div className="max-h-96 overflow-y-auto space-y-2">
-              {artistResults.filter((r) => r).map((result, index) => (
-                <div
-                  key={index}
-                  className={`p-3 rounded-lg border text-sm ${
-                    result?.success && result.postId !== 0
-                      ? 'bg-green-900/10 border-green-800/50 text-green-200'
-                      : result?.success && result.postId === 0
-                      ? 'bg-blue-900/10 border-blue-800/50 text-blue-200'
-                      : 'bg-yellow-900/10 border-yellow-800/50 text-yellow-200'
-                  }`}
-                >
-                  {result?.success && result.postId === 0 ? (
-                    <>✓ Background import started successfully</>
-                  ) : result?.success ? (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Import Forms */}
+        <div className="space-y-6">
+          {/* Single Post Import */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Single Post Import</CardTitle>
+              <CardDescription>Import a specific Danbooru post by ID</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSingleImport} className="space-y-4">
+                <Input
+                  type="number"
+                  placeholder="Danbooru Post ID (e.g., 1234567)"
+                  value={postId}
+                  onChange={(e) => setPostId(e.target.value)}
+                  disabled={importingSingle}
+                />
+                <Button type="submit" disabled={importingSingle || !postId.trim()} className="w-full">
+                  {importingSingle ? (
                     <>
-                      ✓ Post {result.postId} imported
-                      {result.imageId && (
-                        <>
-                          {' - '}
-                          <a
-                            href={`/image/${result.imageId}`}
-                            className="underline hover:opacity-80"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            View
-                          </a>
-                        </>
-                      )}
+                      <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                      Importing...
                     </>
                   ) : (
-                    <>{result?.error}</>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Bulk Tag Search Import */}
-      <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-6">
-        <h2 className="text-2xl font-bold text-white mb-4">Bulk Import by Tags</h2>
-        <form onSubmit={handleTagImport} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Search Tags
-            </label>
-            <input
-              type="text"
-              value={searchTags}
-              onChange={(e) => setSearchTags(e.target.value)}
-              placeholder="e.g., 1girl solo rating:safe"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
-              disabled={importingTag}
-            />
-            <p className="text-sm text-zinc-500 mt-1">Use Danbooru search syntax (space-separated tags)</p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Number of Posts
-            </label>
-            <input
-              type="number"
-              value={tagLimit}
-              onChange={(e) => {
-                const val = Math.max(1, parseInt(e.target.value) || 100);
-                setTagLimit(tagBackground ? val : Math.min(val, 1000));
-              }}
-              min="1"
-              max={tagBackground ? undefined : 1000}
-              placeholder="100"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
-              disabled={importingTag}
-            />
-            <p className="text-sm text-zinc-500 mt-1">
-              {tagBackground ? 'No limit - will run as background process' : 'Maximum 1,000 posts in normal mode'}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="tagBackground"
-              checked={tagBackground}
-              onChange={(e) => {
-                setTagBackground(e.target.checked);
-                if (!e.target.checked && tagLimit > 1000) {
-                  setTagLimit(1000);
-                }
-              }}
-              disabled={importingTag}
-              className="w-4 h-4 text-blue-600 bg-zinc-800 border-zinc-700 rounded focus:ring-blue-600 focus:ring-2"
-            />
-            <label htmlFor="tagBackground" className="text-sm text-zinc-300">
-              Background mode (can leave page, unlimited posts)
-            </label>
-          </div>
-
-          <button
-            type="submit"
-            disabled={importingTag || !searchTags.trim()}
-            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition flex items-center justify-center gap-2"
-          >
-            {importingTag ? (
-              <>
-                <Loader2 className="animate-spin" size={20} />
-                {tagBackground ? 'Started - Running in Background' : 'Importing...'}
-              </>
-            ) : (
-              <>
-                <Download size={20} />
-                {tagBackground ? 'Start Import (Background)' : 'Import with Progress'}
-              </>
-            )}
-          </button>
-        </form>
-
-        {tagResults.length > 0 && (
-          <div className="mt-6 space-y-2">
-            <h3 className="text-lg font-semibold text-white mb-2">
-              Import Status
-            </h3>
-            <div className="max-h-96 overflow-y-auto space-y-2">
-              {tagResults.filter((r) => r).map((result, index) => (
-                <div
-                  key={index}
-                  className={`p-3 rounded-lg border text-sm ${
-                    result?.success && result.postId !== 0
-                      ? 'bg-green-900/10 border-green-800/50 text-green-200'
-                      : result?.success && result.postId === 0
-                      ? 'bg-blue-900/10 border-blue-800/50 text-blue-200'
-                      : 'bg-yellow-900/10 border-yellow-800/50 text-yellow-200'
-                  }`}
-                >
-                  {result?.success && result.postId === 0 ? (
-                    <>✓ Background import started successfully</>
-                  ) : result?.success ? (
                     <>
-                      ✓ Post {result.postId} imported
-                      {result.imageId && (
-                        <>
-                          {' - '}
-                          <a
-                            href={`/image/${result.imageId}`}
-                            className="underline hover:opacity-80"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            View
-                          </a>
-                        </>
-                      )}
+                      <Download className="h-4 w-4 mr-2" />
+                      Import Post
+                    </>
+                  )}
+                </Button>
+                {singleResult && (
+                  <div className={`p-3 rounded-lg ${singleResult.success ? 'bg-green-500/10 border border-green-500/20' : 'bg-red-500/10 border border-red-500/20'}`}>
+                    {singleResult.success ? (
+                      <div className="flex items-center gap-2 text-green-400">
+                        <CheckCircle className="h-4 w-4" />
+                        <span>Imported successfully!</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-red-400">
+                        <AlertCircle className="h-4 w-4" />
+                        <span>{singleResult.error}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Bulk Import */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Bulk Import</CardTitle>
+              <CardDescription>
+                Queue multiple imports (one per line). Supports multiple artists or tag searches.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleBulkImport} className="space-y-4">
+                <Tabs value={importType} onValueChange={(v) => setImportType(v as 'artist' | 'tags')}>
+                  <TabsList className="w-full">
+                    <TabsTrigger value="tags" className="flex-1">Tag Search</TabsTrigger>
+                    <TabsTrigger value="artist" className="flex-1">Artist</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+
+                <Textarea
+                  placeholder={importType === 'artist' 
+                    ? "Enter artist tags (one per line):\nartist_name\nanother_artist\n..." 
+                    : "Enter tag searches (one per line):\n1girl solo\nblue_eyes cat_ears\n..."}
+                  value={queries}
+                  onChange={(e) => setQueries(e.target.value)}
+                  className="min-h-[120px] font-mono text-sm"
+                  disabled={submitting}
+                />
+
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <label className="text-sm text-muted-foreground mb-1 block">
+                      Limit per query
+                    </label>
+                    <Input
+                      type="number"
+                      value={limit}
+                      onChange={(e) => setLimit(parseInt(e.target.value) || 100)}
+                      min={1}
+                      max={1000}
+                      disabled={submitting}
+                    />
+                  </div>
+                  <div className="text-sm text-muted-foreground pt-6">
+                    {queries.split('\n').filter(q => q.trim()).length} job(s)
+                  </div>
+                </div>
+
+                <Button type="submit" disabled={submitting || !queries.trim()} className="w-full">
+                  {submitting ? (
+                    <>
+                      <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                      Creating Jobs...
                     </>
                   ) : (
-                    <>{result?.error}</>
+                    <>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add to Queue
+                    </>
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Job Queue */}
+        <Card className="lg:row-span-2">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <List className="h-5 w-5" />
+                Import Queue
+              </CardTitle>
+              <CardDescription>{jobs.length} total jobs</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={fetchJobs} disabled={loadingJobs}>
+              <RefreshCw className={`h-4 w-4 ${loadingJobs ? 'animate-spin' : ''}`} />
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3 max-h-[600px] overflow-y-auto">
+            {jobs.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <List className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                <p>No import jobs yet</p>
+              </div>
+            ) : (
+              jobs.map((job) => (
+                <div
+                  key={job._id}
+                  className={`p-4 rounded-lg border ${
+                    job.status === 'running' ? 'border-blue-500/30 bg-blue-500/5' :
+                    job.status === 'completed' ? 'border-green-500/20 bg-green-500/5' :
+                    job.status === 'failed' ? 'border-red-500/20 bg-red-500/5' :
+                    job.status === 'paused' ? 'border-orange-500/20 bg-orange-500/5' :
+                    'border-border'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="outline" className="text-xs">
+                          {job.type}
+                        </Badge>
+                        {getStatusBadge(job.status)}
+                      </div>
+                      <p className="font-medium truncate" title={job.query}>
+                        {job.query}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        by {job.createdBy} • {new Date(job.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    {(job.status === 'pending' || job.status === 'running' || job.status === 'paused') && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => cancelJob(job._id)}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+
+                  {job.progress.total > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>{job.progress.current} / {job.progress.total}</span>
+                        <span>{getProgressPercent(job)}%</span>
+                      </div>
+                      <Progress value={getProgressPercent(job)} className="h-1.5" />
+                      <div className="flex gap-3 text-xs">
+                        <span className="text-green-400">✓ {job.progress.successful}</span>
+                        <span className="text-red-400">✗ {job.progress.failed}</span>
+                        <span className="text-yellow-400">⊘ {job.progress.skipped}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {job.error && (
+                    <p className="text-xs text-red-400 mt-2">{job.error}</p>
                   )}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              ))
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

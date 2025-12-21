@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/lib/AuthContext';
-import { Upload, Search, User, LogOut, Menu, X, Settings, Heart, Shield, Key, BookOpen } from 'lucide-react';
+import { Upload, Search, User, LogOut, Menu, X, Settings, Heart, Shield, Key, BookOpen, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
 
 const ACCOUNTS_URL = process.env.NEXT_PUBLIC_ACCOUNTS_URL || 'https://accounts.serika.dev';
 
@@ -27,103 +27,122 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/40 sticky top-0 z-50">
+    <nav className="bg-background/80 backdrop-blur-xl border-b border-border/40 sticky top-0 z-[100] transition-all duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           {/* Logo */}
           <div className="flex items-center">
-            <Link href="/" className="flex items-center gap-2">
+            <Link href="/" className="flex items-center group">
               <Image
                 src="/logo.svg"
                 alt="Serika Booru"
                 width={32}
                 height={32}
-                className="h-8 w-auto drop-shadow-sm"
+                className="h-8 w-auto drop-shadow-sm transition-transform duration-300 group-hover:scale-110"
                 priority
               />
             </Link>
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-4">
-            <Button variant="ghost" asChild>
+          <div className="hidden md:flex items-center space-x-1">
+            <Button variant="ghost" asChild className="font-bold text-sm hover:bg-primary/5 hover:text-primary transition-all rounded-xl">
               <Link href="/posts">Posts</Link>
             </Button>
-            <Button variant="ghost" asChild>
+            <Button variant="ghost" asChild className="font-bold text-sm hover:bg-primary/5 hover:text-primary transition-all rounded-xl">
               <Link href="/tags">Tags</Link>
             </Button>
+            <Button variant="ghost" asChild className="font-bold text-sm hover:bg-primary/5 hover:text-primary transition-all rounded-xl">
+              <Link href="/upload">
+                <Upload className="mr-2 h-4 w-4" />
+                Upload
+              </Link>
+            </Button>
+            
+            <div className="w-px h-6 bg-border/60 mx-2" />
             
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={user.avatarUrl} alt={user.username} />
-                      <AvatarFallback>{user.username[0].toUpperCase()}</AvatarFallback>
+                  <Button variant="ghost" className="relative h-10 w-10 rounded-xl p-0 hover:bg-primary/5 transition-all">
+                    <Avatar className="h-8 w-8 rounded-lg border border-border/50">
+                      <AvatarImage src={user.avatarUrl} alt={user.username} className="object-cover" />
+                      <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
+                        {user.username[0].toUpperCase()}
+                      </AvatarFallback>
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="end" forceMount>
-                  <DropdownMenuLabel className="font-normal">
+                <DropdownMenuContent className="w-64 p-2 rounded-2xl border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl" align="end" forceMount>
+                  <DropdownMenuLabel className="font-normal p-3">
                     <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">{user.username}</p>
-                      <p className="text-xs leading-none text-muted-foreground">
+                      <p className="text-sm font-black leading-none text-foreground">{user.username}</p>
+                      <p className="text-xs leading-none text-muted-foreground font-medium">
                         {user.email}
                       </p>
                     </div>
                   </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href={`/user/${user.username}`}>
-                      <User className="mr-2 h-4 w-4" />
-                      <span>Profile</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/favorites">
-                      <Heart className="mr-2 h-4 w-4" />
-                      <span>Favorites</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/api-keys">
-                      <Key className="mr-2 h-4 w-4" />
-                      <span>API Keys</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/api-docs">
-                      <BookOpen className="mr-2 h-4 w-4" />
-                      <span>API Docs</span>
-                    </Link>
-                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-border/50" />
+                  <div className="p-1 space-y-1">
+                    <DropdownMenuItem asChild className="rounded-xl focus:bg-primary/10 focus:text-primary cursor-pointer py-2.5">
+                      <Link href={`/user/${user.username}`} className="flex items-center">
+                        <User className="mr-3 h-4 w-4" />
+                        <span className="font-bold text-sm">Profile</span>
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className="rounded-xl focus:bg-primary/10 focus:text-primary cursor-pointer py-2.5">
+                      <Link href="/favorites" className="flex items-center">
+                        <Heart className="mr-3 h-4 w-4" />
+                        <span className="font-bold text-sm">Favorites</span>
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className="rounded-xl focus:bg-primary/10 focus:text-primary cursor-pointer py-2.5">
+                      <Link href="/api-keys" className="flex items-center">
+                        <Key className="mr-3 h-4 w-4" />
+                        <span className="font-bold text-sm">API Keys</span>
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className="rounded-xl focus:bg-primary/10 focus:text-primary cursor-pointer py-2.5">
+                      <Link href="/api-docs" className="flex items-center">
+                        <BookOpen className="mr-3 h-4 w-4" />
+                        <span className="font-bold text-sm">API Docs</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  </div>
+                  
                   {(user.rank === 'admin' || user.rank === 'owner') && (
                     <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem asChild>
-                        <Link href="/admin" className="text-red-400 focus:text-red-400">
-                          <Shield className="mr-2 h-4 w-4" />
-                          <span>Admin Panel</span>
-                        </Link>
-                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-border/50" />
+                      <div className="p-1">
+                        <DropdownMenuItem asChild className="rounded-xl focus:bg-red-500/10 focus:text-red-500 text-red-400 cursor-pointer py-2.5">
+                          <Link href="/admin" className="flex items-center">
+                            <Shield className="mr-3 h-4 w-4" />
+                            <span className="font-bold text-sm">Admin Panel</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      </div>
                     </>
                   )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <a href={`${ACCOUNTS_URL}/account`} target="_blank" rel="noopener noreferrer">
-                      <Settings className="mr-2 h-4 w-4" />
-                      <span>Settings</span>
-                    </a>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout} className="text-red-400 focus:text-red-400">
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Log out</span>
-                  </DropdownMenuItem>
+                  
+                  <DropdownMenuSeparator className="bg-border/50" />
+                  <div className="p-1 space-y-1">
+                    <DropdownMenuItem asChild className="rounded-xl focus:bg-primary/10 focus:text-primary cursor-pointer py-2.5">
+                      <Link href="/settings" className="flex items-center">
+                        <Settings className="mr-3 h-4 w-4" />
+                        <span className="font-bold text-sm">Settings</span>
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={logout} className="rounded-xl focus:bg-red-500/10 focus:text-red-500 text-red-400 cursor-pointer py-2.5">
+                      <LogOut className="mr-3 h-4 w-4" />
+                      <span className="font-bold text-sm">Log out</span>
+                    </DropdownMenuItem>
+                  </div>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button onClick={handleLogin}>Login</Button>
+              <Button onClick={handleLogin} className="font-bold rounded-xl px-6 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 transition-all active:scale-95">
+                Login
+              </Button>
             )}
           </div>
 
@@ -136,6 +155,7 @@ export default function Navbar() {
                 </Button>
               </SheetTrigger>
               <SheetContent side="right">
+                <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
                 {/* Mobile Menu Content */}
                 <div className="flex flex-col space-y-4 mt-4">
                   {user ? (
@@ -160,7 +180,13 @@ export default function Navbar() {
                       <Button variant="ghost" className="justify-start" asChild>
                         <Link href="/posts">
                           <Search className="mr-2 h-4 w-4" />
-                          Browse
+                          Browse Posts
+                        </Link>
+                      </Button>
+                      <Button variant="ghost" className="justify-start" asChild>
+                        <Link href="/tags">
+                          <Hash className="mr-2 h-4 w-4" />
+                          Tags
                         </Link>
                       </Button>
                       <Button variant="ghost" className="justify-start" asChild>
@@ -169,12 +195,24 @@ export default function Navbar() {
                           Favorites
                         </Link>
                       </Button>
+                      <Button variant="ghost" className="justify-start" asChild>
+                        <Link href="/upload">
+                          <Upload className="mr-2 h-4 w-4" />
+                          Upload
+                        </Link>
+                      </Button>
+                      <Button variant="ghost" className="justify-start" asChild>
+                        <Link href="/api-docs">
+                          <BookOpen className="mr-2 h-4 w-4" />
+                          API Docs
+                        </Link>
+                      </Button>
                       
                       <Button variant="ghost" className="justify-start" asChild>
-                         <a href={`${ACCOUNTS_URL}/account`} target="_blank" rel="noopener noreferrer">
+                        <Link href="/settings">
                           <Settings className="mr-2 h-4 w-4" />
                           Settings
-                        </a>
+                        </Link>
                       </Button>
 
                       {(user.rank === 'admin' || user.rank === 'owner') && (
@@ -196,6 +234,12 @@ export default function Navbar() {
                       <Button onClick={handleLogin} className="w-full">Login / Sign Up</Button>
                       <Button variant="ghost" asChild className="w-full justify-start">
                         <Link href="/posts">Continue as Guest</Link>
+                      </Button>
+                      <Button variant="ghost" asChild className="w-full justify-start">
+                        <Link href="/upload">
+                          <Upload className="mr-2 h-4 w-4" />
+                          Upload
+                        </Link>
                       </Button>
                     </>
                   )}

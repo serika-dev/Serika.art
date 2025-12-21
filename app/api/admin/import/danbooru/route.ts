@@ -7,6 +7,7 @@ import {
   fetchDanbooruPostsByTags,
   mapDanbooruRating,
   extractDanbooruTags,
+  isAIPost,
   DanbooruPost,
 } from '@/lib/danbooru';
 import { getCollection } from '@/lib/db';
@@ -140,6 +141,9 @@ async function importDanbooruPost(post: DanbooruPost): Promise<ImportResult> {
     const lastImage = await imagesCollection.findOne({}, { sort: { sequentialId: -1 } });
     const nextSequentialId = lastImage?.sequentialId ? lastImage.sequentialId + 1 : 1;
 
+    // Check if this is an AI-generated post
+    const isAIGenerated = isAIPost(post);
+
     // Create image document with full metadata
     const imageDoc = {
       sequentialId: nextSequentialId,
@@ -154,7 +158,7 @@ async function importDanbooruPost(post: DanbooruPost): Promise<ImportResult> {
       contentType: `image/${post.file_ext}`,
       tags: tagIds,
       rating: mapDanbooruRating(post.rating),
-      isAIGenerated: false,
+      isAIGenerated,
       source: post.source || `https://danbooru.donmai.us/posts/${post.id}`,
       description: '',
       upvotes: 0,

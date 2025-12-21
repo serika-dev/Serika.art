@@ -11,6 +11,10 @@ export default function ApiDocsPage() {
     { id: 'authentication', name: 'Authentication' },
     { id: 'rate-limits', name: 'Rate Limits' },
     { id: 'images', name: 'Images' },
+    { id: 'similar', name: 'Similar Images' },
+    { id: 'trending', name: 'Trending' },
+    { id: 'batch', name: 'Batch Operations' },
+    { id: 'search', name: 'Search' },
     { id: 'random', name: 'Random' },
     { id: 'tags', name: 'Tags' },
     { id: 'users', name: 'Users' },
@@ -312,6 +316,202 @@ export default function ApiDocsPage() {
               </div>
             </section>
 
+            {/* Similar Images */}
+            <section id="similar" className={activeSection === 'similar' ? '' : 'hidden'}>
+              <h2 className="text-3xl font-bold mb-6">Similar Images</h2>
+              
+              <div className="bg-[#111] rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
+                  <code className="text-indigo-400">/images/:id/similar</code>
+                </div>
+                <p className="text-gray-300 mb-4">Get images similar to the specified image based on shared tags.</p>
+                
+                <h4 className="font-semibold mb-2">Path Parameters</h4>
+                <table className="w-full text-sm mb-4">
+                  <tbody className="text-gray-300">
+                    <tr>
+                      <td className="py-2"><code>id</code></td>
+                      <td>Source image ID</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <h4 className="font-semibold mb-2">Query Parameters</h4>
+                <table className="w-full text-sm mb-4">
+                  <tbody className="text-gray-300">
+                    <tr>
+                      <td className="py-2"><code>limit</code></td>
+                      <td>Number of results (1-50, default: 10)</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <h4 className="font-semibold mb-2">Example Response</h4>
+                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
+{`{
+  "success": true,
+  "data": {
+    "source_id": "507f1f77bcf86cd799439011",
+    "similar": [
+      {
+        "id": "507f1f77bcf86cd799439012",
+        "sequential_id": 42,
+        "url": "https://cdn.serika.art/...",
+        "thumbnail_url": "https://cdn.serika.art/...",
+        "shared_tags": 5,
+        "tags": [{"name": "landscape", "type": "general"}],
+        "stats": {"upvotes": 15, "favorites": 8}
+      }
+    ],
+    "count": 10
+  }
+}`}
+                </pre>
+              </div>
+            </section>
+
+            {/* Trending */}
+            <section id="trending" className={activeSection === 'trending' ? '' : 'hidden'}>
+              <h2 className="text-3xl font-bold mb-6">Trending</h2>
+              
+              <div className="bg-[#111] rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
+                  <code className="text-indigo-400">/trending</code>
+                </div>
+                <p className="text-gray-300 mb-4">Get trending images and tags based on recent engagement.</p>
+                
+                <h4 className="font-semibold mb-2">Query Parameters</h4>
+                <table className="w-full text-sm mb-4">
+                  <tbody className="text-gray-300">
+                    <tr className="border-b border-white/5">
+                      <td className="py-2"><code>period</code></td>
+                      <td>Time period: day, week, month (default: day)</td>
+                    </tr>
+                    <tr className="border-b border-white/5">
+                      <td className="py-2"><code>limit</code></td>
+                      <td>Number of images (1-50, default: 20)</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2"><code>ratings</code></td>
+                      <td>Filter by rating (default: safe)</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <h4 className="font-semibold mb-2">Example Response</h4>
+                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
+{`{
+  "success": true,
+  "data": {
+    "period": "day",
+    "images": [
+      {
+        "id": "507f1f77bcf86cd799439011",
+        "trend_score": 250,
+        "tags": ["landscape", "nature"],
+        "stats": {"upvotes": 42, "favorites": 15, "views": 1337}
+      }
+    ],
+    "tags": [
+      {"name": "landscape", "type": "general", "trending_count": 15}
+    ]
+  }
+}`}
+                </pre>
+              </div>
+            </section>
+
+            {/* Batch Operations */}
+            <section id="batch" className={activeSection === 'batch' ? '' : 'hidden'}>
+              <h2 className="text-3xl font-bold mb-6">Batch Operations</h2>
+              
+              <div className="bg-[#111] rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="bg-blue-600 px-2 py-1 rounded text-xs font-bold">POST</span>
+                  <code className="text-indigo-400">/batch/images</code>
+                </div>
+                <p className="text-gray-300 mb-4">Fetch multiple images by ID in a single request. More efficient than multiple individual requests.</p>
+                
+                <h4 className="font-semibold mb-2">Request Body</h4>
+                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm mb-4">
+{`{
+  "ids": [
+    "507f1f77bcf86cd799439011",
+    "507f1f77bcf86cd799439012",
+    "507f1f77bcf86cd799439013"
+  ]
+}`}
+                </pre>
+
+                <div className="bg-yellow-900/20 border border-yellow-600/30 rounded p-3 mb-4">
+                  <p className="text-yellow-400 text-sm">
+                    <strong>Limit:</strong> Maximum 100 IDs per request
+                  </p>
+                </div>
+
+                <h4 className="font-semibold mb-2">Example Response</h4>
+                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
+{`{
+  "success": true,
+  "data": {
+    "images": [...],
+    "found": 3,
+    "requested": 3
+  }
+}`}
+                </pre>
+              </div>
+            </section>
+
+            {/* Search */}
+            <section id="search" className={activeSection === 'search' ? '' : 'hidden'}>
+              <h2 className="text-3xl font-bold mb-6">Search</h2>
+              
+              <div className="bg-[#111] rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
+                  <code className="text-indigo-400">/search</code>
+                </div>
+                <p className="text-gray-300 mb-4">Search across images, tags, and users with a single query.</p>
+                
+                <h4 className="font-semibold mb-2">Query Parameters</h4>
+                <table className="w-full text-sm mb-4">
+                  <tbody className="text-gray-300">
+                    <tr className="border-b border-white/5">
+                      <td className="py-2"><code>q</code> <span className="text-red-400">*</span></td>
+                      <td>Search query (min 2 characters)</td>
+                    </tr>
+                    <tr className="border-b border-white/5">
+                      <td className="py-2"><code>type</code></td>
+                      <td>all, images, tags, users (default: all)</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2"><code>limit</code></td>
+                      <td>Results per type (1-50, default: 10)</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <h4 className="font-semibold mb-2">Example Response</h4>
+                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
+{`{
+  "success": true,
+  "data": {
+    "images": [...],
+    "tags": [
+      {"name": "landscape", "type": "general", "count": 1234}
+    ],
+    "users": [
+      {"username": "artist", "avatar_url": "..."}
+    ]
+  }
+}`}
+                </pre>
+              </div>
+            </section>
+
             {/* Random */}
             <section id="random" className={activeSection === 'random' ? '' : 'hidden'}>
               <h2 className="text-3xl font-bold mb-6">Random Images</h2>
@@ -387,11 +587,11 @@ export default function ApiDocsPage() {
                   <tbody className="text-gray-300">
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>width</code></td>
-                      <td>Output width (16-4000)</td>
+                      <td>Output width (16-8000)</td>
                     </tr>
                     <tr>
                       <td className="py-2"><code>height</code></td>
-                      <td>Output height (16-4000)</td>
+                      <td>Output height (16-8000)</td>
                     </tr>
                   </tbody>
                 </table>
@@ -405,27 +605,47 @@ export default function ApiDocsPage() {
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>tags</code></td>
-                      <td>Filter by tags</td>
+                      <td>Filter by tags (comma-separated)</td>
+                    </tr>
+                    <tr className="border-b border-white/5">
+                      <td className="py-2"><code>exclude_tags</code></td>
+                      <td>Tags to exclude (comma-separated)</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>fit</code></td>
-                      <td>cover, contain, fill, inside, outside</td>
+                      <td>cover, contain, fill, inside, outside (default: cover)</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>format</code></td>
-                      <td>png, jpeg, webp</td>
+                      <td>png, jpeg, webp (default: png)</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>quality</code></td>
-                      <td>Output quality (1-100)</td>
+                      <td>Output quality 1-100 (default: 85)</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>blur</code></td>
                       <td>true to apply blur effect</td>
                     </tr>
-                    <tr>
+                    <tr className="border-b border-white/5">
                       <td className="py-2"><code>grayscale</code></td>
                       <td>true for grayscale output</td>
+                    </tr>
+                    <tr className="border-b border-white/5">
+                      <td className="py-2"><code>ai</code></td>
+                      <td>true for AI-only images</td>
+                    </tr>
+                    <tr className="border-b border-white/5">
+                      <td className="py-2"><code>no_ai</code></td>
+                      <td>true to exclude AI images</td>
+                    </tr>
+                    <tr className="border-b border-white/5">
+                      <td className="py-2"><code>match_size</code></td>
+                      <td>false to disable dimension matching (default: true)</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2"><code>aspect_tolerance</code></td>
+                      <td>Aspect ratio tolerance 0-1 (default: 0.2)</td>
                     </tr>
                   </tbody>
                 </table>
