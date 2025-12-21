@@ -46,23 +46,27 @@ export async function fetchDanbooruPost(postId: number): Promise<DanbooruPost | 
 
 export async function fetchDanbooruPostsByTags(
   tags: string,
-  limit: number = 100
+  limit: number = 100 // 0 = unlimited
 ): Promise<DanbooruPost[]> {
   try {
     const posts: DanbooruPost[] = [];
     let page = 1;
     const hasAuth = !!DANBOORU_API_KEY;
+    const unlimited = limit === 0;
     
     // With API key: 10 requests/second
     // Without API key: 1 request/second
     const rateLimit = hasAuth ? 100 : 1000;
     
-    while (posts.length < limit) {
+    // Safety max to prevent infinite loops (100k posts max)
+    const maxPosts = unlimited ? 100000 : limit;
+    
+    while (posts.length < maxPosts) {
       try {
         const response = await danbooruClient.get('/posts.json', {
           params: {
             tags,
-            limit: Math.min(200, limit - posts.length),
+            limit: unlimited ? 200 : Math.min(200, limit - posts.length),
             page,
           },
         });
@@ -93,7 +97,7 @@ export async function fetchDanbooruPostsByTags(
       }
     }
     
-    return posts.slice(0, limit);
+    return unlimited ? posts : posts.slice(0, limit);
   } catch (error: any) {
     if (axios.isAxiosError(error)) {
       console.error(`Error fetching Danbooru posts by tags: ${error.message}`, {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Download, AlertCircle, CheckCircle, Loader2, Play, Pause, Trash2, RefreshCw, Clock, List, Plus, X } from 'lucide-react';
+import { Download, AlertCircle, CheckCircle, Loader2, Play, Pause, Trash2, RefreshCw, Clock, List, Plus, X, Zap, Infinity, Flame } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,12 +11,14 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 interface ImportJob {
   _id: string;
   type: 'artist' | 'tags' | 'single';
   query: string;
-  limit: number;
+  limit: number; // 0 = unlimited
   status: 'pending' | 'running' | 'completed' | 'failed' | 'paused';
   progress: {
     current: number;
@@ -50,6 +52,7 @@ export default function ImportPage() {
   const [importType, setImportType] = useState<'artist' | 'tags'>('tags');
   const [queries, setQueries] = useState(''); // Newline-separated queries
   const [limit, setLimit] = useState(100);
+  const [unlimited, setUnlimited] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -145,7 +148,7 @@ export default function ImportPage() {
       const response = await axios.post('/api/admin/import/queue', {
         type: importType,
         queries: queryList,
-        limit,
+        limit: unlimited ? 0 : limit,
       });
 
       if (response.data.success) {
@@ -222,10 +225,16 @@ export default function ImportPage() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
         <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
-          <Download size={36} className="text-primary" />
+          <div className="relative">
+            <Download size={36} className="text-primary" />
+            <Flame size={16} className="absolute -top-1 -right-1 text-orange-500 animate-pulse" />
+          </div>
           Danbooru Import
+          <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-white border-0 text-xs font-bold">
+            UNLIMITED
+          </Badge>
         </h1>
-        <p className="text-muted-foreground">Import posts from Danbooru with persistent queue (survives server restarts)</p>
+        <p className="text-muted-foreground">Import posts from Danbooru with persistent queue • Parallel processing • No limits • Survives server restarts</p>
       </div>
 
       {/* Status Bar */}
@@ -341,30 +350,64 @@ export default function ImportPage() {
                   disabled={submitting}
                 />
 
+                {/* Unlimited Toggle */}
+                <div className="flex items-center justify-between p-4 rounded-lg border border-border bg-gradient-to-r from-orange-500/5 to-red-500/5">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-full bg-gradient-to-br from-orange-500 to-red-500">
+                      <Infinity className="h-4 w-4 text-white" />
+                    </div>
+                    <div>
+                      <Label htmlFor="unlimited" className="font-bold text-foreground cursor-pointer">
+                        Unlimited Mode
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Import ALL matching posts (up to 100k per query)
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    id="unlimited"
+                    checked={unlimited}
+                    onCheckedChange={setUnlimited}
+                    disabled={submitting}
+                  />
+                </div>
+
                 <div className="flex items-center gap-4">
                   <div className="flex-1">
                     <label className="text-sm text-muted-foreground mb-1 block">
-                      Limit per query
+                      {unlimited ? 'Limit disabled' : 'Limit per query'}
                     </label>
                     <Input
                       type="number"
-                      value={limit}
+                      value={unlimited ? '∞' : limit}
                       onChange={(e) => setLimit(parseInt(e.target.value) || 100)}
                       min={1}
-                      max={1000}
-                      disabled={submitting}
+                      disabled={submitting || unlimited}
+                      className={unlimited ? 'opacity-50' : ''}
+                      placeholder={unlimited ? '∞ Unlimited' : ''}
                     />
                   </div>
                   <div className="text-sm text-muted-foreground pt-6">
                     {queries.split('\n').filter(q => q.trim()).length} job(s)
+                    {unlimited && <span className="ml-1 text-orange-400 font-bold">• UNLIMITED</span>}
                   </div>
                 </div>
 
-                <Button type="submit" disabled={submitting || !queries.trim()} className="w-full">
+                <Button 
+                  type="submit" 
+                  disabled={submitting || !queries.trim()} 
+                  className={`w-full ${unlimited ? 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600' : ''}`}
+                >
                   {submitting ? (
                     <>
                       <Loader2 className="animate-spin h-4 w-4 mr-2" />
                       Creating Jobs...
+                    </>
+                  ) : unlimited ? (
+                    <>
+                      <Zap className="h-4 w-4 mr-2" />
+                      Import Everything
                     </>
                   ) : (
                     <>
@@ -412,10 +455,16 @@ export default function ImportPage() {
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <Badge variant="outline" className="text-xs">
                           {job.type}
                         </Badge>
+                        {job.limit === 0 && (
+                          <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-white border-0 text-xs">
+                            <Infinity className="h-3 w-3 mr-1" />
+                            UNLIMITED
+                          </Badge>
+                        )}
                         {getStatusBadge(job.status)}
                       </div>
                       <p className="font-medium truncate" title={job.query}>
@@ -423,6 +472,7 @@ export default function ImportPage() {
                       </p>
                       <p className="text-xs text-muted-foreground">
                         by {job.createdBy} • {new Date(job.createdAt).toLocaleString()}
+                        {job.limit > 0 && <span> • limit: {job.limit}</span>}
                       </p>
                     </div>
                     {(job.status === 'pending' || job.status === 'running' || job.status === 'paused') && (
