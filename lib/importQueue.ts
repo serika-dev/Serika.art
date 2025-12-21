@@ -19,7 +19,7 @@ export type ImportJobStatus = 'pending' | 'running' | 'completed' | 'failed' | '
 export interface ImportJob {
   _id?: ObjectId;
   type: 'artist' | 'tags' | 'single';
-  query: string; // artist tag, search tags, or post ID
+  query: string;
   limit: number;
   status: ImportJobStatus;
   progress: {
@@ -29,42 +29,100 @@ export interface ImportJob {
     failed: number;
     skipped: number;
   };
-  posts?: number[]; // Array of post IDs to import (populated when job starts)
-  currentPostIndex?: number; // Track where we left off
+  posts?: number[];
+  currentPostIndex?: number;
   createdAt: Date;
   startedAt?: Date;
   completedAt?: Date;
   error?: string;
-  createdBy: string; // username of who created the job
+  createdBy: string;
 }
 
-// Global flag to track if worker is running
+// ============================================
+// 🔥 INSANE MODE - ABSOLUTELY UNHINGED 🔥
+// ============================================
+const CONCURRENT_JOBS = 10;         // 10 jobs simultaneously
+const CONCURRENT_IMPORTS = 50;      // 50 parallel imports per job (500 TOTAL!)
+const BATCH_SIZE = 100;             // Prefetch 100 posts at a time
+const IMPORT_DELAY = 0;             // ZERO DELAY - PURE CHAOS
+const DB_UPDATE_INTERVAL = 20;      // Update DB every 20 imports
+
+// Global tracking
 let workerRunning = false;
 let workerPromise: Promise<void> | null = null;
+let activeJobCount = 0;
 
-// Concurrent import settings
-const CONCURRENT_IMPORTS = 3; // Number of parallel imports
-const IMPORT_DELAY = 100; // Reduced delay between batches (ms)
+// Tag cache to reduce DB lookups
+const tagCache = new Map<string, ObjectId>();
+
+async function getOrCreateTagsBulk(
+  tagsCollection: any,
+  tagData: Array<{ name: string; type: string }>
+): Promise<ObjectId[]> {
+  const tagIds: ObjectId[] = [];
+  const uncachedTags: Array<{ name: string; type: string }> = [];
+
+  // Check cache first
+  for (const t of tagData) {
+    const cached = tagCache.get(t.name);
+    if (cached) {
+      tagIds.push(cached);
+    } else {
+      uncachedTags.push(t);
+    }
+  }
+
+  if (uncachedTags.length > 0) {
+    // Bulk find existing tags
+    const existingTags = await tagsCollection
+      .find({ name: { $in: uncachedTags.map(t => t.name) } })
+      .toArray();
+
+    const existingMap = new Map<string, ObjectId>(existingTags.map((t: any) => [t.name, t._id as ObjectId]));
+
+    // Process uncached tags
+    for (const t of uncachedTags) {
+      if (existingMap.has(t.name)) {
+        const id = existingMap.get(t.name)!;
+        tagCache.set(t.name, id);
+        tagIds.push(id);
+      } else {
+        // Create new tag
+        const result = await tagsCollection.insertOne({
+          name: t.name,
+          type: t.type,
+          count: 0,
+          createdAt: new Date(),
+        });
+        tagCache.set(t.name, result.insertedId);
+        tagIds.push(result.insertedId);
+      }
+    }
+  }
+
+  return tagIds;
+}
 
 async function downloadAndUploadImage(
   fileUrl: string,
   postId: number
 ): Promise<{ mainUrl: string; thumbnailUrl: string; width: number; height: number }> {
-  const imageResponse = await axios.get(fileUrl, { 
+  const imageResponse = await axios.get(fileUrl, {
     responseType: 'arraybuffer',
-    timeout: 30000, // 30 second timeout
+    timeout: 60000,
+    maxContentLength: 100 * 1024 * 1024,
   });
   let imageBuffer = Buffer.from(imageResponse.data);
 
   let metadata;
   try {
     metadata = await sharp(imageBuffer).metadata();
-  } catch (error) {
+  } catch {
     try {
       imageBuffer = await sharp(imageBuffer).toFormat('jpeg', { quality: 90 }).toBuffer();
       metadata = await sharp(imageBuffer).metadata();
-    } catch (convertError) {
-      throw new Error('Unsupported image format and conversion failed');
+    } catch {
+      throw new Error('Unsupported image format');
     }
   }
 
@@ -72,76 +130,62 @@ async function downloadAndUploadImage(
   const height = metadata.height || 0;
 
   const timestamp = Date.now();
+  const rand = Math.random().toString(36).substring(7);
   let ext = fileUrl.split('.').pop()?.split('?')[0] || 'jpg';
-  if (ext === 'webp' || ext === 'gif') {
-    ext = 'jpg';
-  }
-  const mainFilename = `${timestamp}-danbooru-${postId}.${ext}`;
-  const thumbFilename = `thumb-${timestamp}-danbooru-${postId}.jpg`;
+  if (ext === 'webp' || ext === 'gif') ext = 'jpg';
+  
+  const mainFilename = `${timestamp}-${rand}-danbooru-${postId}.${ext}`;
+  const thumbFilename = `thumb-${timestamp}-${rand}-danbooru-${postId}.jpg`;
 
-  const mainUrl = await uploadToR2(imageBuffer, mainFilename, `image/${ext}`);
-
-  const thumbnailBuffer = await sharp(imageBuffer)
-    .resize(320, 320, { fit: 'cover' })
-    .jpeg({ quality: 45, mozjpeg: true, progressive: true })
-    .toBuffer();
-  const thumbnailUrl = await uploadToR2(
-    thumbnailBuffer,
-    thumbFilename,
-    'image/jpeg',
-    'thumbnails'
-  );
+  // Upload main and thumbnail in parallel
+  const [mainUrl, thumbnailUrl] = await Promise.all([
+    uploadToR2(imageBuffer, mainFilename, `image/${ext}`),
+    sharp(imageBuffer)
+      .resize(320, 320, { fit: 'cover' })
+      .jpeg({ quality: 45, mozjpeg: true, progressive: true })
+      .toBuffer()
+      .then(thumbBuffer => uploadToR2(thumbBuffer, thumbFilename, 'image/jpeg', 'thumbnails'))
+  ]);
 
   return { mainUrl, thumbnailUrl, width, height };
 }
 
-async function importSinglePost(post: DanbooruPost): Promise<{
+interface ImportResult {
   success: boolean;
   error?: string;
   postId: number;
-  imageId?: string;
   skipped?: boolean;
-}> {
-  try {
-    const imagesCollection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
+}
 
-    // Check if already imported
-    const existing = await imagesCollection.findOne({ 'metadata.danbooruId': post.id });
+async function importSinglePost(
+  post: DanbooruPost,
+  imagesCollection: any,
+  tagsCollection: any
+): Promise<ImportResult> {
+  try {
+    // Quick check if already imported
+    const existing = await imagesCollection.findOne(
+      { 'metadata.danbooruId': post.id },
+      { projection: { _id: 1 } }
+    );
     if (existing) {
-      return { success: false, error: 'Post already imported', postId: post.id, skipped: true };
+      return { success: false, postId: post.id, skipped: true };
     }
 
     const fileUrl = post.file_url || post.large_file_url;
     if (!fileUrl) {
-      return { success: false, error: 'No file URL available', postId: post.id, skipped: true };
+      return { success: false, error: 'No file URL', postId: post.id, skipped: true };
     }
 
     const { mainUrl, thumbnailUrl, width, height } = await downloadAndUploadImage(fileUrl, post.id);
 
-    // Extract and create tags
+    // Get/create tags using bulk operation
     const tagData = extractDanbooruTags(post);
-    const tagIds: ObjectId[] = [];
+    const tagIds = await getOrCreateTagsBulk(tagsCollection, tagData);
 
-    for (const tagInfo of tagData) {
-      let tag = await tagsCollection.findOne({ name: tagInfo.name });
-      if (!tag) {
-        const result = await tagsCollection.insertOne({
-          name: tagInfo.name,
-          type: tagInfo.type,
-          count: 0,
-          createdAt: new Date(),
-        });
-        tagIds.push(result.insertedId);
-      } else {
-        tagIds.push(tag._id);
-      }
-    }
-
-    const lastImage = await imagesCollection.findOne({}, { sort: { sequentialId: -1 } });
+    // Get next sequential ID
+    const lastImage = await imagesCollection.findOne({}, { sort: { sequentialId: -1 }, projection: { sequentialId: 1 } });
     const nextSequentialId = lastImage?.sequentialId ? lastImage.sequentialId + 1 : 1;
-
-    const isAIGenerated = isAIPost(post);
 
     const imageDoc = {
       sequentialId: nextSequentialId,
@@ -156,7 +200,7 @@ async function importSinglePost(post: DanbooruPost): Promise<{
       contentType: `image/${post.file_ext}`,
       tags: tagIds,
       rating: mapDanbooruRating(post.rating),
-      isAIGenerated,
+      isAIGenerated: isAIPost(post),
       source: post.source || `https://danbooru.donmai.us/posts/${post.id}`,
       description: '',
       upvotes: 0,
@@ -173,209 +217,239 @@ async function importSinglePost(post: DanbooruPost): Promise<{
       updatedAt: new Date(),
     };
 
-    const result = await imagesCollection.insertOne(imageDoc);
+    await imagesCollection.insertOne(imageDoc);
 
-    for (const tagId of tagIds) {
-      await tagsCollection.updateOne({ _id: tagId }, { $inc: { count: 1 } });
+    // Bulk increment tag counts
+    if (tagIds.length > 0) {
+      await tagsCollection.updateMany(
+        { _id: { $in: tagIds } },
+        { $inc: { count: 1 } }
+      );
     }
 
-    return { success: true, imageId: result.insertedId.toString(), postId: post.id };
+    return { success: true, postId: post.id };
   } catch (error: any) {
-    console.error(`[IMPORT] Error importing post ${post.id}:`, error.message);
     return { success: false, error: error.message, postId: post.id };
   }
 }
 
-// Process a batch of posts in parallel
-async function processBatch(posts: DanbooruPost[]): Promise<{
-  successful: number;
-  failed: number;
-  skipped: number;
-}> {
-  const results = await Promise.allSettled(
-    posts.map(post => importSinglePost(post))
-  );
-
-  let successful = 0;
-  let failed = 0;
-  let skipped = 0;
-
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      if (result.value.success) successful++;
-      else if (result.value.skipped) skipped++;
-      else failed++;
-    } else {
-      failed++;
-    }
+// Prefetch posts in batches for speed
+async function prefetchPosts(postIds: number[]): Promise<Map<number, DanbooruPost>> {
+  const results = new Map<number, DanbooruPost>();
+  
+  // Fetch 20 at a time in parallel - INSANE SPEED
+  const chunks = [];
+  for (let i = 0; i < postIds.length; i += 20) {
+    chunks.push(postIds.slice(i, i + 20));
   }
 
-  return { successful, failed, skipped };
+  for (const chunk of chunks) {
+    const posts = await Promise.all(
+      chunk.map(async (id) => {
+        try {
+          return await fetchDanbooruPost(id);
+        } catch {
+          return null;
+        }
+      })
+    );
+    
+    posts.forEach((post, idx) => {
+      if (post) results.set(chunk[idx], post);
+    });
+  }
+
+  return results;
 }
 
-// Main worker function that processes jobs from the queue
+// Process a single job with maximum speed
+async function processJob(job: ImportJob): Promise<void> {
+  const jobsCollection = await getCollection('import_jobs');
+  const imagesCollection = await getCollection('images');
+  const tagsCollection = await getCollection('tags');
+
+  console.log(`[JOB ${job._id}] Starting: ${job.type} - "${job.query}"`);
+
+  try {
+    let postIds: number[] = job.posts || [];
+
+    // Fetch post list if needed
+    if (postIds.length === 0) {
+      console.log(`[JOB ${job._id}] Fetching post list...`);
+      
+      let posts: DanbooruPost[] = [];
+      if (job.type === 'artist') {
+        posts = await fetchDanbooruPostsByArtist(job.query, job.limit);
+      } else if (job.type === 'tags') {
+        posts = await fetchDanbooruPostsByTags(job.query, job.limit);
+      } else if (job.type === 'single') {
+        const post = await fetchDanbooruPost(parseInt(job.query));
+        if (post) posts = [post];
+      }
+
+      postIds = posts.map(p => p.id);
+      
+      await jobsCollection.updateOne(
+        { _id: job._id },
+        { $set: { posts: postIds, 'progress.total': postIds.length, currentPostIndex: 0 } }
+      );
+
+      console.log(`[JOB ${job._id}] Found ${postIds.length} posts`);
+    }
+
+    if (postIds.length === 0) {
+      await jobsCollection.updateOne(
+        { _id: job._id },
+        { $set: { status: 'failed', error: 'No posts found', completedAt: new Date() } }
+      );
+      return;
+    }
+
+    // Resume from where we left off
+    const startIndex = job.currentPostIndex || 0;
+    const remainingPostIds = postIds.slice(startIndex);
+
+    console.log(`[JOB ${job._id}] Processing ${remainingPostIds.length} posts (from index ${startIndex})`);
+
+    let successful = 0;
+    let failed = 0;
+    let skipped = 0;
+    let processedSinceUpdate = 0;
+
+    // Process in large batches with prefetching
+    for (let i = 0; i < remainingPostIds.length; i += BATCH_SIZE) {
+      const batchIds = remainingPostIds.slice(i, i + BATCH_SIZE);
+      
+      // Prefetch post data for this batch
+      const postDataMap = await prefetchPosts(batchIds);
+      const validPosts = batchIds
+        .map(id => postDataMap.get(id))
+        .filter((p): p is DanbooruPost => p !== null);
+
+      // Process posts in parallel (CONCURRENT_IMPORTS at a time)
+      for (let j = 0; j < validPosts.length; j += CONCURRENT_IMPORTS) {
+        const chunk = validPosts.slice(j, j + CONCURRENT_IMPORTS);
+        
+        const results = await Promise.allSettled(
+          chunk.map(post => importSinglePost(post, imagesCollection, tagsCollection))
+        );
+
+        for (const result of results) {
+          if (result.status === 'fulfilled') {
+            if (result.value.success) successful++;
+            else if (result.value.skipped) skipped++;
+            else failed++;
+          } else {
+            failed++;
+          }
+          processedSinceUpdate++;
+        }
+
+        // Update progress periodically
+        if (processedSinceUpdate >= DB_UPDATE_INTERVAL) {
+          const currentIndex = startIndex + i + j + chunk.length;
+          await jobsCollection.updateOne(
+            { _id: job._id },
+            {
+              $set: {
+                currentPostIndex: currentIndex,
+                'progress.current': currentIndex,
+                'progress.successful': successful,
+                'progress.failed': failed,
+                'progress.skipped': skipped,
+              },
+            }
+          );
+          processedSinceUpdate = 0;
+          
+          console.log(`[JOB ${job._id}] Progress: ${currentIndex}/${postIds.length} (✓${successful} ✗${failed} ⊘${skipped})`);
+        }
+
+        if (IMPORT_DELAY > 0) {
+          await new Promise(resolve => setTimeout(resolve, IMPORT_DELAY));
+        }
+      }
+    }
+
+    // Final update
+    await jobsCollection.updateOne(
+      { _id: job._id },
+      {
+        $set: {
+          status: 'completed',
+          completedAt: new Date(),
+          currentPostIndex: postIds.length,
+          'progress.current': postIds.length,
+          'progress.successful': successful,
+          'progress.failed': failed,
+          'progress.skipped': skipped,
+        },
+      }
+    );
+
+    console.log(`[JOB ${job._id}] COMPLETED: ✓${successful} ✗${failed} ⊘${skipped}`);
+  } catch (error: any) {
+    console.error(`[JOB ${job._id}] FAILED:`, error.message);
+    await jobsCollection.updateOne(
+      { _id: job._id },
+      { $set: { status: 'failed', error: error.message, completedAt: new Date() } }
+    );
+  }
+}
+
+// Main worker - processes multiple jobs concurrently
 async function processImportQueue(): Promise<void> {
   if (workerRunning) {
-    console.log('[IMPORT WORKER] Worker already running, skipping');
+    console.log('[IMPORT WORKER] Already running, skipping');
     return;
   }
 
   workerRunning = true;
-  console.log('[IMPORT WORKER] Starting import queue worker');
+  activeJobCount = 0;
+  console.log(`[IMPORT WORKER] 🚀 TURBO MODE - ${CONCURRENT_JOBS} concurrent jobs, ${CONCURRENT_IMPORTS} imports each`);
 
   try {
     const jobsCollection = await getCollection('import_jobs');
 
     while (true) {
-      // Find a pending or paused job (paused jobs are ones that were running when server restarted)
-      const job = await jobsCollection.findOneAndUpdate(
-        { status: { $in: ['pending', 'paused'] } },
-        { 
-          $set: { 
-            status: 'running', 
-            startedAt: new Date() 
-          } 
-        },
-        { 
-          sort: { createdAt: 1 },
-          returnDocument: 'after'
-        }
-      );
+      // Check how many jobs we can start
+      const slotsAvailable = CONCURRENT_JOBS - activeJobCount;
+      
+      if (slotsAvailable <= 0) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        continue;
+      }
 
-      if (!job) {
-        // No jobs to process
-        console.log('[IMPORT WORKER] No pending jobs, stopping worker');
+      // Get multiple pending jobs at once
+      const pendingJobs = await jobsCollection
+        .find({ status: { $in: ['pending', 'paused'] } })
+        .sort({ createdAt: 1 })
+        .limit(slotsAvailable)
+        .toArray() as ImportJob[];
+
+      if (pendingJobs.length === 0 && activeJobCount === 0) {
+        console.log('[IMPORT WORKER] No more jobs, stopping');
         break;
       }
 
-      console.log(`[IMPORT WORKER] Processing job ${job._id}: ${job.type} - "${job.query}"`);
-
-      try {
-        let posts: DanbooruPost[] = [];
-        let postIds: number[] = job.posts || [];
-
-        // If we don't have the post list yet, fetch it
-        if (postIds.length === 0) {
-          console.log(`[IMPORT WORKER] Fetching posts for ${job.type}: "${job.query}"`);
-          
-          if (job.type === 'artist') {
-            posts = await fetchDanbooruPostsByArtist(job.query, job.limit);
-          } else if (job.type === 'tags') {
-            posts = await fetchDanbooruPostsByTags(job.query, job.limit);
-          } else if (job.type === 'single') {
-            const post = await fetchDanbooruPost(parseInt(job.query));
-            if (post) posts = [post];
-          }
-
-          postIds = posts.map(p => p.id);
-          
-          // Save the post IDs for resume capability
-          await jobsCollection.updateOne(
-            { _id: job._id },
-            { 
-              $set: { 
-                posts: postIds,
-                'progress.total': postIds.length,
-                currentPostIndex: 0
-              } 
-            }
-          );
-
-          console.log(`[IMPORT WORKER] Found ${postIds.length} posts`);
-        }
-
-        if (postIds.length === 0) {
-          await jobsCollection.updateOne(
-            { _id: job._id },
-            { 
-              $set: { 
-                status: 'failed',
-                error: 'No posts found',
-                completedAt: new Date()
-              } 
-            }
-          );
-          continue;
-        }
-
-        // Resume from where we left off
-        const startIndex = job.currentPostIndex || 0;
-        const remainingPostIds = postIds.slice(startIndex);
-
-        console.log(`[IMPORT WORKER] Processing ${remainingPostIds.length} remaining posts (starting at index ${startIndex})`);
-
-        // Process in batches with concurrent imports
-        for (let i = 0; i < remainingPostIds.length; i += CONCURRENT_IMPORTS) {
-          const batch = remainingPostIds.slice(i, i + CONCURRENT_IMPORTS);
-          
-          // Fetch the actual post data for this batch
-          const batchPosts = await Promise.all(
-            batch.map(async (postId) => {
-              try {
-                return await fetchDanbooruPost(postId);
-              } catch {
-                return null;
-              }
-            })
-          );
-
-          const validPosts = batchPosts.filter((p): p is DanbooruPost => p !== null);
-          
-          if (validPosts.length > 0) {
-            const batchResults = await processBatch(validPosts);
-            
-            // Update progress in database
-            const currentIndex = startIndex + i + batch.length;
-            await jobsCollection.updateOne(
-              { _id: job._id },
-              {
-                $set: { currentPostIndex: currentIndex },
-                $inc: {
-                  'progress.current': batch.length,
-                  'progress.successful': batchResults.successful,
-                  'progress.failed': batchResults.failed,
-                  'progress.skipped': batchResults.skipped,
-                },
-              }
-            );
-
-            console.log(`[IMPORT WORKER] Job ${job._id}: ${currentIndex}/${postIds.length} (${batchResults.successful} success, ${batchResults.failed} failed, ${batchResults.skipped} skipped)`);
-          }
-
-          // Small delay between batches
-          await new Promise(resolve => setTimeout(resolve, IMPORT_DELAY));
-        }
-
-        // Mark job as completed
+      // Start jobs in parallel
+      for (const job of pendingJobs) {
         await jobsCollection.updateOne(
           { _id: job._id },
-          { 
-            $set: { 
-              status: 'completed',
-              completedAt: new Date()
-            } 
-          }
+          { $set: { status: 'running', startedAt: new Date() } }
         );
 
-        console.log(`[IMPORT WORKER] Job ${job._id} completed`);
-      } catch (error: any) {
-        console.error(`[IMPORT WORKER] Job ${job._id} failed:`, error);
+        activeJobCount++;
         
-        // Mark job as failed
-        await jobsCollection.updateOne(
-          { _id: job._id },
-          { 
-            $set: { 
-              status: 'failed',
-              error: error.message,
-              completedAt: new Date()
-            } 
-          }
-        );
+        processJob(job).finally(() => {
+          activeJobCount--;
+        });
       }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   } catch (error) {
-    console.error('[IMPORT WORKER] Worker error:', error);
+    console.error('[IMPORT WORKER] Fatal error:', error);
   } finally {
     workerRunning = false;
     workerPromise = null;
@@ -411,20 +485,17 @@ export async function createImportJob(
   const result = await jobsCollection.insertOne(job);
   job._id = result.insertedId;
 
-  // Start the worker if not already running
   startImportWorker();
 
   return job;
 }
 
-// Start the import worker (safe to call multiple times)
 export function startImportWorker(): void {
   if (!workerRunning && !workerPromise) {
     workerPromise = processImportQueue();
   }
 }
 
-// Get all jobs
 export async function getImportJobs(limit = 50): Promise<ImportJob[]> {
   const jobsCollection = await getCollection('import_jobs');
   return jobsCollection
@@ -434,13 +505,11 @@ export async function getImportJobs(limit = 50): Promise<ImportJob[]> {
     .toArray() as Promise<ImportJob[]>;
 }
 
-// Get job by ID
 export async function getImportJob(jobId: string): Promise<ImportJob | null> {
   const jobsCollection = await getCollection('import_jobs');
   return jobsCollection.findOne({ _id: new ObjectId(jobId) }) as Promise<ImportJob | null>;
 }
 
-// Cancel a job
 export async function cancelImportJob(jobId: string): Promise<boolean> {
   const jobsCollection = await getCollection('import_jobs');
   const result = await jobsCollection.updateOne(
@@ -450,7 +519,6 @@ export async function cancelImportJob(jobId: string): Promise<boolean> {
   return result.modifiedCount > 0;
 }
 
-// Mark running jobs as paused on server shutdown (call this in middleware or shutdown hook)
 export async function pauseRunningJobs(): Promise<void> {
   const jobsCollection = await getCollection('import_jobs');
   await jobsCollection.updateMany(
@@ -459,18 +527,16 @@ export async function pauseRunningJobs(): Promise<void> {
   );
 }
 
-// Resume paused jobs on server startup
 export async function resumePausedJobs(): Promise<void> {
   const jobsCollection = await getCollection('import_jobs');
   const pausedJobs = await jobsCollection.countDocuments({ status: 'paused' });
   
   if (pausedJobs > 0) {
-    console.log(`[IMPORT] Found ${pausedJobs} paused jobs, starting worker to resume`);
+    console.log(`[IMPORT] Found ${pausedJobs} paused jobs, resuming...`);
     startImportWorker();
   }
 }
 
-// Delete old completed/failed jobs (cleanup)
 export async function cleanupOldJobs(daysOld = 7): Promise<number> {
   const jobsCollection = await getCollection('import_jobs');
   const cutoffDate = new Date();

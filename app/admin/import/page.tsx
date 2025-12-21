@@ -230,11 +230,13 @@ export default function ImportPage() {
             <Flame size={16} className="absolute -top-1 -right-1 text-orange-500 animate-pulse" />
           </div>
           Danbooru Import
-          <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-white border-0 text-xs font-bold">
-            UNLIMITED
+          <Badge className="bg-gradient-to-r from-red-600 to-orange-500 text-white border-0 text-xs font-bold animate-pulse">
+            🔥 INSANE MODE
           </Badge>
         </h1>
-        <p className="text-muted-foreground">Import posts from Danbooru with persistent queue • Parallel processing • No limits • Survives server restarts</p>
+        <p className="text-muted-foreground">
+          <span className="text-red-400 font-bold">🔥 10 jobs × 50 imports = 500 CONCURRENT 🔥</span> • Zero delay • Batch 100 • Unhinged
+        </p>
       </div>
 
       {/* Status Bar */}
