@@ -3,12 +3,14 @@
 import { useState, useEffect, use } from 'react';
 import { Image } from '@/lib/models';
 import ImageCard from '@/components/ImageCard';
-import { Loader2, Calendar, User as UserIcon, Shield, Crown, ImageIcon, Mail, Link as LinkIcon } from 'lucide-react';
+import { Loader2, Calendar, User as UserIcon, Shield, Crown, ImageIcon, Mail, Link as LinkIcon, ThumbsUp, MessageSquare } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import NextImage from 'next/image';
 
 type UserRank = 'user' | 'moderator' | 'admin' | 'owner';
 
@@ -22,10 +24,22 @@ interface UserProfile {
   bio?: string;
 }
 
+interface UserComment {
+  _id: string;
+  content: string;
+  createdAt: string;
+  image: {
+    sequentialId: number;
+    thumbnailUrl: string;
+  } | null;
+}
+
 export default function UserProfilePage({ params }: { params: Promise<{ username: string }> }) {
   const { username } = use(params);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [images, setImages] = useState<Image[]>([]);
+  const [likedImages, setLikedImages] = useState<Image[]>([]);
+  const [comments, setComments] = useState<UserComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -48,6 +62,17 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
 
         if (imagesData.success) {
           setImages(imagesData.images);
+        }
+
+        // Fetch user activity (likes and comments) - skip for anonymous
+        if (username.toLowerCase() !== 'anonymous') {
+          const activityRes = await fetch(`/api/users/${encodeURIComponent(username)}/activity`);
+          const activityData = await activityRes.json();
+
+          if (activityData.success) {
+            setLikedImages(activityData.likes || []);
+            setComments(activityData.comments || []);
+          }
         }
       } catch (err: any) {
         setError(err.message);
@@ -100,9 +125,9 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
   const isAnonymous = username === 'anonymous';
 
   return (
-    <div className="w-full">
+    <div className="w-full min-h-screen bg-background">
       {/* Banner */}
-      <div className="relative h-48 md:h-64 w-full bg-gradient-to-r from-primary/20 via-primary/10 to-transparent overflow-hidden">
+      <div className="relative h-64 md:h-80 w-full overflow-hidden">
         {user.bannerUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -111,110 +136,234 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-r from-purple-500/20 via-pink-500/10 to-blue-500/20" />
+          <div className="w-full h-full bg-muted/30" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Profile Header Card */}
-        <div className="relative -mt-24 mb-8 z-10">
-          <Card className="border-border/50">
-            <CardContent className="p-6 md:p-8">
-              <div className="flex flex-col md:flex-row gap-6 md:gap-8">
-                {/* Avatar */}
-                <Avatar className="h-40 w-40 md:h-48 md:w-48 border-4 border-background shadow-xl flex-shrink-0">
-                  <AvatarImage src={user.avatarUrl} />
-                  <AvatarFallback className="text-5xl bg-gradient-to-br from-primary to-primary/50 text-primary-foreground">
-                    {isAnonymous ? '?' : user.username[0].toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+        {/* Profile Header */}
+        <div className="relative -mt-32 mb-12 z-10">
+          <div className="flex flex-col md:flex-row items-end gap-6 md:gap-8 px-4">
+            {/* Avatar */}
+            <div className="relative group">
+              <Avatar className="h-40 w-40 md:h-48 md:w-48 border-[6px] border-background shadow-2xl flex-shrink-0 rounded-3xl overflow-hidden transition-transform duration-300 group-hover:scale-[1.02]">
+                <AvatarImage src={user.avatarUrl} className="object-cover" />
+                <AvatarFallback className="text-5xl bg-muted text-muted-foreground rounded-none">
+                  {isAnonymous ? '?' : user.username[0].toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            </div>
 
-                {/* User Info */}
-                <div className="flex-1 space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-                        {isAnonymous ? 'Anonymous User' : user.username}
-                      </h1>
-                      {user.rank && user.rank !== 'user' && (
-                        <Badge className={cn("font-semibold text-sm", getRankStyles(user.rank))}>
-                          {user.rank === 'owner' ? <Crown className="h-3.5 w-3.5 mr-1.5" /> : <Shield className="h-3.5 w-3.5 mr-1.5" />}
-                          {user.rank.toUpperCase()}
-                        </Badge>
-                      )}
-                    </div>
-                    {isAnonymous && (
-                      <p className="text-muted-foreground">
-                        Content from users who aren't logged in
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Bio */}
-                  {user.bio && !isAnonymous && (
-                    <p className="text-foreground/80 leading-relaxed max-w-2xl">
-                      {user.bio}
-                    </p>
+            {/* User Info */}
+            <div className="flex-1 pb-2 space-y-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-4xl md:text-5xl font-black tracking-tight text-foreground">
+                    {isAnonymous ? 'Anonymous User' : user.username}
+                  </h1>
+                  {user.rank && user.rank !== 'user' && (
+                    <Badge className={cn("font-bold px-3 py-1 rounded-full text-xs uppercase tracking-wider", getRankStyles(user.rank))}>
+                      {user.rank === 'owner' ? <Crown className="h-3 w-3 mr-1.5" /> : <Shield className="h-3 w-3 mr-1.5" />}
+                      {user.rank}
+                    </Badge>
                   )}
-
-                  {/* Stats */}
-                  <div className="flex flex-wrap gap-6 pt-4">
-                    <div className="flex items-center gap-2">
-                      <ImageIcon className="h-5 w-5 text-primary" />
-                      <div>
-                        <div className="text-2xl font-bold">{images.length}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {images.length === 1 ? 'Upload' : 'Uploads'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-5 w-5 text-primary" />
-                      <div>
-                        <div className="text-sm text-muted-foreground">Joined</div>
-                        <div className="text-sm font-medium">
-                          {new Date(user.createdAt).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                 </div>
+                {isAnonymous ? (
+                  <p className="text-muted-foreground font-medium">
+                    Content from users who aren't logged in
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground font-medium">
+                    <span className="flex items-center gap-1.5">
+                      <Calendar className="h-4 w-4" />
+                      Joined {new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </span>
+                  </div>
+                )}
               </div>
-            </CardContent>
-          </Card>
+
+              {/* Bio */}
+              {user.bio && !isAnonymous && (
+                <p className="text-foreground/70 leading-relaxed max-w-2xl text-lg font-medium italic">
+                  &ldquo;{user.bio}&rdquo;
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Stats Bar */}
+          <div className="mt-8 grid grid-cols-2 md:flex md:items-center gap-4 md:gap-12 p-6 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm">
+            <div className="space-y-0.5">
+              <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Uploads</div>
+              <div className="text-2xl font-black text-foreground">{images.length}</div>
+            </div>
+            {!isAnonymous && (
+              <>
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Likes</div>
+                  <div className="text-2xl font-black text-foreground">{likedImages.length}</div>
+                </div>
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Comments</div>
+                  <div className="text-2xl font-black text-foreground">{comments.length}</div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
-        {/* Uploads Section */}
-        <div className="mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-6">
-            {isAnonymous ? 'Anonymous Uploads' : 'Gallery'}
-          </h2>
-
-          {images.length === 0 ? (
-            <Card>
-              <CardContent className="py-16 text-center">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
-                  <ImageIcon className="h-8 w-8 text-muted-foreground" />
+        {/* Content Tabs */}
+        <div className="mb-20">
+          {isAnonymous ? (
+            // Anonymous users only have uploads
+            <>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-6">
+                Anonymous Uploads
+              </h2>
+              {images.length === 0 ? (
+                <Card>
+                  <CardContent className="py-16 text-center">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                      <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h3 className="text-lg font-semibold mb-2">No uploads yet</h3>
+                    <p className="text-muted-foreground">
+                      No content from anonymous users yet
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 pb-8">
+                  {images.map((image) => (
+                    <ImageCard key={image._id.toString()} image={image} />
+                  ))}
                 </div>
-                <h3 className="text-lg font-semibold mb-2">No uploads yet</h3>
-                <p className="text-muted-foreground">
-                  {isAnonymous
-                    ? 'No content from anonymous users yet'
-                    : `${user.username} hasn't uploaded any images yet`}
-                </p>
-              </CardContent>
-            </Card>
+              )}
+            </>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 pb-8">
-              {images.map((image) => (
-                <ImageCard key={image._id.toString()} image={image} />
-              ))}
-            </div>
+            // Regular users have tabs
+            <Tabs defaultValue="uploads" className="w-full">
+              <TabsList className="mb-6">
+                <TabsTrigger value="uploads" className="gap-2">
+                  <ImageIcon className="h-4 w-4" />
+                  Uploads ({images.length})
+                </TabsTrigger>
+                <TabsTrigger value="likes" className="gap-2">
+                  <ThumbsUp className="h-4 w-4" />
+                  Likes ({likedImages.length})
+                </TabsTrigger>
+                <TabsTrigger value="comments" className="gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  Comments ({comments.length})
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="uploads">
+                {images.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-16 text-center">
+                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                        <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">No uploads yet</h3>
+                      <p className="text-muted-foreground">
+                        {user.username} hasn&apos;t uploaded any images yet
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 pb-8">
+                    {images.map((image) => (
+                      <ImageCard key={image._id.toString()} image={image} />
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="likes">
+                {likedImages.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-16 text-center">
+                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                        <ThumbsUp className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">No likes yet</h3>
+                      <p className="text-muted-foreground">
+                        {user.username} hasn&apos;t liked any images yet
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 pb-8">
+                    {likedImages.map((image) => (
+                      <ImageCard key={image._id.toString()} image={image} />
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="comments">
+                {comments.length === 0 ? (
+                  <Card className="border-dashed">
+                    <CardContent className="py-16 text-center">
+                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                        <MessageSquare className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">No comments yet</h3>
+                      <p className="text-muted-foreground">
+                        {user.username} hasn&apos;t commented on any images yet
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid gap-4 pb-8">
+                    {comments.map((comment) => (
+                      <div key={comment._id} className="group relative flex gap-4 p-4 rounded-xl border border-border/50 bg-card/50 hover:bg-accent/50 transition-all duration-200">
+                        {comment.image && (
+                          <Link href={`/image/${comment.image.sequentialId}`} className="shrink-0">
+                            <div className="relative w-20 h-20 rounded-lg overflow-hidden ring-1 ring-border group-hover:ring-primary/50 transition-all">
+                              <NextImage
+                                src={comment.image.thumbnailUrl}
+                                alt="Post thumbnail"
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                          </Link>
+                        )}
+                        <div className="flex-1 flex flex-col justify-between min-w-0 py-0.5">
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium text-muted-foreground">
+                                {new Date(comment.createdAt).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                              {comment.image && (
+                                <Link 
+                                  href={`/image/${comment.image.sequentialId}`}
+                                  className="text-[10px] uppercase tracking-wider font-bold text-primary/70 hover:text-primary transition-colors"
+                                >
+                                  View Post
+                                </Link>
+                              )}
+                            </div>
+                            <p className="text-sm text-foreground/90 leading-relaxed line-clamp-3 italic">
+                              &ldquo;{comment.content}&rdquo;
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           )}
         </div>
       </div>
