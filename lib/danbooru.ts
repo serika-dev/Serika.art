@@ -155,6 +155,11 @@ export async function fetchDanbooruPostsByTags(
     // Use "before ID" pagination (page=b{id}) to bypass the 1000 page limit
     // This allows fetching ALL posts, not just the first 1000
     let beforeId: number | null = null;
+    let consecutiveFailures = 0;
+    const maxConsecutiveFailures = 5;
+    let lastBatchSize = 0;
+    
+    console.log(`[DANBOORU] Starting fetch for "${tags}" (limit: ${unlimited ? 'UNLIMITED' : limit})`);
     
     while (posts.length < maxPosts) {
       try {
@@ -174,34 +179,78 @@ export async function fetchDanbooruPostsByTags(
           });
         });
         
-        if (!response?.data || response.data.length === 0) break;
+        // Check for null/undefined response (rate limit retry exhausted)
+        if (!response?.data) {
+          consecutiveFailures++;
+          console.log(`[DANBOORU] Empty response for "${tags}" (failure ${consecutiveFailures}/${maxConsecutiveFailures})`);
+          if (consecutiveFailures >= maxConsecutiveFailures) {
+            console.log(`[DANBOORU] Too many consecutive failures for "${tags}", stopping`);
+            break;
+          }
+          // Wait a bit before retrying
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
         
+        // Reset failure counter on success
+        consecutiveFailures = 0;
+        
+        // No more posts
+        if (response.data.length === 0) {
+          console.log(`[DANBOORU] No more posts for "${tags}"`);
+          break;
+        }
+        
+        lastBatchSize = response.data.length;
         posts.push(...response.data);
         
         // Get the lowest ID for next page (posts are returned newest first)
         const lastPost = response.data[response.data.length - 1];
-        beforeId = lastPost.id;
+        const newBeforeId = lastPost.id;
         
-        console.log(`[DANBOORU] Fetched batch for "${tags}" (${posts.length} posts so far, next before ID: ${beforeId})`);
+        // Sanity check: make sure we're actually progressing
+        if (beforeId !== null && newBeforeId >= beforeId) {
+          console.error(`[DANBOORU] Pagination not progressing for "${tags}" (stuck at ID ${beforeId}), stopping`);
+          break;
+        }
+        beforeId = newBeforeId;
+        
+        console.log(`[DANBOORU] Fetched batch for "${tags}" (${posts.length}/${unlimited ? '∞' : maxPosts} posts, next before ID: ${beforeId})`);
+        
+        // If we got fewer posts than requested, we've reached the end
+        if (lastBatchSize < params.limit) {
+          console.log(`[DANBOORU] Reached end of posts for "${tags}" (got ${lastBatchSize} < ${params.limit})`);
+          break;
+        }
       } catch (pageError: any) {
+        consecutiveFailures++;
+        
         // Handle specific HTTP errors
         if (pageError.response?.status === 410) {
           console.error(`[DANBOORU] 410 Gone for tags "${tags}"`);
           break;
-        } else if (pageError.response?.status === 429) {
-          console.log(`[DANBOORU] 429 Rate limited, will retry after backoff`);
-          // rateLimitedRequest handles the retry
+        } else if (pageError.response?.status === 429 || pageError.response?.status === 421) {
+          console.log(`[DANBOORU] Rate limited for "${tags}" (failure ${consecutiveFailures}/${maxConsecutiveFailures}), waiting...`);
+          // Wait before retrying - the rate limiter should handle this but just in case
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          if (consecutiveFailures >= maxConsecutiveFailures) {
+            console.log(`[DANBOORU] Too many rate limit errors for "${tags}", stopping with ${posts.length} posts`);
+            break;
+          }
           continue;
         } else if (pageError.response) {
           console.error(`[DANBOORU] HTTP ${pageError.response.status} for tags "${tags}"`);
-          break;
+          if (consecutiveFailures >= maxConsecutiveFailures) break;
+          continue;
         } else {
           console.error(`[DANBOORU] Error for tags "${tags}":`, pageError.message);
-          throw pageError;
+          if (consecutiveFailures >= maxConsecutiveFailures) break;
+          continue;
         }
       }
     }
     
+    console.log(`[DANBOORU] Finished fetching "${tags}": ${posts.length} total posts`);
     return unlimited ? posts : posts.slice(0, limit);
   } catch (error: any) {
     console.error('[DANBOORU] Error fetching posts by tags:', error.message);

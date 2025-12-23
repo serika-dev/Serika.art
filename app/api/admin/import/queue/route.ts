@@ -10,6 +10,8 @@ import {
   getCurrentSettings,
   setSpeedMode,
   pauseRunningJobs,
+  clearCompletedJobs,
+  clearFailedJobs,
   SpeedMode,
   SpeedSettings,
 } from '@/lib/importQueue';
@@ -56,6 +58,18 @@ export async function GET(request: NextRequest) {
   if (action === 'resume') {
     await resumePausedJobs();
     return NextResponse.json({ success: true, message: 'Worker started to resume paused jobs' });
+  }
+
+  // Clear completed jobs action
+  if (action === 'clear-completed') {
+    const count = await clearCompletedJobs();
+    return NextResponse.json({ success: true, message: `Cleared ${count} completed jobs`, count });
+  }
+
+  // Clear failed jobs action
+  if (action === 'clear-failed') {
+    const count = await clearFailedJobs();
+    return NextResponse.json({ success: true, message: `Cleared ${count} failed jobs`, count });
   }
 
   // Start worker action (useful after deploy)

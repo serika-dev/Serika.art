@@ -383,6 +383,16 @@ async function prefetchPosts(postIds: number[]): Promise<Map<number, DanbooruPos
   return results;
 }
 
+// Check if a job was externally paused or cancelled
+async function isJobStillRunning(jobId: ObjectId): Promise<boolean> {
+  const jobsCollection = await getCollection('import_jobs');
+  const job = await jobsCollection.findOne(
+    { _id: jobId },
+    { projection: { status: 1 } }
+  );
+  return job?.status === 'running';
+}
+
 // Process a single job with maximum speed
 async function processJob(job: ImportJob): Promise<void> {
   const jobsCollection = await getCollection('import_jobs');
@@ -392,7 +402,7 @@ async function processJob(job: ImportJob): Promise<void> {
   // Ensure indexes exist for fast duplicate checking
   await ensureIndexes();
 
-  console.log(`[JOB ${job._id}] Starting: ${job.type} - "${job.query}"`);
+  console.log(`[JOB ${job._id}] Starting: ${job.type} - "${job.query}" (limit: ${job.limit === 0 ? 'UNLIMITED' : job.limit})`);
 
   try {
     let postIds: number[] = job.posts || [];
@@ -457,6 +467,26 @@ async function processJob(job: ImportJob): Promise<void> {
     // Process in large batches with prefetching
     const { batchSize, concurrentImports, importDelay, dbUpdateInterval } = currentSettings;
     for (let i = 0; i < remainingPostIds.length; i += batchSize) {
+      // Check if job was paused/cancelled externally
+      if (!(await isJobStillRunning(job._id!))) {
+        console.log(`[JOB ${job._id}] Job was paused/cancelled externally, stopping gracefully`);
+        // Save current progress before exiting
+        const currentIndex = startIndex + i;
+        await jobsCollection.updateOne(
+          { _id: job._id },
+          {
+            $set: {
+              currentPostIndex: currentIndex,
+              'progress.current': currentIndex,
+              'progress.successful': successful,
+              'progress.failed': failed,
+              'progress.skipped': skipped,
+            },
+          }
+        );
+        return; // Exit gracefully without marking as completed/failed
+      }
+
       const batchIds = remainingPostIds.slice(i, i + batchSize);
       
       // Prefetch post data for this batch
@@ -708,5 +738,27 @@ export async function cleanupOldJobs(daysOld = 7): Promise<number> {
     completedAt: { $lt: cutoffDate }
   });
   
+  return result.deletedCount;
+}
+
+// Clear all completed jobs (for manual cleanup)
+export async function clearCompletedJobs(): Promise<number> {
+  const jobsCollection = await getCollection('import_jobs');
+  const result = await jobsCollection.deleteMany({
+    status: 'completed'
+  });
+  
+  console.log(`[IMPORT] Cleared ${result.deletedCount} completed jobs`);
+  return result.deletedCount;
+}
+
+// Clear all failed jobs (for manual cleanup)
+export async function clearFailedJobs(): Promise<number> {
+  const jobsCollection = await getCollection('import_jobs');
+  const result = await jobsCollection.deleteMany({
+    status: 'failed'
+  });
+  
+  console.log(`[IMPORT] Cleared ${result.deletedCount} failed jobs`);
   return result.deletedCount;
 }

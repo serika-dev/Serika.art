@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Download, AlertCircle, CheckCircle, Loader2, Play, Pause, Trash2, RefreshCw, Clock, List, Plus, X, Zap, Infinity, Flame, Settings, Gauge } from 'lucide-react';
+import { Download, AlertCircle, CheckCircle, Loader2, Play, Pause, Trash2, RefreshCw, Clock, List, Plus, X, Zap, Infinity, Flame, Settings, Gauge, Eraser } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -227,6 +227,40 @@ export default function ImportPage() {
       alert('Worker started to resume paused jobs');
     } catch (error: any) {
       alert(error.response?.data?.error || 'Failed to resume worker');
+    }
+  };
+
+  const clearCompletedJobs = async () => {
+    const completedCount = jobs.filter(j => j.status === 'completed').length;
+    if (completedCount === 0) {
+      alert('No completed jobs to clear');
+      return;
+    }
+    if (!confirm(`Clear ${completedCount} completed job(s)?`)) return;
+
+    try {
+      const response = await axios.get('/api/admin/import/queue?action=clear-completed');
+      fetchJobs();
+      alert(response.data.message || `Cleared ${response.data.count} completed jobs`);
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to clear completed jobs');
+    }
+  };
+
+  const clearFailedJobs = async () => {
+    const failedCount = jobs.filter(j => j.status === 'failed').length;
+    if (failedCount === 0) {
+      alert('No failed jobs to clear');
+      return;
+    }
+    if (!confirm(`Clear ${failedCount} failed job(s)?`)) return;
+
+    try {
+      const response = await axios.get('/api/admin/import/queue?action=clear-failed');
+      fetchJobs();
+      alert(response.data.message || `Cleared ${response.data.count} failed jobs`);
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to clear failed jobs');
     }
   };
 
@@ -532,9 +566,33 @@ export default function ImportPage() {
               </CardTitle>
               <CardDescription>{jobs.length} total jobs</CardDescription>
             </div>
-            <Button variant="outline" size="sm" onClick={fetchJobs} disabled={loadingJobs}>
-              <RefreshCw className={`h-4 w-4 ${loadingJobs ? 'animate-spin' : ''}`} />
-            </Button>
+            <div className="flex items-center gap-2">
+              {jobs.filter(j => j.status === 'completed').length > 0 && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={clearCompletedJobs}
+                  className="text-green-400 hover:text-green-300 hover:bg-green-500/10 border-green-500/30"
+                >
+                  <Eraser className="h-4 w-4 mr-1" />
+                  Clear Done ({jobs.filter(j => j.status === 'completed').length})
+                </Button>
+              )}
+              {jobs.filter(j => j.status === 'failed').length > 0 && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={clearFailedJobs}
+                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-500/30"
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Clear Failed ({jobs.filter(j => j.status === 'failed').length})
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={fetchJobs} disabled={loadingJobs}>
+                <RefreshCw className={`h-4 w-4 ${loadingJobs ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3 max-h-[600px] overflow-y-auto">
             {jobs.length === 0 ? (
