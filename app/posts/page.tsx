@@ -29,6 +29,13 @@ import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/co
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 
+// Grid size CSS class mapping
+const gridSizeClasses = {
+  small: 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7',
+  medium: 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5',
+  large: 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4',
+};
+
 function PostsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -52,6 +59,8 @@ function PostsPageContent() {
   const [hideAI, setHideAI] = useState(false);
   const [blacklistEnabled, setBlacklistEnabledState] = useState(true);
   const [blacklistedTags, setBlacklistedTags] = useState<string[]>([]);
+  const [postsPerPage, setPostsPerPage] = useState(24);
+  const [gridSize, setGridSize] = useState<'small' | 'medium' | 'large'>('medium');
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Get parameters from URL
@@ -63,12 +72,31 @@ function PostsPageContent() {
     ? tagsParam.split(',').map((tag, idx) => ({ name: tag, type: 'general' as TagType }))
     : [];
 
-  // Initialize ratings from cookie on mount
+  // Initialize settings from localStorage/cookies on mount
   useEffect(() => {
     const cookieRatings = getRatingsFromCookie();
     setSelectedRatings(cookieRatings);
     setBlacklistEnabledState(isBlacklistEnabled());
     setBlacklistedTags(getBlacklistedTags());
+    
+    // Load hideAI setting from localStorage
+    const savedHideAI = localStorage.getItem('serika_hide_ai_default');
+    if (savedHideAI === 'true') {
+      setHideAI(true);
+    }
+    
+    // Load posts per page setting
+    const savedPostsPerPage = localStorage.getItem('serika_posts_per_page');
+    if (savedPostsPerPage) {
+      setPostsPerPage(parseInt(savedPostsPerPage) || 24);
+    }
+    
+    // Load grid size setting
+    const savedGridSize = localStorage.getItem('serika_grid_size');
+    if (savedGridSize && ['small', 'medium', 'large'].includes(savedGridSize)) {
+      setGridSize(savedGridSize as 'small' | 'medium' | 'large');
+    }
+    
     setRatingsInitialized(true);
   }, []);
 
@@ -76,7 +104,7 @@ function PostsPageContent() {
     if (ratingsInitialized) {
       fetchImages();
     }
-  }, [page, sort, tagsParam, selectedRatings, ratingsInitialized, hideAI]);
+  }, [page, sort, tagsParam, selectedRatings, ratingsInitialized, hideAI, postsPerPage]);
 
   useEffect(() => {
     if (tagInput.trim().length > 0) {
@@ -93,7 +121,7 @@ function PostsPageContent() {
       const tagsQueryParam = tagsParam ? `&tags=${tagsParam}` : '';
       const ratingsQueryParam = `&ratings=${selectedRatings.join(',')}`;
       const hideAIParam = hideAI ? '&hideAI=true' : '';
-      const response = await axios.get(`/api/images?page=${page}&limit=24&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}`);
+      const response = await axios.get(`/api/images?page=${page}&limit=${postsPerPage}&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}`);
       if (response.data.success) {
         setImages(response.data.images);
         setTotalPages(response.data.pagination.pages);
@@ -556,8 +584,8 @@ function PostsPageContent() {
         {loading ? (
           <div className="space-y-8">
             {/* Image Grid Skeleton */}
-            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
-              {Array.from({ length: 20 }).map((_, i) => (
+            <div className={`grid ${gridSizeClasses[gridSize]} gap-3 sm:gap-4`}>
+              {Array.from({ length: postsPerPage }).map((_, i) => (
                 <div key={i} className="rounded-2xl overflow-hidden border border-border/40 bg-card/50">
                   {/* Image Area Skeleton */}
                   <div className="relative aspect-square bg-muted">
@@ -621,7 +649,7 @@ function PostsPageContent() {
         ) : (
           <>
             {/* Image Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 mb-8">
+            <div className={`grid ${gridSizeClasses[gridSize]} gap-3 sm:gap-4 mb-8`}>
               {filteredImages.map((image) => (
                 <ImageCard key={image._id.toString()} image={image} />
               ))}

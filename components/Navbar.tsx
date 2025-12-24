@@ -36,11 +36,11 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="bg-background/80 backdrop-blur-xl border-b border-border/40 sticky top-0 z-[100] transition-all duration-300">
+    <nav className="bg-background/80 backdrop-blur-xl border-b border-border/40 sticky top-0 z-40 transition-all duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           {/* Logo */}
-          <div className="flex items-center">
+          <div className="flex items-center relative z-30">
             <Link href="/" className="flex items-center group">
               <Image
                 src="/logo.svg"
@@ -163,19 +163,19 @@ export default function Navbar() {
                   <Menu className="h-6 w-6" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="right" className="pt-12">
+              <SheetContent side="right" className="pt-14 w-[280px] sm:w-[320px]">
                 <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
                 {/* Mobile Menu Content */}
-                <div className="flex flex-col space-y-4 mt-4">
+                <div className="flex flex-col space-y-4 mt-2">
                   {user ? (
                     <>
-                      <div className="flex items-center gap-4 mb-4">
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage src={user.avatarUrl} alt={user.username} />
-                          <AvatarFallback>{user.username[0].toUpperCase()}</AvatarFallback>
+                      <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-muted/50">
+                        <Avatar className="h-12 w-12 flex-shrink-0">
+                          <AvatarImage src={user.avatarUrl} alt={user.username} className="object-cover" />
+                          <AvatarFallback className="text-lg">{user.username[0].toUpperCase()}</AvatarFallback>
                         </Avatar>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{user.username}</span>
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-bold truncate">{user.username}</span>
                           <span className="text-xs text-muted-foreground">Logged in</span>
                         </div>
                       </div>

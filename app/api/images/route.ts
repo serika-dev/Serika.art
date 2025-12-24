@@ -1,13 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { getCollection, getCachedCount } from '@/lib/db';
 import { ObjectId } from 'mongodb';
 import { Image } from '@/lib/models';
 
+// Cache tag lookups to reduce DB queries
+const tagNameCache = new Map<string, ObjectId>();
+const tagIdCache = new Map<string, { name: string; type: string; count: number }>();
+const TAG_CACHE_TTL = 60000; // 1 minute
+let lastTagCacheClear = Date.now();
+
+function clearTagCacheIfNeeded() {
+  if (Date.now() - lastTagCacheClear > TAG_CACHE_TTL) {
+    tagNameCache.clear();
+    tagIdCache.clear();
+    lastTagCacheClear = Date.now();
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
+    clearTagCacheIfNeeded();
+    
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '24'), 100); // Cap at 100
     const tagNames = searchParams.get('tags')?.split(',').filter(Boolean) || [];
     const ratings = searchParams.get('ratings')?.split(',').filter(Boolean) || [];
     const sort = searchParams.get('sort') || 'newest';
@@ -100,32 +116,69 @@ export async function GET(request: NextRequest) {
         break;
     }
 
+    // Use projection to only fetch needed fields (faster for large collections)
+    const projection = {
+      sequentialId: 1,
+      userId: 1,
+      username: 1,
+      url: 1,
+      thumbnailUrl: 1,
+      width: 1,
+      height: 1,
+      tags: 1,
+      rating: 1,
+      isAIGenerated: 1,
+      upvotes: 1,
+      downvotes: 1,
+      favorites: 1,
+      views: 1,
+      createdAt: 1,
+    };
+
+    // Execute query and count in parallel
+    // For large result sets, use estimatedDocumentCount when query is simple
+    const isSimpleQuery = Object.keys(query).length <= 2 && !query.$or;
+    
     const [images, total] = await Promise.all([
-      collection.find(query).sort(sortOption).skip(skip).limit(limit).toArray(),
-      collection.countDocuments(query),
+      collection.find(query, { projection }).sort(sortOption).skip(skip).limit(limit).toArray(),
+      isSimpleQuery && Object.keys(query).length === 0
+        ? collection.estimatedDocumentCount()
+        : collection.countDocuments(query),
     ]);
 
-    // Populate tags for all images
+    // Populate tags for all images (batch lookup)
     const allTagIds = new Set<string>();
     images.forEach(img => {
       if (Array.isArray(img.tags)) {
-        img.tags.forEach(tagId => allTagIds.add(tagId.toString()));
+        img.tags.forEach(tagId => {
+          const idStr = tagId.toString();
+          if (!tagIdCache.has(idStr)) {
+            allTagIds.add(idStr);
+          }
+        });
       }
     });
 
-    let tagMap = new Map();
+    // Only fetch uncached tags
     if (allTagIds.size > 0) {
       const tagDocs = await tagsCollection
-        .find({ _id: { $in: Array.from(allTagIds).map(id => new ObjectId(id)) } })
+        .find(
+          { _id: { $in: Array.from(allTagIds).map(id => new ObjectId(id)) } },
+          { projection: { name: 1, type: 1, count: 1 } }
+        )
         .toArray();
-      tagMap = new Map(tagDocs.map(t => [t._id.toString(), t]));
+      
+      tagDocs.forEach(t => {
+        tagIdCache.set(t._id.toString(), { name: t.name, type: t.type, count: t.count || 0 });
+      });
     }
 
-    // Map images to replace tag IDs with populated tag data (including count)
+    // Map images with cached tag data
     const populatedImages = images.map((img: any) => ({
       ...img,
       tags: (img.tags || []).map((tagId: any) => {
-        const tag = tagMap.get(tagId.toString());
+        const idStr = tagId.toString();
+        const tag = tagIdCache.get(idStr);
         return {
           _id: tagId,
           name: tag?.name || 'unknown',
