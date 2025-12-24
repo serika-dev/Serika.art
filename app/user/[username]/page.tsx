@@ -122,7 +122,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
     }
   };
 
-  const isAnonymous = username === 'anonymous';
+  const isAnonymous = username.toLowerCase() === 'anonymous';
 
   return (
     <div className="w-full min-h-screen bg-background">
@@ -144,7 +144,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Profile Header */}
         <div className="relative -mt-32 mb-12 z-10">
-          <div className="flex flex-col md:flex-row items-end gap-6 md:gap-8 px-4">
+          <div className="flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 px-4">
             {/* Avatar */}
             <div className="relative group">
               <Avatar className="h-40 w-40 md:h-48 md:w-48 border-[6px] border-background shadow-2xl flex-shrink-0 rounded-3xl overflow-hidden transition-transform duration-300 group-hover:scale-[1.02]">
@@ -156,9 +156,9 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
             </div>
 
             {/* User Info */}
-            <div className="flex-1 pb-2 space-y-4">
+            <div className="flex-1 pb-2 space-y-4 text-center md:text-left">
               <div className="space-y-1">
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center justify-center md:justify-start gap-3 flex-wrap">
                   <h1 className="text-4xl md:text-5xl font-black tracking-tight text-foreground">
                     {isAnonymous ? 'Anonymous User' : user.username}
                   </h1>
@@ -174,7 +174,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
                     Content from users who aren't logged in
                   </p>
                 ) : (
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground font-medium">
+                  <div className="flex items-center justify-center md:justify-start gap-4 text-sm text-muted-foreground font-medium">
                     <span className="flex items-center gap-1.5">
                       <Calendar className="h-4 w-4" />
                       Joined {new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}

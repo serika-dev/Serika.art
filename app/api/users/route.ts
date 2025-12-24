@@ -16,6 +16,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Handle anonymous user special case
+    if (username.toLowerCase() === 'anonymous') {
+      return NextResponse.json({
+        success: true,
+        user: {
+          id: 'anonymous',
+          username: 'Anonymous',
+          rank: 'system',
+          createdAt: new Date('2020-01-01').toISOString(),
+        },
+      });
+    }
+
     // Try local DB first
     const { getCollection } = await import('@/lib/db');
     const usersCollection = await getCollection('users');

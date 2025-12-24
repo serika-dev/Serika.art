@@ -5,6 +5,7 @@ import { AuthProvider } from "@/lib/AuthContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StructuredData from "@/components/StructuredData";
+import ChristmasSnow from "@/components/ChristmasSnow";
 import { cn } from "@/lib/utils";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -66,6 +67,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#09090b" />
       </head>
       <body className={cn("min-h-screen bg-background font-sans antialiased flex flex-col", inter.className)}>
+        <ChristmasSnow />
         <StructuredData />
         <AuthProvider>
           <Navbar />

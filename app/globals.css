@@ -96,3 +96,45 @@
   display: none;
 }
 
+/* Christmas Theme */
+.snowflake {
+  position: absolute;
+  top: -10px;
+  background: white;
+  border-radius: 50%;
+  filter: blur(1px);
+  animation: snowfall linear infinite;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+@keyframes snowfall {
+  0% {
+    transform: translateY(-10px) translateX(0);
+  }
+  100% {
+    transform: translateY(100vh) translateX(20px);
+  }
+}
+
+/* Christmas overrides */
+body.christmas-mode [role="switch"][data-state=checked] {
+  background-color: #dc2626 !important; /* Red-600 */
+  border-color: #dc2626 !important;
+}
+
+body.christmas-mode [role="switch"][data-state=unchecked] {
+  background-color: #14532d !important; /* Green-900 */
+  border-color: #14532d !important;
+}
+
+body.christmas-mode [role="combobox"] {
+  border-color: #15803d !important; /* Green-700 */
+}
+
+body.christmas-mode [role="combobox"]:focus,
+body.christmas-mode [role="combobox"][data-state=open] {
+  border-color: #dc2626 !important; /* Red-600 */
+  --ring: 0 72.2% 50.6%; /* Red ring */
+}
+
