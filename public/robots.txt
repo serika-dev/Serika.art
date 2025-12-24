@@ -1,21 +1,53 @@
 # Robots.txt for Serika.art
-# Allow all crawlers to index the site
+# A modern art image board with 1.5M+ artworks
 
 User-agent: *
 Allow: /
+Allow: /posts
+Allow: /tags
+Allow: /image/
+Allow: /user/
 Disallow: /api/
 Disallow: /admin/
-Disallow: /_next/
+Disallow: /settings
+Disallow: /favorites
+Disallow: /login
+Disallow: /_next/static/
+Disallow: /_next/image
 
-# Specific rules for search engines
+# Allow OG images for social sharing
+Allow: /og-image
+Allow: /image/*/og
+
+# Google specific
 User-agent: Googlebot
 Allow: /
+Crawl-delay: 0
 
+User-agent: Googlebot-Image
+Allow: /image/
+Allow: /og-image
+
+# Bing specific
 User-agent: Bingbot
 Allow: /
-
-# Sitemap location
-Sitemap: https://serika.art/sitemap.xml
-
-# Crawl delay (in seconds)
 Crawl-delay: 1
+
+# Discord specific (for embeds)
+User-agent: Discordbot
+Allow: /
+
+# Twitter specific (for cards)
+User-agent: Twitterbot
+Allow: /
+
+# Slack
+User-agent: Slackbot
+Allow: /
+
+# Facebook
+User-agent: facebookexternalhit
+Allow: /
+
+# Sitemap
+Sitemap: https://serika.art/sitemap.xml
