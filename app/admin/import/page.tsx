@@ -320,36 +320,43 @@ export default function ImportPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
-          <div className="relative">
-            <Download size={36} className="text-primary" />
-            <Flame size={16} className="absolute -top-1 -right-1 text-orange-500 animate-pulse" />
+    <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl sm:text-4xl font-bold mb-2 flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="relative flex-shrink-0">
+            <Download size={28} className="text-primary sm:hidden" />
+            <Download size={36} className="text-primary hidden sm:block" />
+            <Flame size={14} className="absolute -top-1 -right-1 text-orange-500 animate-pulse sm:hidden" />
+            <Flame size={16} className="absolute -top-1 -right-1 text-orange-500 animate-pulse hidden sm:block" />
           </div>
-          Danbooru Import
-          <Badge className={`${getModeColor(speedMode)} text-white border-0 text-xs font-bold ${speedMode === 'insane' ? 'animate-pulse' : ''}`}>
+          <span className="flex-shrink-0">Danbooru Import</span>
+          <Badge className={`${getModeColor(speedMode)} text-white border-0 text-[10px] sm:text-xs font-bold ${speedMode === 'insane' ? 'animate-pulse' : ''}`}>
             {getModeLabel(speedMode)}
           </Badge>
         </h1>
-        <p className="text-muted-foreground">
+        <p className="text-xs sm:text-sm text-muted-foreground">
           <span className={speedMode === 'insane' ? 'text-red-400 font-bold' : 'text-primary font-semibold'}>
-            {speedSettings.concurrentJobs} jobs × {speedSettings.concurrentImports} imports = {speedSettings.concurrentJobs * speedSettings.concurrentImports} concurrent
+            {speedSettings.concurrentJobs}×{speedSettings.concurrentImports}={speedSettings.concurrentJobs * speedSettings.concurrentImports}
           </span>
-          {' • '}Delay: {speedSettings.importDelay}ms • Batch: {speedSettings.batchSize}
+          <span className="hidden sm:inline">
+            {' '}concurrent • Delay: {speedSettings.importDelay}ms • Batch: {speedSettings.batchSize}
+          </span>
+          <span className="sm:hidden">
+            {' '}• {speedSettings.importDelay}ms • {speedSettings.batchSize}
+          </span>
         </p>
       </div>
 
       {/* Speed Mode Selector */}
-      <Card className="mb-6 border-border">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Gauge className="h-5 w-5" />
+      <Card className="mb-4 sm:mb-6 border-border">
+        <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6">
+          <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+            <Gauge className="h-4 w-4 sm:h-5 sm:w-5" />
             Speed Mode
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-center gap-3">
+        <CardContent className="px-3 sm:px-6">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {(['default', 'turbo', 'insane'] as SpeedMode[]).map((mode) => (
               <Button
                 key={mode}
@@ -357,50 +364,51 @@ export default function ImportPage() {
                 size="sm"
                 onClick={() => changeSpeedMode(mode)}
                 disabled={changingSpeed}
-                className={speedMode === mode ? getModeColor(mode) : ''}
+                className={`text-xs sm:text-sm h-8 px-2 sm:px-3 ${speedMode === mode ? getModeColor(mode) : ''}`}
               >
-                {changingSpeed && speedMode !== mode ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                {changingSpeed && speedMode !== mode ? <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin mr-1" /> : null}
                 {getModeLabel(mode)}
               </Button>
             ))}
-            <div className="text-xs text-muted-foreground ml-2">
-              {speedMode === 'default' && '2×5 (10 concurrent) - Safe for low resources'}
-              {speedMode === 'turbo' && '5×20 (100 concurrent) - Fast'}
-              {speedMode === 'insane' && '10×50 (500 concurrent) - Maximum speed'}
-            </div>
           </div>
+          <p className="text-[10px] sm:text-xs text-muted-foreground mt-2">
+            {speedMode === 'default' && '2×5 (10 concurrent) - Safe'}
+            {speedMode === 'turbo' && '5×20 (100 concurrent) - Fast'}
+            {speedMode === 'insane' && '10×50 (500 concurrent) - Max'}
+          </p>
         </CardContent>
       </Card>
 
       {/* Status Bar */}
       {(runningJobs.length > 0 || pendingJobs.length > 0 || pausedJobs.length > 0) && (
-        <Card className="mb-6 border-primary/30 bg-primary/5">
-          <CardContent className="py-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
+        <Card className="mb-4 sm:mb-6 border-primary/30 bg-primary/5">
+          <CardContent className="py-3 sm:py-4 px-3 sm:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-4">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                 {runningJobs.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
-                    <span className="text-sm text-blue-400">{runningJobs.length} running</span>
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin text-blue-400" />
+                    <span className="text-xs sm:text-sm text-blue-400">{runningJobs.length} running</span>
                   </div>
                 )}
                 {pendingJobs.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-yellow-400" />
-                    <span className="text-sm text-yellow-400">{pendingJobs.length} pending</span>
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-yellow-400" />
+                    <span className="text-xs sm:text-sm text-yellow-400">{pendingJobs.length} pending</span>
                   </div>
                 )}
                 {pausedJobs.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <Pause className="h-4 w-4 text-orange-400" />
-                    <span className="text-sm text-orange-400">{pausedJobs.length} paused</span>
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <Pause className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-orange-400" />
+                    <span className="text-xs sm:text-sm text-orange-400">{pausedJobs.length} paused</span>
                   </div>
                 )}
               </div>
               {pausedJobs.length > 0 && (
-                <Button size="sm" onClick={resumeWorker} className="gap-2">
-                  <Play className="h-4 w-4" />
-                  Resume Paused Jobs
+                <Button size="sm" onClick={resumeWorker} className="gap-1.5 sm:gap-2 text-xs sm:text-sm h-8">
+                  <Play className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  <span className="hidden sm:inline">Resume Paused Jobs</span>
+                  <span className="sm:hidden">Resume</span>
                 </Button>
               )}
             </div>
@@ -408,25 +416,26 @@ export default function ImportPage() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Import Forms */}
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Single Post Import */}
           <Card>
-            <CardHeader>
-              <CardTitle>Single Post Import</CardTitle>
-              <CardDescription>Import a specific Danbooru post by ID</CardDescription>
+            <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
+              <CardTitle className="text-base sm:text-lg">Single Post Import</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">Import a specific Danbooru post by ID</CardDescription>
             </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSingleImport} className="space-y-4">
+            <CardContent className="px-3 sm:px-6">
+              <form onSubmit={handleSingleImport} className="space-y-3 sm:space-y-4">
                 <Input
                   type="number"
                   placeholder="Danbooru Post ID (e.g., 1234567)"
                   value={postId}
                   onChange={(e) => setPostId(e.target.value)}
                   disabled={importingSingle}
+                  className="text-sm"
                 />
-                <Button type="submit" disabled={importingSingle || !postId.trim()} className="w-full">
+                <Button type="submit" disabled={importingSingle || !postId.trim()} className="w-full text-sm">
                   {importingSingle ? (
                     <>
                       <Loader2 className="animate-spin h-4 w-4 mr-2" />
@@ -449,7 +458,7 @@ export default function ImportPage() {
                     ) : (
                       <div className="flex items-center gap-2 text-red-400">
                         <AlertCircle className="h-4 w-4" />
-                        <span>{singleResult.error}</span>
+                        <span className="text-sm">{singleResult.error}</span>
                       </div>
                     )}
                   </div>
@@ -460,43 +469,43 @@ export default function ImportPage() {
 
           {/* Bulk Import */}
           <Card>
-            <CardHeader>
-              <CardTitle>Bulk Import</CardTitle>
-              <CardDescription>
-                Queue multiple imports (one per line). Supports multiple artists or tag searches.
+            <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
+              <CardTitle className="text-base sm:text-lg">Bulk Import</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">
+                Queue multiple imports (one per line)
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <form onSubmit={handleBulkImport} className="space-y-4">
+            <CardContent className="px-3 sm:px-6">
+              <form onSubmit={handleBulkImport} className="space-y-3 sm:space-y-4">
                 <Tabs value={importType} onValueChange={(v) => setImportType(v as 'artist' | 'tags')}>
-                  <TabsList className="w-full">
-                    <TabsTrigger value="tags" className="flex-1">Tag Search</TabsTrigger>
-                    <TabsTrigger value="artist" className="flex-1">Artist</TabsTrigger>
+                  <TabsList className="w-full h-9">
+                    <TabsTrigger value="tags" className="flex-1 text-xs sm:text-sm">Tag Search</TabsTrigger>
+                    <TabsTrigger value="artist" className="flex-1 text-xs sm:text-sm">Artist</TabsTrigger>
                   </TabsList>
                 </Tabs>
 
                 <Textarea
                   placeholder={importType === 'artist' 
-                    ? "Enter artist tags (one per line):\nartist_name\nanother_artist\n..." 
-                    : "Enter tag searches (one per line):\n1girl solo\nblue_eyes cat_ears\n..."}
+                    ? "artist_name\nanother_artist\n..." 
+                    : "1girl solo\nblue_eyes cat_ears\n..."}
                   value={queries}
                   onChange={(e) => setQueries(e.target.value)}
-                  className="min-h-[120px] font-mono text-sm"
+                  className="min-h-[100px] sm:min-h-[120px] font-mono text-xs sm:text-sm"
                   disabled={submitting}
                 />
 
                 {/* Unlimited Toggle */}
-                <div className="flex items-center justify-between p-4 rounded-lg border border-border bg-gradient-to-r from-orange-500/5 to-red-500/5">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-full bg-gradient-to-br from-orange-500 to-red-500">
-                      <Infinity className="h-4 w-4 text-white" />
+                <div className="flex items-center justify-between p-2.5 sm:p-4 rounded-lg border border-border bg-gradient-to-r from-orange-500/5 to-red-500/5">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="p-1.5 sm:p-2 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex-shrink-0">
+                      <Infinity className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-white" />
                     </div>
                     <div>
-                      <Label htmlFor="unlimited" className="font-bold text-foreground cursor-pointer">
-                        Unlimited Mode
+                      <Label htmlFor="unlimited" className="font-bold text-foreground cursor-pointer text-sm">
+                        Unlimited
                       </Label>
-                      <p className="text-xs text-muted-foreground">
-                        Import ALL matching posts (up to 100k per query)
+                      <p className="text-[10px] sm:text-xs text-muted-foreground">
+                        Up to 100k per query
                       </p>
                     </div>
                   </div>
@@ -508,9 +517,9 @@ export default function ImportPage() {
                   />
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 sm:gap-4">
                   <div className="flex-1">
-                    <label className="text-sm text-muted-foreground mb-1 block">
+                    <label className="text-xs sm:text-sm text-muted-foreground mb-1 block">
                       {unlimited ? 'Limit disabled' : 'Limit per query'}
                     </label>
                     <Input
@@ -519,20 +528,20 @@ export default function ImportPage() {
                       onChange={(e) => setLimit(parseInt(e.target.value) || 100)}
                       min={1}
                       disabled={submitting || unlimited}
-                      className={unlimited ? 'opacity-50' : ''}
+                      className={`text-sm ${unlimited ? 'opacity-50' : ''}`}
                       placeholder={unlimited ? '∞ Unlimited' : ''}
                     />
                   </div>
-                  <div className="text-sm text-muted-foreground pt-6">
+                  <div className="text-xs sm:text-sm text-muted-foreground pt-5 sm:pt-6 flex-shrink-0">
                     {queries.split('\n').filter(q => q.trim()).length} job(s)
-                    {unlimited && <span className="ml-1 text-orange-400 font-bold">• UNLIMITED</span>}
+                    {unlimited && <span className="ml-1 text-orange-400 font-bold">• ∞</span>}
                   </div>
                 </div>
 
                 <Button 
                   type="submit" 
                   disabled={submitting || !queries.trim()} 
-                  className={`w-full ${unlimited ? 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600' : ''}`}
+                  className={`w-full text-sm ${unlimited ? 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600' : ''}`}
                 >
                   {submitting ? (
                     <>
@@ -558,24 +567,25 @@ export default function ImportPage() {
 
         {/* Job Queue */}
         <Card className="lg:row-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3">
             <div>
-              <CardTitle className="flex items-center gap-2">
-                <List className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <List className="h-4 w-4 sm:h-5 sm:w-5" />
                 Import Queue
               </CardTitle>
-              <CardDescription>{jobs.length} total jobs</CardDescription>
+              <CardDescription className="text-xs sm:text-sm">{jobs.length} total jobs</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               {jobs.filter(j => j.status === 'completed').length > 0 && (
                 <Button 
                   variant="outline" 
                   size="sm" 
                   onClick={clearCompletedJobs}
-                  className="text-green-400 hover:text-green-300 hover:bg-green-500/10 border-green-500/30"
+                  className="text-green-400 hover:text-green-300 hover:bg-green-500/10 border-green-500/30 text-xs h-8 px-2 sm:px-3"
                 >
-                  <Eraser className="h-4 w-4 mr-1" />
-                  Clear Done ({jobs.filter(j => j.status === 'completed').length})
+                  <Eraser className="h-3.5 w-3.5 sm:mr-1" />
+                  <span className="hidden sm:inline">Clear Done</span>
+                  <span className="ml-1">({jobs.filter(j => j.status === 'completed').length})</span>
                 </Button>
               )}
               {jobs.filter(j => j.status === 'failed').length > 0 && (
@@ -583,28 +593,29 @@ export default function ImportPage() {
                   variant="outline" 
                   size="sm" 
                   onClick={clearFailedJobs}
-                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-500/30"
+                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-500/30 text-xs h-8 px-2 sm:px-3"
                 >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Clear Failed ({jobs.filter(j => j.status === 'failed').length})
+                  <Trash2 className="h-3.5 w-3.5 sm:mr-1" />
+                  <span className="hidden sm:inline">Clear Failed</span>
+                  <span className="ml-1">({jobs.filter(j => j.status === 'failed').length})</span>
                 </Button>
               )}
-              <Button variant="outline" size="sm" onClick={fetchJobs} disabled={loadingJobs}>
-                <RefreshCw className={`h-4 w-4 ${loadingJobs ? 'animate-spin' : ''}`} />
+              <Button variant="outline" size="sm" onClick={fetchJobs} disabled={loadingJobs} className="h-8 w-8 p-0">
+                <RefreshCw className={`h-3.5 w-3.5 ${loadingJobs ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3 max-h-[600px] overflow-y-auto">
+          <CardContent className="space-y-2 sm:space-y-3 max-h-[500px] sm:max-h-[600px] overflow-y-auto px-3 sm:px-6">
             {jobs.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <List className="h-10 w-10 mx-auto mb-3 opacity-50" />
-                <p>No import jobs yet</p>
+              <div className="text-center py-6 sm:py-8 text-muted-foreground">
+                <List className="h-8 w-8 sm:h-10 sm:w-10 mx-auto mb-2 sm:mb-3 opacity-50" />
+                <p className="text-sm">No import jobs yet</p>
               </div>
             ) : (
               jobs.map((job) => (
                 <div
                   key={job._id}
-                  className={`p-4 rounded-lg border ${
+                  className={`p-2.5 sm:p-4 rounded-lg border ${
                     job.status === 'running' ? 'border-blue-500/30 bg-blue-500/5' :
                     job.status === 'completed' ? 'border-green-500/20 bg-green-500/5' :
                     job.status === 'failed' ? 'border-red-500/20 bg-red-500/5' :
@@ -612,26 +623,26 @@ export default function ImportPage() {
                     'border-border'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex items-start justify-between gap-2 mb-1.5 sm:mb-2">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <Badge variant="outline" className="text-xs">
+                      <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
+                        <Badge variant="outline" className="text-[10px] sm:text-xs h-5">
                           {job.type}
                         </Badge>
                         {job.limit === 0 && (
-                          <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-white border-0 text-xs">
-                            <Infinity className="h-3 w-3 mr-1" />
-                            UNLIMITED
+                          <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-white border-0 text-[10px] sm:text-xs h-5">
+                            <Infinity className="h-2.5 w-2.5 sm:h-3 sm:w-3 mr-0.5 sm:mr-1" />
+                            ∞
                           </Badge>
                         )}
                         {getStatusBadge(job.status)}
                       </div>
-                      <p className="font-medium truncate" title={job.query}>
+                      <p className="font-medium truncate text-sm sm:text-base" title={job.query}>
                         {job.query}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        by {job.createdBy} • {new Date(job.createdAt).toLocaleString()}
-                        {job.limit > 0 && <span> • limit: {job.limit}</span>}
+                      <p className="text-[10px] sm:text-xs text-muted-foreground">
+                        {job.createdBy} • {new Date(job.createdAt).toLocaleDateString()}
+                        {job.limit > 0 && <span className="hidden sm:inline"> • limit: {job.limit}</span>}
                       </p>
                     </div>
                     {(job.status === 'pending' || job.status === 'running' || job.status === 'paused') && (
@@ -639,30 +650,30 @@ export default function ImportPage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => cancelJob(job._id)}
-                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-7 w-7 p-0"
                       >
-                        <X className="h-4 w-4" />
+                        <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       </Button>
                     )}
                   </div>
 
                   {job.progress.total > 0 && (
                     <div className="space-y-1">
-                      <div className="flex justify-between text-xs text-muted-foreground">
+                      <div className="flex justify-between text-[10px] sm:text-xs text-muted-foreground">
                         <span>{job.progress.current} / {job.progress.total}</span>
                         <span>{getProgressPercent(job)}%</span>
                       </div>
-                      <Progress value={getProgressPercent(job)} className="h-1.5" />
-                      <div className="flex gap-3 text-xs">
-                        <span className="text-green-400">✓ {job.progress.successful}</span>
-                        <span className="text-red-400">✗ {job.progress.failed}</span>
-                        <span className="text-yellow-400">⊘ {job.progress.skipped}</span>
+                      <Progress value={getProgressPercent(job)} className="h-1 sm:h-1.5" />
+                      <div className="flex gap-2 sm:gap-3 text-[10px] sm:text-xs">
+                        <span className="text-green-400">✓{job.progress.successful}</span>
+                        <span className="text-red-400">✗{job.progress.failed}</span>
+                        <span className="text-yellow-400">⊘{job.progress.skipped}</span>
                       </div>
                     </div>
                   )}
 
                   {job.error && (
-                    <p className="text-xs text-red-400 mt-2">{job.error}</p>
+                    <p className="text-[10px] sm:text-xs text-red-400 mt-1.5 sm:mt-2 truncate" title={job.error}>{job.error}</p>
                   )}
                 </div>
               ))

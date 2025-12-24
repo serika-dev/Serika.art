@@ -1,7 +1,9 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { Upload, Search, User, LogOut, Menu, X, Settings, Heart, Shield, Key, BookOpen, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,6 +22,13 @@ const ACCOUNTS_URL = process.env.NEXT_PUBLIC_ACCOUNTS_URL || 'https://accounts.s
 
 export default function Navbar() {
   const { user, logout } = useAuth();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Auto-close sheet on navigation
+  useEffect(() => {
+    setSheetOpen(false);
+  }, [pathname]);
 
   const handleLogin = async () => {
     const currentPath = window.location.pathname;
@@ -148,13 +157,13 @@ export default function Navbar() {
 
           {/* Mobile menu button */}
           <div className="md:hidden flex items-center">
-            <Sheet>
+            <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon">
                   <Menu className="h-6 w-6" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="right">
+              <SheetContent side="right" className="pt-12">
                 <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
                 {/* Mobile Menu Content */}
                 <div className="flex flex-col space-y-4 mt-4">
