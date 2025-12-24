@@ -61,12 +61,20 @@ function PostsPageContent() {
   const [blacklistedTags, setBlacklistedTags] = useState<string[]>([]);
   const [postsPerPage, setPostsPerPage] = useState(24);
   const [gridSize, setGridSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const [infiniteScroll, setInfiniteScroll] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [allImages, setAllImages] = useState<Image[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const inputRef = useRef<HTMLInputElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Get parameters from URL
-  const page = parseInt(searchParams.get('page') || '1');
+  const urlPage = parseInt(searchParams.get('page') || '1');
   const sort = searchParams.get('sort') || 'newest';
   const tagsParam = searchParams.get('tags') || '';
+  
+  // Use URL page for pagination mode, internal state for infinite scroll
+  const page = infiniteScroll ? currentPage : urlPage;
   
   const selectedTags = tagsParam 
     ? tagsParam.split(',').map((tag, idx) => ({ name: tag, type: 'general' as TagType }))
@@ -97,6 +105,12 @@ function PostsPageContent() {
       setGridSize(savedGridSize as 'small' | 'medium' | 'large');
     }
     
+    // Load infinite scroll setting
+    const savedInfiniteScroll = localStorage.getItem('serika_infinite_scroll');
+    if (savedInfiniteScroll === 'true') {
+      setInfiniteScroll(true);
+    }
+    
     setRatingsInitialized(true);
   }, []);
 
@@ -105,6 +119,53 @@ function PostsPageContent() {
       fetchImages();
     }
   }, [page, sort, tagsParam, selectedRatings, ratingsInitialized, hideAI, postsPerPage]);
+
+  // Reset allImages when filters change (for infinite scroll)
+  useEffect(() => {
+    if (infiniteScroll) {
+      setAllImages([]);
+      setCurrentPage(1);
+    }
+  }, [sort, tagsParam, selectedRatings, hideAI, infiniteScroll]);
+
+  // Infinite scroll intersection observer
+  useEffect(() => {
+    if (!infiniteScroll || !loadMoreRef.current) return;
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loading && !loadingMore && currentPage < totalPages) {
+          loadMoreImages();
+        }
+      },
+      { threshold: 0.1 }
+    );
+    
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [infiniteScroll, loading, loadingMore, currentPage, totalPages]);
+
+  const loadMoreImages = async () => {
+    if (loadingMore || currentPage >= totalPages) return;
+    
+    setLoadingMore(true);
+    try {
+      const nextPage = currentPage + 1;
+      const tagsQueryParam = tagsParam ? `&tags=${tagsParam}` : '';
+      const ratingsQueryParam = `&ratings=${selectedRatings.join(',')}`;
+      const hideAIParam = hideAI ? '&hideAI=true' : '';
+      const response = await axios.get(`/api/images?page=${nextPage}&limit=${postsPerPage}&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}`);
+      
+      if (response.data.success) {
+        setAllImages(prev => [...prev, ...response.data.images]);
+        setCurrentPage(nextPage);
+      }
+    } catch (error) {
+      console.error('Error loading more images:', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     if (tagInput.trim().length > 0) {
@@ -124,6 +185,12 @@ function PostsPageContent() {
       const response = await axios.get(`/api/images?page=${page}&limit=${postsPerPage}&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}`);
       if (response.data.success) {
         setImages(response.data.images);
+        // For infinite scroll, set allImages on initial load
+        if (infiniteScroll && page === 1) {
+          setAllImages(response.data.images);
+        } else if (infiniteScroll && allImages.length === 0) {
+          setAllImages(response.data.images);
+        }
         setTotalPages(response.data.pagination.pages);
         setTotalImages(response.data.pagination.total);
         // Extract and organize tags from current page
@@ -490,13 +557,14 @@ function PostsPageContent() {
     </div>
   ), [tagSuggestions, showSuggestions, selectedRatings, hideAI, selectedTags, tagsByType, blacklistEnabled, blacklistedTags]);
 
-  // Filter images based on blacklist
+  // Filter images based on blacklist - use allImages for infinite scroll, images for pagination
   const filteredImages = useMemo(() => {
+    const sourceImages = infiniteScroll && allImages.length > 0 ? allImages : images;
     if (!blacklistEnabled || blacklistedTags.length === 0) {
-      return images;
+      return sourceImages;
     }
-    return images.filter(image => !shouldHideImage(image.tags as unknown as (string | { name: string })[]));
-  }, [images, blacklistEnabled, blacklistedTags]);
+    return sourceImages.filter(image => !shouldHideImage(image.tags as unknown as (string | { name: string })[]));
+  }, [images, allImages, infiniteScroll, blacklistEnabled, blacklistedTags]);
 
   return (
     <div className="flex gap-6 px-4 sm:px-6 lg:px-8 py-8 max-w-[1800px] mx-auto">
@@ -655,33 +723,48 @@ function PostsPageContent() {
               ))}
             </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex justify-center items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => updateUrl(undefined, undefined, Math.max(1, page - 1))}
-                  disabled={page === 1}
-                >
-                  <ChevronLeft className="h-4 w-4 mr-1" />
-                  Previous
-                </Button>
-                <div className="flex items-center gap-1 px-2">
-                  <span className="text-sm text-muted-foreground">
-                    Page <span className="font-medium text-foreground">{page}</span> of <span className="font-medium text-foreground">{totalPages}</span>
-                  </span>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => updateUrl(undefined, undefined, Math.min(totalPages, page + 1))}
-                  disabled={page === totalPages}
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
+            {/* Infinite Scroll or Pagination */}
+            {infiniteScroll ? (
+              <div ref={loadMoreRef} className="flex justify-center py-8">
+                {loadingMore && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <span>Loading more...</span>
+                  </div>
+                )}
+                {!loadingMore && currentPage >= totalPages && filteredImages.length > 0 && (
+                  <span className="text-muted-foreground text-sm">No more images to load</span>
+                )}
               </div>
+            ) : (
+              /* Traditional Pagination */
+              totalPages > 1 && (
+                <div className="flex justify-center items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => updateUrl(undefined, undefined, Math.max(1, urlPage - 1))}
+                    disabled={urlPage === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Previous
+                  </Button>
+                  <div className="flex items-center gap-1 px-2">
+                    <span className="text-sm text-muted-foreground">
+                      Page <span className="font-medium text-foreground">{urlPage}</span> of <span className="font-medium text-foreground">{totalPages}</span>
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => updateUrl(undefined, undefined, Math.min(totalPages, urlPage + 1))}
+                    disabled={urlPage === totalPages}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              )
             )}
           </>
         )}
