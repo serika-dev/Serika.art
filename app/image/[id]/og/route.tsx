@@ -210,33 +210,33 @@ export async function GET(
               <div
                 style={{
                   display: 'flex',
+                  flexDirection: 'row',
                   gap: 32,
                   marginBottom: 24,
                 }}
               >
                 {/* Likes */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
-                    <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
-                  </svg>
-                  <span style={{ fontSize: 24, fontWeight: 'bold' }}>{formatNumber(likes)}</span>
+                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', width: 28, height: 28, color: '#ef4444' }}>
+                    ❤
+                  </div>
+                  <span style={{ display: 'flex', fontSize: 24, fontWeight: 'bold' }}>{formatNumber(likes)}</span>
                 </div>
 
                 {/* Views */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
-                    <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                  <span style={{ fontSize: 24, fontWeight: 'bold' }}>{formatNumber(views)}</span>
+                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', width: 28, height: 28, color: '#3b82f6' }}>
+                    👁
+                  </div>
+                  <span style={{ display: 'flex', fontSize: 24, fontWeight: 'bold' }}>{formatNumber(views)}</span>
                 </div>
 
                 {/* Favorites */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#eab308" strokeWidth="2">
-                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                  </svg>
-                  <span style={{ fontSize: 24, fontWeight: 'bold' }}>{formatNumber(favorites)}</span>
+                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', width: 28, height: 28, color: '#eab308' }}>
+                    ★
+                  </div>
+                  <span style={{ display: 'flex', fontSize: 24, fontWeight: 'bold' }}>{formatNumber(favorites)}</span>
                 </div>
               </div>
 
@@ -270,6 +270,7 @@ export async function GET(
               <div
                 style={{
                   display: 'flex',
+                  flexDirection: 'row',
                   alignItems: 'center',
                   marginTop: 'auto',
                   paddingTop: 16,
@@ -277,6 +278,7 @@ export async function GET(
               >
                 <div
                   style={{
+                    display: 'flex',
                     fontSize: 28,
                     fontWeight: 'bold',
                     color: '#ec4899',
@@ -286,6 +288,7 @@ export async function GET(
                 </div>
                 <div
                   style={{
+                    display: 'flex',
                     fontSize: 18,
                     color: '#71717a',
                     marginLeft: 12,

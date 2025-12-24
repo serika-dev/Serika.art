@@ -715,6 +715,16 @@ export async function pauseRunningJobs(): Promise<void> {
 
 export async function resumePausedJobs(): Promise<void> {
   const jobsCollection = await getCollection('import_jobs');
+  
+  // First, reset any stuck "running" jobs to "paused" (server might have restarted)
+  const stuckJobs = await jobsCollection.updateMany(
+    { status: 'running' },
+    { $set: { status: 'paused' } }
+  );
+  if (stuckJobs.modifiedCount > 0) {
+    console.log(`[IMPORT] Reset ${stuckJobs.modifiedCount} stuck running jobs to paused`);
+  }
+  
   const pausedJobs = await jobsCollection.countDocuments({ status: 'paused' });
   const pendingJobs = await jobsCollection.countDocuments({ status: 'pending' });
   
@@ -722,6 +732,9 @@ export async function resumePausedJobs(): Promise<void> {
   
   if (pausedJobs > 0 || pendingJobs > 0) {
     console.log(`[IMPORT] Starting worker to process ${pausedJobs + pendingJobs} jobs...`);
+    // Force restart the worker
+    workerRunning = false;
+    workerPromise = null;
     startImportWorker();
   } else {
     console.log('[IMPORT] No jobs to process');
