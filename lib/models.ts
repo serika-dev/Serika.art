@@ -86,6 +86,100 @@ export interface Comment {
   rank?: UserRank;
   content: string;
   parentId?: ObjectId;
+  asArtist?: boolean; // If user is commenting as verified artist
+  artistTagId?: ObjectId; // Which artist tag they're commenting as
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Artist {
+  _id: ObjectId;
+  tagId: ObjectId; // Reference to the artist tag
+  tagName: string; // Cached tag name for display
+  claimedByUserId?: ObjectId; // User who claimed this artist page
+  claimedByUsername?: string; // Cached username
+  verified: boolean;
+  avatarUrl?: string;
+  bannerUrl?: string;
+  bio?: string;
+  socials: {
+    twitter?: string;
+    bluesky?: string;
+    youtube?: string;
+    pixiv?: string;
+    deviantart?: string;
+    artstation?: string;
+    patreon?: string;
+    linktree?: string;
+    carrd?: string;
+    website?: string;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type ArtistClaimStatus = 'pending' | 'approved' | 'rejected';
+
+export interface ArtistClaim {
+  _id: ObjectId;
+  artistTagId: ObjectId;
+  artistTagName: string;
+  userId: ObjectId;
+  username: string;
+  userEmail: string;
+  verificationWords: string[]; // 4 random words for verification
+  verificationMethod: 'social' | 'website' | 'dm'; // How they plan to verify
+  additionalInfo?: string;
+  status: ArtistClaimStatus;
+  reviewedBy?: ObjectId;
+  reviewedByUsername?: string;
+  reviewNotes?: string;
+  reviewedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Artist Reviews
+export interface ArtistReview {
+  _id: ObjectId;
+  artistTagId: ObjectId;
+  artistTagName: string;
+  userId: ObjectId;
+  username: string;
+  ratings: {
+    trust: number; // 1-5
+    quality: number; // 1-5
+    communication: number; // 1-5
+    pricing?: number; // 1-5, optional for commission artists
+  };
+  comment?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Artist Wiki
+export interface ArtistWiki {
+  _id: ObjectId;
+  artistTagId: ObjectId;
+  artistTagName: string;
+  content: string; // Markdown content
+  infobox?: {
+    status?: string;
+    specialties?: string[];
+    tools?: string[];
+    commissions?: 'open' | 'closed' | 'waitlist';
+    priceRange?: string;
+    languages?: string[];
+    customFields?: { label: string; value: string }[];
+  };
+  lastEditedBy: ObjectId;
+  lastEditedByUsername: string;
+  editHistory: {
+    userId: ObjectId;
+    username: string;
+    content: string;
+    editedAt: Date;
+  }[];
   createdAt: Date;
   updatedAt: Date;
 }

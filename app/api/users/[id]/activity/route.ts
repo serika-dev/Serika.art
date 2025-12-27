@@ -17,15 +17,17 @@ export async function GET(
     const imagesCollection = await getCollection('images');
     const tagsCollection = await getCollection('tags');
 
-    // Try to find user by ID or username
+    // Try to find user by ID or username - use case-insensitive exact match for username
     let user;
     if (ObjectId.isValid(id)) {
       user = await usersCollection.findOne({ _id: new ObjectId(id) });
     }
     if (!user) {
-      user = await usersCollection.findOne({ 
-        username: { $regex: new RegExp(`^${id}$`, 'i') } 
-      });
+      // Use collation for case-insensitive search (faster than regex)
+      user = await usersCollection.findOne(
+        { username: id },
+        { collation: { locale: 'en', strength: 2 } }
+      );
     }
 
     if (!user) {

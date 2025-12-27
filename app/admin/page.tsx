@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { Tags, Upload, Users, Settings, AlertCircle, Shield, Scale, History } from 'lucide-react';
+import { Tags, Upload, Users, Settings, AlertCircle, Shield, Scale, History, Palette } from 'lucide-react';
 
 export default function AdminDashboard() {
   const { user, loading } = useAuth();
@@ -63,6 +63,13 @@ export default function AdminDashboard() {
       icon: History,
       href: '/admin/moderation',
       color: 'from-red-600 to-red-700',
+    },
+    {
+      title: 'Artist Claims',
+      description: 'Review and approve artist page verification requests',
+      icon: Palette,
+      href: '/admin/artists',
+      color: 'from-pink-600 to-pink-700',
     },
   ];
 

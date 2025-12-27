@@ -127,19 +127,30 @@ export default function TagsPage() {
       ) : (
         <div className="flex flex-wrap gap-2">
           {tags.map((tag) => (
-            <Link
-              key={tag._id.toString()}
-              href={`/posts?tags=${encodeURIComponent(tag.name)}`}
-              className={cn(
-                "px-3 py-1.5 rounded-md border text-sm font-medium transition-all inline-flex items-center gap-2",
-                tagTypeStyles[tag.type]
+            <div key={tag._id.toString()} className="group relative">
+              <Link
+                href={`/posts?tags=${encodeURIComponent(tag.name)}`}
+                className={cn(
+                  "px-3 py-1.5 rounded-md border text-sm font-medium transition-all inline-flex items-center gap-2",
+                  tagTypeStyles[tag.type]
+                )}
+              >
+                <span>{tag.name}</span>
+                <span className="text-xs opacity-60">
+                  {tag.count}
+                </span>
+              </Link>
+              {/* Artist page link for artist tags */}
+              {tag.type === 'artist' && (
+                <Link
+                  href={`/artist/${encodeURIComponent(tag.name)}`}
+                  className="absolute -top-1 -right-1 p-1 bg-red-600 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity text-[10px]"
+                  title="View artist page"
+                >
+                  →
+                </Link>
               )}
-            >
-              <span>{tag.name}</span>
-              <span className="text-xs opacity-60">
-                {tag.count}
-              </span>
-            </Link>
+            </div>
           ))}
         </div>
       )}

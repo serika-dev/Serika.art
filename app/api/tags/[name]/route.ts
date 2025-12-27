@@ -3,6 +3,49 @@ import { getCollection } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 import { ObjectId } from 'mongodb';
 
+// Get a tag by name
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ name: string }> }
+) {
+  try {
+    const { name } = await params;
+    const decoded = decodeURIComponent(name).toLowerCase();
+    const possibleNames = Array.from(new Set([
+      decoded,
+      decoded.replace(/ /g, '_'),
+      decoded.replace(/_/g, ' '),
+    ]));
+
+    const tagsCollection = await getCollection('tags');
+    const tag = await tagsCollection.findOne({ name: { $in: possibleNames } });
+
+    if (!tag) {
+      return NextResponse.json(
+        { success: false, error: 'Tag not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      tag: {
+        _id: tag._id.toString(),
+        name: tag.name,
+        type: tag.type,
+        count: tag.count,
+        createdAt: tag.createdAt,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching tag:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch tag' },
+      { status: 500 }
+    );
+  }
+}
+
 // Update tag type (admin+ only)
 export async function PATCH(
   request: NextRequest,

@@ -145,7 +145,7 @@ export default function AdminTagsPage() {
                 </tr>
               ) : (
                 tags.map((tag) => (
-                  <tr key={tag.name} className="hover:bg-zinc-800/50 transition">
+                  <tr key={tag._id} className="hover:bg-zinc-800/50 transition">
                     <td className="px-6 py-4">
                       <span className="text-white font-medium">{tag.name}</span>
                     </td>

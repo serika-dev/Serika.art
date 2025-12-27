@@ -42,6 +42,14 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
   const [comments, setComments] = useState<UserComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalImages, setTotalImages] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [mostRecentImage, setMostRecentImage] = useState<Image | null>(null);
+  const LIMIT = 50;
+
+  const isAnonymousUser = username.toLowerCase() === 'anonymous';
 
   useEffect(() => {
     const fetchData = async () => {
@@ -56,16 +64,25 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
         
         setUser(userData.user);
 
-        // Fetch user images
-        const imagesRes = await fetch(`/api/images?username=${encodeURIComponent(username)}&limit=50`);
+        // Fetch user images - for anonymous use userId=null, for others use username
+        const imageQuery = isAnonymousUser 
+          ? `userId=null&limit=${LIMIT}&page=1`
+          : `username=${encodeURIComponent(username)}&limit=${LIMIT}&page=1`;
+        const imagesRes = await fetch(`/api/images?${imageQuery}`);
         const imagesData = await imagesRes.json();
 
         if (imagesData.success) {
           setImages(imagesData.images);
+          setTotalImages(imagesData.pagination?.total || imagesData.images.length);
+          setTotalPages(imagesData.pagination?.pages || 1);
+          // Set most recent image for anonymous avatar
+          if (isAnonymousUser && imagesData.images.length > 0) {
+            setMostRecentImage(imagesData.images[0]);
+          }
         }
 
         // Fetch user activity (likes and comments) - skip for anonymous
-        if (username.toLowerCase() !== 'anonymous') {
+        if (!isAnonymousUser) {
           const activityRes = await fetch(`/api/users/${encodeURIComponent(username)}/activity`);
           const activityData = await activityRes.json();
 
@@ -82,9 +99,33 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
     };
 
     if (username) {
+      setPage(1);
+      setImages([]);
       fetchData();
     }
-  }, [username]);
+  }, [username, isAnonymousUser]);
+
+  // Load more images
+  const loadMore = async () => {
+    if (loadingMore || page >= totalPages) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const imageQuery = isAnonymousUser 
+        ? `userId=null&limit=${LIMIT}&page=${nextPage}`
+        : `username=${encodeURIComponent(username)}&limit=${LIMIT}&page=${nextPage}`;
+      const imagesRes = await fetch(`/api/images?${imageQuery}`);
+      const imagesData = await imagesRes.json();
+      if (imagesData.success) {
+        setImages(prev => [...prev, ...imagesData.images]);
+        setPage(nextPage);
+      }
+    } catch (err) {
+      console.error('Failed to load more images:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -122,8 +163,6 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
     }
   };
 
-  const isAnonymous = username.toLowerCase() === 'anonymous';
-
   return (
     <div className="w-full min-h-screen bg-background">
       {/* Banner */}
@@ -148,9 +187,9 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
             {/* Avatar */}
             <div className="relative group">
               <Avatar className="h-40 w-40 md:h-48 md:w-48 border-[6px] border-background shadow-2xl flex-shrink-0 rounded-3xl overflow-hidden transition-transform duration-300 group-hover:scale-[1.02]">
-                <AvatarImage src={user.avatarUrl} className="object-cover" />
+                <AvatarImage src={isAnonymousUser && mostRecentImage ? mostRecentImage.thumbnailUrl : user.avatarUrl} className="object-cover" />
                 <AvatarFallback className="text-5xl bg-muted text-muted-foreground rounded-none">
-                  {isAnonymous ? '?' : user.username[0].toUpperCase()}
+                  {isAnonymousUser ? '?' : user.username[0].toUpperCase()}
                 </AvatarFallback>
               </Avatar>
             </div>
@@ -160,7 +199,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
               <div className="space-y-1">
                 <div className="flex items-center justify-center md:justify-start gap-3 flex-wrap">
                   <h1 className="text-4xl md:text-5xl font-black tracking-tight text-foreground">
-                    {isAnonymous ? 'Anonymous User' : user.username}
+                    {isAnonymousUser ? 'Anonymous' : user.username}
                   </h1>
                   {user.rank && user.rank !== 'user' && (
                     <Badge className={cn("font-bold px-3 py-1 rounded-full text-xs uppercase tracking-wider", getRankStyles(user.rank))}>
@@ -169,7 +208,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
                     </Badge>
                   )}
                 </div>
-                {isAnonymous ? (
+                {isAnonymousUser ? (
                   <p className="text-muted-foreground font-medium">
                     Content from users who aren't logged in
                   </p>
@@ -184,7 +223,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
               </div>
 
               {/* Bio */}
-              {user.bio && !isAnonymous && (
+              {user.bio && !isAnonymousUser && (
                 <p className="text-foreground/70 leading-relaxed max-w-2xl text-lg font-medium italic">
                   &ldquo;{user.bio}&rdquo;
                 </p>
@@ -196,9 +235,9 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
           <div className="mt-8 grid grid-cols-2 md:flex md:items-center gap-4 md:gap-12 p-6 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm">
             <div className="space-y-0.5">
               <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Uploads</div>
-              <div className="text-2xl font-black text-foreground">{images.length}</div>
+              <div className="text-2xl font-black text-foreground">{totalImages}</div>
             </div>
-            {!isAnonymous && (
+            {!isAnonymousUser && (
               <>
                 <div className="space-y-0.5">
                   <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Likes</div>
@@ -215,7 +254,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
 
         {/* Content Tabs */}
         <div className="mb-20">
-          {isAnonymous ? (
+          {isAnonymousUser ? (
             // Anonymous users only have uploads
             <>
               <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-6">
@@ -234,11 +273,31 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 pb-8">
-                  {images.map((image) => (
-                    <ImageCard key={image._id.toString()} image={image} />
-                  ))}
-                </div>
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 pb-8">
+                    {images.map((image) => (
+                      <ImageCard key={image._id.toString()} image={image} />
+                    ))}
+                  </div>
+                  {page < totalPages && (
+                    <div className="flex justify-center py-8">
+                      <button
+                        onClick={loadMore}
+                        disabled={loadingMore}
+                        className="px-6 py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {loadingMore ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading...
+                          </>
+                        ) : (
+                          `Load More (${images.length} of ${totalImages})`
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </>
           ) : (
@@ -247,7 +306,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
               <TabsList className="mb-6">
                 <TabsTrigger value="uploads" className="gap-2">
                   <ImageIcon className="h-4 w-4" />
-                  Uploads ({images.length})
+                  Uploads ({totalImages})
                 </TabsTrigger>
                 <TabsTrigger value="likes" className="gap-2">
                   <ThumbsUp className="h-4 w-4" />
@@ -273,11 +332,31 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
                     </CardContent>
                   </Card>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 pb-8">
-                    {images.map((image) => (
-                      <ImageCard key={image._id.toString()} image={image} />
-                    ))}
-                  </div>
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 pb-8">
+                      {images.map((image) => (
+                        <ImageCard key={image._id.toString()} image={image} />
+                      ))}
+                    </div>
+                    {page < totalPages && (
+                      <div className="flex justify-center py-8">
+                        <button
+                          onClick={loadMore}
+                          disabled={loadingMore}
+                          className="px-6 py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                          {loadingMore ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Loading...
+                            </>
+                          ) : (
+                            `Load More (${images.length} of ${totalImages})`
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </TabsContent>
 

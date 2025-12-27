@@ -33,6 +33,21 @@ export async function GET(
       .sort({ createdAt: 1 })
       .toArray();
     
+    // Get artist info for comments marked as artist
+    const artistTagIds = comments
+      .filter(c => c.asArtist && c.artistTagId)
+      .map(c => c.artistTagId);
+    
+    let artistTagNames: Record<string, string> = {};
+    if (artistTagIds.length > 0) {
+      const tagsCollection = await getCollection('tags');
+      const tags = await tagsCollection.find({ _id: { $in: artistTagIds } }).toArray();
+      artistTagNames = tags.reduce((acc, tag) => {
+        acc[tag._id.toString()] = tag.name;
+        return acc;
+      }, {} as Record<string, string>);
+    }
+    
     return NextResponse.json({
       success: true,
       comments: comments.map(c => ({
@@ -44,6 +59,8 @@ export async function GET(
         rank: c.rank || 'user',
         content: c.content,
         parentId: c.parentId?.toString(),
+        asArtist: c.asArtist || false,
+        artistTagName: c.artistTagId ? artistTagNames[c.artistTagId.toString()] : undefined,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
       })),
@@ -72,7 +89,7 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { content, parentId } = body;
+    const { content, parentId, asArtist, artistTagId } = body;
 
     if (!content || content.trim().length === 0) {
       return NextResponse.json(
@@ -118,6 +135,40 @@ export async function POST(
       );
     }
 
+    // Validate asArtist claim
+    let validatedArtistTagId: ObjectId | undefined;
+    if (asArtist && artistTagId) {
+      // Check if user owns this artist page
+      const artistsCollection = await getCollection('artists');
+      const artist = await artistsCollection.findOne({
+        tagId: new ObjectId(artistTagId),
+        claimedByUserId: new ObjectId(user.id),
+        verified: true,
+      });
+
+      if (!artist) {
+        return NextResponse.json(
+          { success: false, error: 'You are not verified as this artist' },
+          { status: 403 }
+        );
+      }
+
+      // Check if the image has this artist tag
+      const imageHasTag = image.tags.some((t: any) => 
+        t.toString() === artistTagId || 
+        (t._id && t._id.toString() === artistTagId)
+      );
+
+      if (!imageHasTag) {
+        return NextResponse.json(
+          { success: false, error: 'This image is not tagged with your artist tag' },
+          { status: 400 }
+        );
+      }
+
+      validatedArtistTagId = new ObjectId(artistTagId);
+    }
+
     // Create comment
     const commentsCollection = await getCollection('comments');
     const comment = {
@@ -128,11 +179,21 @@ export async function POST(
       rank: userDoc.rank || 'user',
       content: content.trim(),
       parentId: parentId ? new ObjectId(parentId) : undefined,
+      asArtist: asArtist && validatedArtistTagId ? true : false,
+      artistTagId: validatedArtistTagId,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
     const result = await commentsCollection.insertOne(comment);
+
+    // Get artist tag name if applicable
+    let artistTagName: string | undefined;
+    if (validatedArtistTagId) {
+      const tagsCollection = await getCollection('tags');
+      const tag = await tagsCollection.findOne({ _id: validatedArtistTagId });
+      artistTagName = tag?.name;
+    }
 
     return NextResponse.json({
       success: true,
@@ -145,6 +206,8 @@ export async function POST(
         rank: comment.rank,
         content: comment.content,
         parentId: comment.parentId?.toString(),
+        asArtist: comment.asArtist,
+        artistTagName,
         createdAt: comment.createdAt,
         updatedAt: comment.updatedAt,
       },

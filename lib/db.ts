@@ -47,6 +47,8 @@ async function ensureCriticalIndexes(db: Db) {
   try {
     const images = db.collection('images');
     const tags = db.collection('tags');
+    const artists = db.collection('artists');
+    const artistClaims = db.collection('artistClaims');
 
     // Create indexes in background (won't block queries)
     await Promise.all([
@@ -60,6 +62,16 @@ async function ensureCriticalIndexes(db: Db) {
       // Tags: name lookup and sorting
       tags.createIndex({ name: 1 }, { background: true, unique: true }).catch(() => {}),
       tags.createIndex({ count: -1, name: 1 }, { background: true }).catch(() => {}),
+      
+      // Artists: tag lookup and claimed user lookup
+      artists.createIndex({ tagId: 1 }, { background: true, unique: true }).catch(() => {}),
+      artists.createIndex({ claimedByUserId: 1 }, { background: true, sparse: true }).catch(() => {}),
+      artists.createIndex({ tagName: 1 }, { background: true }).catch(() => {}),
+      
+      // Artist Claims: status and user lookup
+      artistClaims.createIndex({ status: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      artistClaims.createIndex({ userId: 1, artistTagId: 1 }, { background: true }).catch(() => {}),
+      artistClaims.createIndex({ artistTagId: 1 }, { background: true }).catch(() => {}),
     ]);
 
     console.log('[DB] Critical indexes ensured');

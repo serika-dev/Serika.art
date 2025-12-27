@@ -28,20 +28,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid target type' }, { status: 400 });
     }
 
-    if (!ObjectId.isValid(targetId)) {
-      return NextResponse.json({ success: false, error: 'Invalid target ID' }, { status: 400 });
-    }
-
     const modLogCollection = await getCollection('moderation_logs');
     const isAdmin = ['admin', 'owner'].includes(user.rank || '');
 
     // Handle image actions
     if (targetType === 'image') {
       const imagesCollection = await getCollection('images');
-      const image = await imagesCollection.findOne({ _id: new ObjectId(targetId) });
       
-      if (!image) {
-        return NextResponse.json({ success: false, error: 'Image not found' }, { status: 404 });
+      // Support both sequentialId (number) and ObjectId for images
+      let image;
+      let imageObjectId: ObjectId;
+      const sequentialId = parseInt(targetId, 10);
+      
+      if (!isNaN(sequentialId)) {
+        // Look up by sequentialId
+        image = await imagesCollection.findOne({ sequentialId });
+        if (image) {
+          imageObjectId = image._id;
+        }
+      } else if (ObjectId.isValid(targetId)) {
+        // Fall back to ObjectId lookup
+        image = await imagesCollection.findOne({ _id: new ObjectId(targetId) });
+        if (image) {
+          imageObjectId = image._id;
+        }
+      }
+      
+      if (!image || !imageObjectId!) {
+        return NextResponse.json({ success: false, error: 'Invalid target ID or image not found' }, { status: 404 });
       }
 
       // Store previous state for potential undo
@@ -109,7 +123,7 @@ export async function POST(request: NextRequest) {
           // Check if action is within the reversible window
           const lastLog = await modLogCollection.findOne(
             { 
-              targetId: new ObjectId(targetId),
+              targetId: imageObjectId,
               performedBy: new ObjectId(user.id),
               reversible: true,
               undone: { $ne: true }
@@ -149,7 +163,7 @@ export async function POST(request: NextRequest) {
       }
 
       await imagesCollection.updateOne(
-        { _id: new ObjectId(targetId) },
+        { _id: imageObjectId },
         { $set: updateData }
       );
 
@@ -157,7 +171,7 @@ export async function POST(request: NextRequest) {
       await modLogCollection.insertOne({
         action: logAction,
         targetType,
-        targetId: new ObjectId(targetId),
+        targetId: imageObjectId,
         performedBy: new ObjectId(user.id),
         performedByUsername: user.username,
         performedByRank: user.rank,

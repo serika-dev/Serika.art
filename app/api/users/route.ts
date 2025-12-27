@@ -29,13 +29,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Try local DB first
+    // Try local DB first - use collation for case-insensitive search (faster than regex)
     const { getCollection } = await import('@/lib/db');
     const usersCollection = await getCollection('users');
     
-    const localUser = await usersCollection.findOne({ 
-      username: { $regex: new RegExp(`^${username}$`, 'i') } 
-    });
+    const localUser = await usersCollection.findOne(
+      { username: username },
+      { collation: { locale: 'en', strength: 2 } }
+    );
     
     if (localUser) {
       // Try to get additional data from accounts API using user ID

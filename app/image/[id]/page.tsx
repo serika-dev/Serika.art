@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import axios from 'axios';
 import { Image as ImageType, Comment } from '@/lib/models';
-import { Heart, ThumbsUp, ThumbsDown, Eye, Download, Trash2, Sparkles, ExternalLink, Calendar, User, Maximize2, Minimize2, MessageCircle, Send, Shield, EyeOff, RotateCcw, AlertTriangle, Loader2 } from 'lucide-react';
+import { Heart, ThumbsUp, ThumbsDown, Eye, Download, Trash2, Sparkles, ExternalLink, Calendar, User, Maximize2, Minimize2, MessageCircle, Send, Shield, EyeOff, RotateCcw, AlertTriangle, Loader2, Palette, ArrowUpRight, Search } from 'lucide-react';
 import Link from 'next/link';
 import NextImage from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,12 @@ export default function ImagePage() {
   const [moderating, setModerating] = useState(false);
   const [showModReasonInput, setShowModReasonInput] = useState<string | null>(null);
   const [modReason, setModReason] = useState('');
+  
+  // Artist comment state
+  const [canCommentAsArtist, setCanCommentAsArtist] = useState(false);
+  const [userArtistTags, setUserArtistTags] = useState<{ tagId: string; tagName: string }[]>([]);
+  const [commentAsArtist, setCommentAsArtist] = useState(false);
+  const [selectedArtistTag, setSelectedArtistTag] = useState<string | null>(null);
 
   // Check if user is a moderator or higher
   const canModerate = user && ['moderator', 'admin', 'owner'].includes(user.rank || '');
@@ -43,8 +49,24 @@ export default function ImagePage() {
     if (id) {
       fetchImage();
       fetchComments();
+      fetchArtistStatus();
     }
   }, [id]);
+
+  const fetchArtistStatus = async () => {
+    try {
+      const response = await axios.get(`/api/images/${id}/artist-status`);
+      if (response.data.success) {
+        setCanCommentAsArtist(response.data.canCommentAsArtist);
+        setUserArtistTags(response.data.artistTags || []);
+        if (response.data.artistTags?.length === 1) {
+          setSelectedArtistTag(response.data.artistTags[0].tagId);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching artist status:', error);
+    }
+  };
 
   const fetchImage = async () => {
     try {
@@ -83,11 +105,14 @@ export default function ImagePage() {
       const response = await axios.post(`/api/images/${id}/comments`, {
         content: commentText,
         parentId: replyTo,
+        asArtist: commentAsArtist && selectedArtistTag ? true : false,
+        artistTagId: commentAsArtist ? selectedArtistTag : undefined,
       });
       
       if (response.data.success) {
         setCommentText('');
         setReplyTo(null);
+        setCommentAsArtist(false);
         fetchComments();
       }
     } catch (error: any) {
@@ -459,11 +484,47 @@ export default function ImagePage() {
                   className="min-h-[80px] resize-none"
                   maxLength={5000}
                 />
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    {commentText.length}/5000
-                  </span>
-                  <Button type="submit" size="sm" disabled={!commentText.trim() || submittingComment}>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-muted-foreground">
+                      {commentText.length}/5000
+                    </span>
+                    {/* Comment as Artist Toggle */}
+                    {canCommentAsArtist && userArtistTags.length > 0 && (
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={commentAsArtist}
+                          onChange={(e) => setCommentAsArtist(e.target.checked)}
+                          className="rounded border-red-500/50 text-red-500 focus:ring-red-500"
+                        />
+                        <span className="text-xs flex items-center gap-1.5">
+                          <Palette className="h-3 w-3 text-red-400" />
+                          <span className="text-red-400">
+                            Comment as {userArtistTags.length === 1 
+                              ? userArtistTags[0].tagName.replace(/_/g, ' ') 
+                              : 'Artist'}
+                          </span>
+                        </span>
+                      </label>
+                    )}
+                    {/* Artist Tag Selector (if multiple) */}
+                    {canCommentAsArtist && commentAsArtist && userArtistTags.length > 1 && (
+                      <select
+                        value={selectedArtistTag || ''}
+                        onChange={(e) => setSelectedArtistTag(e.target.value)}
+                        className="text-xs bg-zinc-800 border border-zinc-700 rounded px-2 py-1"
+                      >
+                        <option value="">Select artist...</option>
+                        {userArtistTags.map(tag => (
+                          <option key={tag.tagId} value={tag.tagId}>
+                            {tag.tagName.replace(/_/g, ' ')}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <Button type="submit" size="sm" disabled={!commentText.trim() || submittingComment || (commentAsArtist && !selectedArtistTag)}>
                     <Send className="h-4 w-4 mr-2" />
                     {submittingComment ? 'Posting...' : 'Post Comment'}
                   </Button>
@@ -492,10 +553,16 @@ export default function ImagePage() {
                   <AvatarFallback>{comment.username[0].toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1.5">
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                     <Link href={`/user/${comment.username}`} className="font-semibold hover:text-primary transition-colors">
                       {comment.username}
                     </Link>
+                    {(comment as any).asArtist && (comment as any).artistTagName && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-500/10 text-red-400 border-red-500/30">
+                        <Palette className="h-2.5 w-2.5 mr-1" />
+                        {((comment as any).artistTagName as string).replace(/_/g, ' ')}
+                      </Badge>
+                    )}
                     {comment.rank && comment.rank !== 'user' && (
                       <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", getRankBadge(comment.rank))}>
                         {comment.rank}
@@ -524,12 +591,18 @@ export default function ImagePage() {
                         <AvatarFallback>{reply.username[0].toUpperCase()}</AvatarFallback>
                       </Avatar>
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <Link href={`/user/${reply.username}`} className="font-semibold text-sm hover:text-primary transition-colors">
                             {reply.username}
                           </Link>
                           {!reply.userId && (
                             <span className="text-xs text-muted-foreground">(system)</span>
+                          )}
+                          {(reply as any).asArtist && (reply as any).artistTagName && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-500/10 text-red-400 border-red-500/30">
+                              <Palette className="h-2.5 w-2.5 mr-1" />
+                              {((reply as any).artistTagName as string).replace(/_/g, ' ')}
+                            </Badge>
                           )}
                           {reply.rank && reply.rank !== 'user' && (
                             <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", getRankBadge(reply.rank))}>
@@ -912,19 +985,69 @@ export default function ImagePage() {
                       meta: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20',
                     };
                     return (
-                      <Link
-                        key={tagName}
-                        href={`/posts?tags=${encodeURIComponent(tagName)}`}
-                        className={cn(
-                          "px-2.5 py-1 rounded-md border text-sm transition-colors",
-                          typeColors[tagType as keyof typeof typeColors]
+                      <div key={tagName} className="group relative">
+                        <Link
+                          href={`/posts?tags=${encodeURIComponent(tagName)}`}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md border text-sm transition-colors inline-block",
+                            typeColors[tagType as keyof typeof typeColors]
+                          )}
+                        >
+                          {tagName}
+                        </Link>
+                        {/* Artist page link */}
+                        {tagType === 'artist' && (
+                          <Link
+                            href={`/artist/${encodeURIComponent(tagName)}`}
+                            className="absolute -top-1 -right-1 p-0.5 bg-red-600 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="View artist page"
+                          >
+                            <Palette className="h-2.5 w-2.5" />
+                          </Link>
                         )}
-                      >
-                        {tagName}
-                      </Link>
+                      </div>
                     );
                   })}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Reverse Image Search */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Search className="h-4 w-4" />
+                Search with
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <a
+                href={`https://saucenao.com/search.php?url=${encodeURIComponent(image.url)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between px-3 py-2 rounded-lg bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-colors"
+              >
+                <span className="font-medium">SauceNAO</span>
+                <ExternalLink className="h-4 w-4" />
+              </a>
+              <a
+                href={`https://lens.google.com/uploadbyurl?url=${encodeURIComponent(image.url)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between px-3 py-2 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+              >
+                <span className="font-medium">Google Images</span>
+                <ExternalLink className="h-4 w-4" />
+              </a>
+              <a
+                href={`https://yandex.com/images/search?rpt=imageview&url=${encodeURIComponent(image.url)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between px-3 py-2 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors"
+              >
+                <span className="font-medium">Yandex</span>
+                <ExternalLink className="h-4 w-4" />
+              </a>
             </CardContent>
           </Card>
 

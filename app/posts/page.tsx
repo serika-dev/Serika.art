@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import ImageCard from '@/components/ImageCard';
 import { Image, Tag } from '@/lib/models';
 import axios from 'axios';
-import { ChevronLeft, ChevronRight, Loader2, Hash, TrendingUp, X, Search, Shield, AlertTriangle, Ban, Filter, SlidersHorizontal, Sparkles, Bot, EyeOff, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Hash, TrendingUp, X, Search, Shield, AlertTriangle, Ban, Filter, SlidersHorizontal, Sparkles, Bot, EyeOff, Eye, Palette } from 'lucide-react';
 import Link from 'next/link';
 import { getRatingsFromCookie, setRatingsCookie, toggleRating as toggleRatingUtil, Rating } from '@/lib/ratingPreferences';
 import { getBlacklistedTags, isBlacklistEnabled, setBlacklistEnabled, shouldHideImage } from '@/lib/blacklist';
@@ -65,6 +65,7 @@ function PostsPageContent() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [allImages, setAllImages] = useState<Image[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [artistTagInfo, setArtistTagInfo] = useState<{ name: string; tagId: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
@@ -77,7 +78,7 @@ function PostsPageContent() {
   const page = infiniteScroll ? currentPage : urlPage;
   
   const selectedTags = tagsParam 
-    ? tagsParam.split(',').map((tag, idx) => ({ name: tag, type: 'general' as TagType }))
+    ? tagsParam.split(',').map((tag) => ({ name: tag.trim(), type: 'general' as TagType }))
     : [];
 
   // Initialize settings from localStorage/cookies on mount
@@ -128,6 +129,27 @@ function PostsPageContent() {
     }
   }, [sort, tagsParam, selectedRatings, hideAI, infiniteScroll]);
 
+  // Check if filtering by a single artist tag
+  useEffect(() => {
+    const checkArtistTag = async () => {
+      if (selectedTags.length === 1) {
+        try {
+          const res = await axios.get(`/api/tags/${encodeURIComponent(selectedTags[0].name)}`);
+          if (res.data.success && res.data.tag?.type === 'artist') {
+            setArtistTagInfo({ name: res.data.tag.name, tagId: res.data.tag._id });
+          } else {
+            setArtistTagInfo(null);
+          }
+        } catch {
+          setArtistTagInfo(null);
+        }
+      } else {
+        setArtistTagInfo(null);
+      }
+    };
+    checkArtistTag();
+  }, [tagsParam]);
+
   // Infinite scroll intersection observer
   useEffect(() => {
     if (!infiniteScroll || !loadMoreRef.current) return;
@@ -151,7 +173,9 @@ function PostsPageContent() {
     setLoadingMore(true);
     try {
       const nextPage = currentPage + 1;
-      const tagsQueryParam = tagsParam ? `&tags=${tagsParam}` : '';
+      const tagsQueryParam = selectedTags.length
+        ? `&tags=${selectedTags.map(t => encodeURIComponent(t.name)).join(',')}`
+        : '';
       const ratingsQueryParam = `&ratings=${selectedRatings.join(',')}`;
       const hideAIParam = hideAI ? '&hideAI=true' : '';
       const response = await axios.get(`/api/images?page=${nextPage}&limit=${postsPerPage}&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}`);
@@ -179,7 +203,9 @@ function PostsPageContent() {
   const fetchImages = async () => {
     setLoading(true);
     try {
-      const tagsQueryParam = tagsParam ? `&tags=${tagsParam}` : '';
+      const tagsQueryParam = selectedTags.length
+        ? `&tags=${selectedTags.map(t => encodeURIComponent(t.name)).join(',')}`
+        : '';
       const ratingsQueryParam = `&ratings=${selectedRatings.join(',')}`;
       const hideAIParam = hideAI ? '&hideAI=true' : '';
       const response = await axios.get(`/api/images?page=${page}&limit=${postsPerPage}&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}`);
@@ -529,24 +555,35 @@ function PostsPageContent() {
                 {tags.map((tag) => {
                   const isSelected = selectedTags.some(t => t.name === tag.name);
                   return (
-                    <button
-                      key={tag.name}
-                      onClick={() => toggleTag(tag)}
-                      className={cn(
-                        "w-full text-left px-2.5 py-1.5 rounded-md text-sm transition-all flex items-center justify-between group",
-                        isSelected
-                          ? "bg-primary/15 text-primary font-medium"
-                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    <div key={tag.name} className="space-y-0.5">
+                      <button
+                        onClick={() => toggleTag(tag)}
+                        className={cn(
+                          "w-full text-left px-2.5 py-1.5 rounded-md text-sm transition-all flex items-center justify-between group",
+                          isSelected
+                            ? "bg-primary/15 text-primary font-medium"
+                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                        )}
+                      >
+                        <span className="truncate">{tag.name}</span>
+                        <span className={cn(
+                          "text-xs tabular-nums ml-2 transition-colors",
+                          isSelected ? "text-primary/70" : "text-muted-foreground/50 group-hover:text-muted-foreground"
+                        )}>
+                          {tag.count}
+                        </span>
+                      </button>
+                      {/* Artist page link for artist tags when selected */}
+                      {type === 'artist' && isSelected && (
+                        <Link
+                          href={`/artist/${encodeURIComponent(tag.name)}`}
+                          className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
+                        >
+                          <span>Go to artist page</span>
+                          <span>→</span>
+                        </Link>
                       )}
-                    >
-                      <span className="truncate">{tag.name}</span>
-                      <span className={cn(
-                        "text-xs tabular-nums ml-2 transition-colors",
-                        isSelected ? "text-primary/70" : "text-muted-foreground/50 group-hover:text-muted-foreground"
-                      )}>
-                        {tag.count}
-                      </span>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -581,10 +618,23 @@ function PostsPageContent() {
       <div className="flex-1 min-w-0">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold tracking-tight mb-1">Posts</h1>
-          <p className="text-muted-foreground">
-            {totalImages > 0 ? `${totalImages.toLocaleString()} images` : 'Discover amazing artwork'}
-          </p>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight mb-1">Posts</h1>
+              <p className="text-muted-foreground">
+                {totalImages > 0 ? `${totalImages.toLocaleString()} images` : 'Discover amazing artwork'}
+              </p>
+            </div>
+            {/* Artist Page Button */}
+            {artistTagInfo && (
+              <Link href={`/artist/${encodeURIComponent(artistTagInfo.name)}`}>
+                <Button className="bg-red-600 hover:bg-red-700 gap-2">
+                  <Palette className="h-4 w-4" />
+                  View {artistTagInfo.name.replace(/_/g, ' ')}'s Artist Page
+                </Button>
+              </Link>
+            )}
+          </div>
         </div>
 
         {/* Filters Bar */}
