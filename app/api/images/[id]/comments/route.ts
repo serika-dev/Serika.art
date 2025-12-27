@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCollection } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import type { ObjectId as ObjectIdType } from 'mongodb';
 
 export async function GET(
   request: NextRequest,
@@ -136,7 +137,7 @@ export async function POST(
     }
 
     // Validate asArtist claim
-    let validatedArtistTagId: ObjectId | undefined;
+    let validatedArtistTagId: ObjectIdType | undefined;
     if (asArtist && artistTagId) {
       // Check if user owns this artist page
       const artistsCollection = await getCollection('artists');
