@@ -114,6 +114,35 @@ export async function GET(request: NextRequest) {
       case 'views':
         sortOption = { views: -1 };
         break;
+      case 'oldest':
+        sortOption = { createdAt: 1 };
+        break;
+      case 'filesize':
+        sortOption = { fileSize: -1 };
+        break;
+      case 'filesize-asc':
+        sortOption = { fileSize: 1 };
+        break;
+      case 'resolution':
+        // Sort by total pixels (width * height)
+        sortOption = { width: -1, height: -1 };
+        break;
+      case 'aspectratio':
+        // Sort by aspect ratio (wider first)
+        sortOption = { width: -1 };
+        break;
+      case 'alphabetical':
+        sortOption = { username: 1, createdAt: -1 };
+        break;
+      case 'alphabetical-reverse':
+        sortOption = { username: -1, createdAt: -1 };
+        break;
+      case 'random':
+        // Random sort is handled differently (sample aggregation)
+        // Note: Random sampling does not support traditional pagination - each page request
+        // will return a different random sample. This is by design for discovery features.
+        sortOption = { _id: 1 }; // placeholder, handled below
+        break;
     }
 
     // Use projection to only fetch needed fields (faster for large collections)
@@ -125,6 +154,7 @@ export async function GET(request: NextRequest) {
       thumbnailUrl: 1,
       width: 1,
       height: 1,
+      fileSize: 1,
       tags: 1,
       rating: 1,
       isAIGenerated: 1,
@@ -139,18 +169,37 @@ export async function GET(request: NextRequest) {
     // For large result sets, use estimatedDocumentCount when query is simple
     const isSimpleQuery = Object.keys(query).length <= 2 && !query.$or;
     
-    const [images, total] = await Promise.all([
-      collection.find(query, { projection }).sort(sortOption).skip(skip).limit(limit).toArray(),
-      isSimpleQuery && Object.keys(query).length === 0
-        ? collection.estimatedDocumentCount()
-        : collection.countDocuments(query),
-    ]);
+    let images: any[];
+    let total: number;
+    
+    // Handle random sorting with aggregation
+    if (sort === 'random') {
+      const pipeline = [
+        { $match: query },
+        { $sample: { size: limit } },
+        { $project: projection },
+      ];
+      
+      [images, total] = await Promise.all([
+        collection.aggregate(pipeline).toArray(),
+        isSimpleQuery && Object.keys(query).length === 0
+          ? collection.estimatedDocumentCount()
+          : collection.countDocuments(query),
+      ]);
+    } else {
+      [images, total] = await Promise.all([
+        collection.find(query, { projection }).sort(sortOption).skip(skip).limit(limit).toArray(),
+        isSimpleQuery && Object.keys(query).length === 0
+          ? collection.estimatedDocumentCount()
+          : collection.countDocuments(query),
+      ]);
+    }
 
     // Populate tags for all images (batch lookup)
     const allTagIds = new Set<string>();
     images.forEach(img => {
       if (Array.isArray(img.tags)) {
-        img.tags.forEach(tagId => {
+        img.tags.forEach((tagId: any) => {
           const idStr = tagId.toString();
           if (!tagIdCache.has(idStr)) {
             allTagIds.add(idStr);

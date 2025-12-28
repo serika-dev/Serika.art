@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import ImageCard from '@/components/ImageCard';
 import { Image, Tag } from '@/lib/models';
 import axios from 'axios';
-import { ChevronLeft, ChevronRight, Loader2, Hash, TrendingUp, X, Search, Shield, AlertTriangle, Ban, Filter, SlidersHorizontal, Sparkles, Bot, EyeOff, Eye, Palette } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Hash, TrendingUp, X, Search, Shield, AlertTriangle, Ban, Filter, SlidersHorizontal, Sparkles, Bot, EyeOff, Eye, Palette, User } from 'lucide-react';
 import Link from 'next/link';
 import { getRatingsFromCookie, setRatingsCookie, toggleRating as toggleRatingUtil, Rating } from '@/lib/ratingPreferences';
 import { getBlacklistedTags, isBlacklistEnabled, setBlacklistEnabled, shouldHideImage } from '@/lib/blacklist';
@@ -73,6 +73,7 @@ function PostsPageContent() {
   const urlPage = parseInt(searchParams.get('page') || '1');
   const sort = searchParams.get('sort') || 'newest';
   const tagsParam = searchParams.get('tags') || '';
+  const uploaderParam = searchParams.get('uploader') || '';
   
   // Use URL page for pagination mode, internal state for infinite scroll
   const page = infiniteScroll ? currentPage : urlPage;
@@ -119,7 +120,7 @@ function PostsPageContent() {
     if (ratingsInitialized) {
       fetchImages();
     }
-  }, [page, sort, tagsParam, selectedRatings, ratingsInitialized, hideAI, postsPerPage]);
+  }, [page, sort, tagsParam, uploaderParam, selectedRatings, ratingsInitialized, hideAI, postsPerPage]);
 
   // Reset allImages when filters change (for infinite scroll)
   useEffect(() => {
@@ -127,7 +128,7 @@ function PostsPageContent() {
       setAllImages([]);
       setCurrentPage(1);
     }
-  }, [sort, tagsParam, selectedRatings, hideAI, infiniteScroll]);
+  }, [sort, tagsParam, uploaderParam, selectedRatings, hideAI, infiniteScroll]);
 
   // Check if filtering by a single artist tag
   useEffect(() => {
@@ -178,7 +179,8 @@ function PostsPageContent() {
         : '';
       const ratingsQueryParam = `&ratings=${selectedRatings.join(',')}`;
       const hideAIParam = hideAI ? '&hideAI=true' : '';
-      const response = await axios.get(`/api/images?page=${nextPage}&limit=${postsPerPage}&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}`);
+      const uploaderQueryParam = uploaderParam ? `&username=${encodeURIComponent(uploaderParam)}` : '';
+      const response = await axios.get(`/api/images?page=${nextPage}&limit=${postsPerPage}&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}${uploaderQueryParam}`);
       
       if (response.data.success) {
         setAllImages(prev => [...prev, ...response.data.images]);
@@ -208,7 +210,8 @@ function PostsPageContent() {
         : '';
       const ratingsQueryParam = `&ratings=${selectedRatings.join(',')}`;
       const hideAIParam = hideAI ? '&hideAI=true' : '';
-      const response = await axios.get(`/api/images?page=${page}&limit=${postsPerPage}&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}`);
+      const uploaderQueryParam = uploaderParam ? `&username=${encodeURIComponent(uploaderParam)}` : '';
+      const response = await axios.get(`/api/images?page=${page}&limit=${postsPerPage}&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}${uploaderQueryParam}`);
       if (response.data.success) {
         setImages(response.data.images);
         // For infinite scroll, set allImages on initial load
@@ -300,16 +303,18 @@ function PostsPageContent() {
     }
   };
 
-  const updateUrl = (newTags?: string[], newSort?: string, newPage?: number) => {
+  const updateUrl = (newTags?: string[], newSort?: string, newPage?: number, newUploader?: string) => {
     const params = new URLSearchParams();
     
     const tagsToUse = newTags !== undefined ? newTags : selectedTags.map(t => t.name);
     const sortToUse = newSort || sort;
     const pageToUse = newPage || 1;
+    const uploaderToUse = newUploader !== undefined ? newUploader : uploaderParam;
     
     if (pageToUse > 1) params.set('page', pageToUse.toString());
     if (sortToUse !== 'newest') params.set('sort', sortToUse);
     if (tagsToUse.length > 0) params.set('tags', tagsToUse.join(','));
+    if (uploaderToUse) params.set('uploader', uploaderToUse);
     // Ratings are now stored in cookies, not URL
     
     const queryString = params.toString();
@@ -408,6 +413,38 @@ function PostsPageContent() {
             </Card>
           )}
         </div>
+      </div>
+
+      <Separator />
+
+      {/* Uploader Filter */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <User className="h-4 w-4 text-muted-foreground" />
+          Filter by Uploader
+        </h3>
+        <div className="relative">
+          <Input
+            type="text"
+            value={uploaderParam}
+            onChange={(e) => updateUrl(undefined, undefined, 1, e.target.value)}
+            placeholder="Enter username..."
+            className="h-9"
+          />
+          {uploaderParam && (
+            <button
+              onClick={() => updateUrl(undefined, undefined, 1, '')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        {uploaderParam && (
+          <div className="text-xs text-muted-foreground">
+            Showing posts by <span className="font-medium text-primary">{uploaderParam}</span>
+          </div>
+        )}
       </div>
 
       <Separator />
@@ -592,7 +629,7 @@ function PostsPageContent() {
         })}
       </div>
     </div>
-  ), [tagSuggestions, showSuggestions, selectedRatings, hideAI, selectedTags, tagsByType, blacklistEnabled, blacklistedTags]);
+  ), [tagSuggestions, showSuggestions, selectedRatings, hideAI, selectedTags, tagsByType, blacklistEnabled, blacklistedTags, uploaderParam]);
 
   // Filter images based on blacklist - use allImages for infinite scroll, images for pagination
   const filteredImages = useMemo(() => {
@@ -665,14 +702,21 @@ function PostsPageContent() {
 
             {/* Sort Select */}
             <Select value={sort} onValueChange={(value) => updateUrl(undefined, value, 1)}>
-              <SelectTrigger className="w-[140px] h-9">
+              <SelectTrigger className="w-[180px] h-9">
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="newest">Newest</SelectItem>
+                <SelectItem value="newest">Newest First</SelectItem>
+                <SelectItem value="oldest">Oldest First</SelectItem>
                 <SelectItem value="popular">Popular</SelectItem>
                 <SelectItem value="favorites">Most Favorited</SelectItem>
                 <SelectItem value="views">Most Viewed</SelectItem>
+                <SelectItem value="alphabetical">Artist A-Z</SelectItem>
+                <SelectItem value="alphabetical-reverse">Artist Z-A</SelectItem>
+                <SelectItem value="filesize">Largest File Size</SelectItem>
+                <SelectItem value="filesize-asc">Smallest File Size</SelectItem>
+                <SelectItem value="resolution">Highest Resolution</SelectItem>
+                <SelectItem value="random">Random</SelectItem>
               </SelectContent>
             </Select>
           </div>
