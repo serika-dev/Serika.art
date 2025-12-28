@@ -114,6 +114,23 @@ export async function GET(request: NextRequest) {
       case 'views':
         sortOption = { views: -1 };
         break;
+      case 'oldest':
+        sortOption = { createdAt: 1 };
+        break;
+      case 'comments':
+        // We'll need to add a comments count field, for now use upvotes as proxy
+        sortOption = { upvotes: -1 };
+        break;
+      case 'alphabetical':
+        sortOption = { username: 1, createdAt: -1 };
+        break;
+      case 'alphabetical-reverse':
+        sortOption = { username: -1, createdAt: -1 };
+        break;
+      case 'random':
+        // Random sort is handled differently (sample aggregation)
+        sortOption = { _id: 1 }; // placeholder, handled below
+        break;
     }
 
     // Use projection to only fetch needed fields (faster for large collections)
@@ -139,12 +156,31 @@ export async function GET(request: NextRequest) {
     // For large result sets, use estimatedDocumentCount when query is simple
     const isSimpleQuery = Object.keys(query).length <= 2 && !query.$or;
     
-    const [images, total] = await Promise.all([
-      collection.find(query, { projection }).sort(sortOption).skip(skip).limit(limit).toArray(),
-      isSimpleQuery && Object.keys(query).length === 0
-        ? collection.estimatedDocumentCount()
-        : collection.countDocuments(query),
-    ]);
+    let images: any[];
+    let total: number;
+    
+    // Handle random sorting with aggregation
+    if (sort === 'random') {
+      const pipeline = [
+        { $match: query },
+        { $sample: { size: limit } },
+        { $project: projection },
+      ];
+      
+      [images, total] = await Promise.all([
+        collection.aggregate(pipeline).toArray(),
+        isSimpleQuery && Object.keys(query).length === 0
+          ? collection.estimatedDocumentCount()
+          : collection.countDocuments(query),
+      ]);
+    } else {
+      [images, total] = await Promise.all([
+        collection.find(query, { projection }).sort(sortOption).skip(skip).limit(limit).toArray(),
+        isSimpleQuery && Object.keys(query).length === 0
+          ? collection.estimatedDocumentCount()
+          : collection.countDocuments(query),
+      ]);
+    }
 
     // Populate tags for all images (batch lookup)
     const allTagIds = new Set<string>();
