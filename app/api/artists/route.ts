@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
     const artists = await collection
       .find(filter)
       .sort({ tagName: 1 })
+      .collation({ locale: 'en', strength: 2 }) // Case-insensitive sorting
       .limit(limit)
       .toArray();
 
