@@ -129,6 +129,8 @@ export async function GET(request: NextRequest) {
         break;
       case 'random':
         // Random sort is handled differently (sample aggregation)
+        // Note: Random sampling does not support traditional pagination - each page request
+        // will return a different random sample. This is by design for discovery features.
         sortOption = { _id: 1 }; // placeholder, handled below
         break;
     }
@@ -186,7 +188,7 @@ export async function GET(request: NextRequest) {
     const allTagIds = new Set<string>();
     images.forEach(img => {
       if (Array.isArray(img.tags)) {
-        img.tags.forEach(tagId => {
+        img.tags.forEach((tagId: any) => {
           const idStr = tagId.toString();
           if (!tagIdCache.has(idStr)) {
             allTagIds.add(idStr);

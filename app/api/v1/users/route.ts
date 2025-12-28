@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
 
     // Determine sort
     let sortOption: any = { createdAt: -1 };
+    let useAggregation = false;
+    
     switch (sort) {
       case 'oldest':
         sortOption = { createdAt: 1 };
@@ -33,57 +35,98 @@ export async function GET(request: NextRequest) {
       case 'alphabetical-reverse':
         sortOption = { username: -1 };
         break;
+      case 'uploads':
+      case 'uploads-asc':
+        // Use aggregation for upload count sorting
+        useAggregation = true;
+        break;
       case 'newest':
       default:
         sortOption = { createdAt: -1 };
         break;
     }
 
-    // Execute query and count in parallel
-    const [users, total] = await Promise.all([
-      usersCollection
-        .find(query, {
-          projection: {
+    let users: any[];
+    let total: number;
+
+    if (useAggregation) {
+      // Use aggregation pipeline for upload count sorting
+      const pipeline: any[] = [
+        ...(search ? [{ $match: { username: { $regex: search, $options: 'i' } } }] : []),
+        {
+          $lookup: {
+            from: 'images',
+            localField: '_id',
+            foreignField: 'userId',
+            as: 'uploads',
+          },
+        },
+        {
+          $addFields: {
+            uploadCount: { $size: '$uploads' },
+          },
+        },
+        {
+          $project: {
             username: 1,
             avatarUrl: 1,
             rank: 1,
             createdAt: 1,
+            uploadCount: 1,
           },
-        })
-        .sort(sortOption)
-        .skip(skip)
-        .limit(limit)
-        .toArray(),
-      usersCollection.countDocuments(query),
-    ]);
+        },
+        {
+          $sort: { uploadCount: sort === 'uploads' ? -1 : 1 },
+        },
+      ];
 
-    // Get upload counts for each user
-    const userIds = users.map(u => u._id);
-    const uploadCounts = await imagesCollection
-      .aggregate([
-        { $match: { userId: { $in: userIds } } },
-        { $group: { _id: '$userId', count: { $sum: 1 } } },
-      ])
-      .toArray();
+      [users, total] = await Promise.all([
+        usersCollection.aggregate([...pipeline, { $skip: skip }, { $limit: limit }]).toArray(),
+        usersCollection.aggregate([
+          ...(search ? [{ $match: { username: { $regex: search, $options: 'i' } } }] : []),
+          { $count: 'total' }
+        ]).toArray().then(result => result[0]?.total || 0),
+      ]);
+    } else {
+      // Execute query and count in parallel
+      [users, total] = await Promise.all([
+        usersCollection
+          .find(query, {
+            projection: {
+              username: 1,
+              avatarUrl: 1,
+              rank: 1,
+              createdAt: 1,
+            },
+          })
+          .sort(sortOption)
+          .skip(skip)
+          .limit(limit)
+          .toArray(),
+        usersCollection.countDocuments(query),
+      ]);
 
-    const uploadCountMap = new Map(uploadCounts.map(uc => [uc._id.toString(), uc.count]));
+      // Get upload counts for each user
+      const userIds = users.map(u => u._id);
+      const uploadCounts = await imagesCollection
+        .aggregate([
+          { $match: { userId: { $in: userIds } } },
+          { $group: { _id: '$userId', count: { $sum: 1 } } },
+        ])
+        .toArray();
 
-    // Enrich users with upload counts
-    const enrichedUsers = users.map((user: any) => ({
-      ...user,
-      uploadCount: uploadCountMap.get(user._id.toString()) || 0,
-    }));
+      const uploadCountMap = new Map(uploadCounts.map(uc => [uc._id.toString(), uc.count]));
 
-    // For upload count sorting, sort after enrichment
-    if (sort === 'uploads') {
-      enrichedUsers.sort((a, b) => b.uploadCount - a.uploadCount);
-    } else if (sort === 'uploads-asc') {
-      enrichedUsers.sort((a, b) => a.uploadCount - b.uploadCount);
+      // Enrich users with upload counts
+      users = users.map((user: any) => ({
+        ...user,
+        uploadCount: uploadCountMap.get(user._id.toString()) || 0,
+      }));
     }
 
     return NextResponse.json({
       success: true,
-      users: enrichedUsers,
+      users: users,
       pagination: {
         page,
         limit,
