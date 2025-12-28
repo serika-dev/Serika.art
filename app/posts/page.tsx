@@ -711,9 +711,11 @@ function PostsPageContent() {
                 <SelectItem value="popular">Popular</SelectItem>
                 <SelectItem value="favorites">Most Favorited</SelectItem>
                 <SelectItem value="views">Most Viewed</SelectItem>
-                <SelectItem value="comments">Most Comments</SelectItem>
                 <SelectItem value="alphabetical">Artist A-Z</SelectItem>
                 <SelectItem value="alphabetical-reverse">Artist Z-A</SelectItem>
+                <SelectItem value="filesize">Largest File Size</SelectItem>
+                <SelectItem value="filesize-asc">Smallest File Size</SelectItem>
+                <SelectItem value="resolution">Highest Resolution</SelectItem>
                 <SelectItem value="random">Random</SelectItem>
               </SelectContent>
             </Select>

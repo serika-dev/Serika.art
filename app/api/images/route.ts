@@ -117,9 +117,19 @@ export async function GET(request: NextRequest) {
       case 'oldest':
         sortOption = { createdAt: 1 };
         break;
-      case 'comments':
-        // We'll need to add a comments count field, for now use upvotes as proxy
-        sortOption = { upvotes: -1 };
+      case 'filesize':
+        sortOption = { fileSize: -1 };
+        break;
+      case 'filesize-asc':
+        sortOption = { fileSize: 1 };
+        break;
+      case 'resolution':
+        // Sort by total pixels (width * height)
+        sortOption = { width: -1, height: -1 };
+        break;
+      case 'aspectratio':
+        // Sort by aspect ratio (wider first)
+        sortOption = { width: -1 };
         break;
       case 'alphabetical':
         sortOption = { username: 1, createdAt: -1 };
@@ -144,6 +154,7 @@ export async function GET(request: NextRequest) {
       thumbnailUrl: 1,
       width: 1,
       height: 1,
+      fileSize: 1,
       tags: 1,
       rating: 1,
       isAIGenerated: 1,
