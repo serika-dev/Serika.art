@@ -14,11 +14,13 @@ export async function GET(
 ) {
   try {
     const { tagName } = await params;
-    const decoded = decodeURIComponent(tagName).toLowerCase();
+    // Next.js automatically decodes URL parameters, so tagName is already decoded
+    const normalized = tagName.toLowerCase().trim();
+    // Create variations with both spaces and underscores to match database storage
     const possibleNames = Array.from(new Set([
-      decoded,
-      decoded.replace(/ /g, '_'),
-      decoded.replace(/_/g, ' '),
+      normalized,
+      normalized.replace(/ /g, '_'),
+      normalized.replace(/_/g, ' '),
     ]));
 
     const tagsCollection = await getCollection('tags');
@@ -129,7 +131,8 @@ export async function POST(
     }
 
     const { tagName } = await params;
-    const decodedTagName = decodeURIComponent(tagName).toLowerCase().replace(/ /g, '_');
+    // Next.js automatically decodes URL parameters, so tagName is already decoded
+    const normalized = tagName.toLowerCase().trim();
     const body = await request.json();
     const { ratings, comment } = body;
 
@@ -162,8 +165,14 @@ export async function POST(
     }
 
     const tagsCollection = await getCollection('tags');
+    // Create variations with both spaces and underscores to match database storage
+    const possibleNames = Array.from(new Set([
+      normalized,
+      normalized.replace(/ /g, '_'),
+      normalized.replace(/_/g, ' '),
+    ]));
     const tag = await tagsCollection.findOne({ 
-      name: decodedTagName,
+      name: { $in: possibleNames },
       type: 'artist'
     });
 
@@ -209,7 +218,7 @@ export async function POST(
     // Create new review
     await reviewsCollection.insertOne({
       artistTagId: tag._id,
-      artistTagName: decodedTagName,
+      artistTagName: tag.name,
       userId: new ObjectId(user.id),
       username: user.username,
       ratings: {

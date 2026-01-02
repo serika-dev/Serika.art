@@ -15,7 +15,8 @@ export async function GET(
     }
 
     const { name } = await params;
-    const tagName = decodeURIComponent(name).toLowerCase();
+    // Next.js automatically decodes URL parameters, so name is already decoded
+    const tagName = name.toLowerCase().trim();
 
     const collection = await getCollection('tags');
     const imagesCollection = await getCollection('images');
