@@ -143,7 +143,7 @@ export default function TagsPage() {
               {/* Artist page link for artist tags */}
               {tag.type === 'artist' && (
                 <Link
-                  href={`/artist/${encodeURIComponent(tag.name)}`}
+                  href={`/artist/${encodeURIComponent(tag.name.replace(/ /g, '_'))}`}
                   className="absolute -top-1 -right-1 p-1 bg-red-600 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity text-[10px]"
                   title="View artist page"
                 >

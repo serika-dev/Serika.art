@@ -71,13 +71,13 @@ export const emailTemplates = {
             <li>Customize your artist banner and avatar</li>
           </ul>
           <div style="text-align: center; margin-top: 30px;">
-            <a href="https://serika.art/artist/${encodeURIComponent(artistName)}" style="background: #ec4899; color: white; padding: 12px 30px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">View Your Artist Page</a>
+            <a href="https://serika.art/artist/${encodeURIComponent(artistName.replace(/ /g, '_'))}" style="background: #ec4899; color: white; padding: 12px 30px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">View Your Artist Page</a>
           </div>
           <p style="font-size: 12px; color: #71717a; margin-top: 30px; text-align: center;">Thank you for being part of Serika!</p>
         </div>
       </div>
     `,
-    text: `Hi ${username},\n\nGreat news! Your claim for "${artistName}" has been approved.\n\nYou can now edit your artist profile, update your wiki page, add social links, and customize your banner and avatar.\n\nView your artist page: https://serika.art/artist/${encodeURIComponent(artistName)}\n\n— The Serika Team`,
+    text: `Hi ${username},\n\nGreat news! Your claim for "${artistName}" has been approved.\n\nYou can now edit your artist profile, update your wiki page, add social links, and customize your banner and avatar.\n\nView your artist page: https://serika.art/artist/${encodeURIComponent(artistName.replace(/ /g, '_'))}\n\n— The Serika Team`,
   }),
 
   claimRejected: (username: string, artistName: string, reason?: string) => ({
