@@ -535,6 +535,20 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
 
   const decodedTagName = decodeURIComponent(tagName);
 
+  // Helper function to safely parse JSON response
+  const safeParseJSON = async (res: Response): Promise<{ data: any | null; error: string | null }> => {
+    try {
+      const text = await res.text();
+      if (!text) {
+        return { data: null, error: 'Empty response' };
+      }
+      const data = JSON.parse(text);
+      return { data, error: null };
+    } catch {
+      return { data: null, error: 'Invalid JSON response' };
+    }
+  };
+
   useEffect(() => {
     fetchArtist();
     fetchReviews();
@@ -547,17 +561,9 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
   const fetchArtist = async () => {
     try {
       const res = await fetch(`/api/artists/${encodeURIComponent(tagName)}`);
+      const { data, error } = await safeParseJSON(res);
       
-      // Handle empty or non-JSON responses
-      const text = await res.text();
-      if (!text) {
-        throw new Error('Artist tag not found');
-      }
-      
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
+      if (error || !data) {
         throw new Error('Artist tag not found');
       }
 
@@ -583,17 +589,9 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
   const fetchReviews = async () => {
     try {
       const res = await fetch(`/api/artists/${encodeURIComponent(tagName)}/reviews`);
+      const { data, error } = await safeParseJSON(res);
       
-      // Handle empty or non-JSON responses
-      const text = await res.text();
-      if (!text) return;
-      
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        return;
-      }
+      if (error || !data) return;
       
       if (data.success) {
         setReviews(data.reviews);
@@ -608,17 +606,9 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
   const fetchWiki = async () => {
     try {
       const res = await fetch(`/api/artists/${encodeURIComponent(tagName)}/wiki`);
+      const { data, error } = await safeParseJSON(res);
       
-      // Handle empty or non-JSON responses
-      const text = await res.text();
-      if (!text) return;
-      
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        return;
-      }
+      if (error || !data) return;
       
       if (data.success && data.wiki) {
         setWiki(data.wiki);
@@ -633,17 +623,9 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
   const fetchClaimStatus = async () => {
     try {
       const res = await fetch(`/api/artists/${encodeURIComponent(tagName)}/claim`);
+      const { data, error } = await safeParseJSON(res);
       
-      // Handle empty or non-JSON responses
-      const text = await res.text();
-      if (!text) return;
-      
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        return;
-      }
+      if (error || !data) return;
       
       if (data.success && data.claim) {
         setClaimStatus(data.claim);
