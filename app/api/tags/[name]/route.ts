@@ -10,11 +10,13 @@ export async function GET(
 ) {
   try {
     const { name } = await params;
-    const decoded = decodeURIComponent(name).toLowerCase();
+    // Next.js automatically decodes URL parameters, so name is already decoded
+    const normalized = name.toLowerCase().trim();
+    // Create variations with both spaces and underscores to match database storage
     const possibleNames = Array.from(new Set([
-      decoded,
-      decoded.replace(/ /g, '_'),
-      decoded.replace(/_/g, ' '),
+      normalized,
+      normalized.replace(/ /g, '_'),
+      normalized.replace(/_/g, ' '),
     ]));
 
     const tagsCollection = await getCollection('tags');
