@@ -207,7 +207,7 @@ export default function AdminArtistsPage() {
                     <div>
                       <CardTitle className="flex items-center gap-2">
                         <Link 
-                          href={`/artist/${encodeURIComponent(claim.artistTagName)}`}
+                          href={`/artist/${encodeURIComponent(claim.artistTagName.replace(/ /g, '_'))}`}
                           className="hover:text-primary transition capitalize"
                         >
                           {claim.artistTagName.replace(/_/g, ' ')}

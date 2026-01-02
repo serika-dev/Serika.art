@@ -613,7 +613,7 @@ function PostsPageContent() {
                       {/* Artist page link for artist tags when selected */}
                       {type === 'artist' && isSelected && (
                         <Link
-                          href={`/artist/${encodeURIComponent(tag.name)}`}
+                          href={`/artist/${encodeURIComponent(tag.name.replace(/ /g, '_'))}`}
                           className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
                         >
                           <span>Go to artist page</span>
@@ -664,7 +664,7 @@ function PostsPageContent() {
             </div>
             {/* Artist Page Button */}
             {artistTagInfo && (
-              <Link href={`/artist/${encodeURIComponent(artistTagInfo.name)}`}>
+              <Link href={`/artist/${encodeURIComponent(artistTagInfo.name.replace(/ /g, '_'))}`}>
                 <Button className="bg-red-600 hover:bg-red-700 gap-2">
                   <Palette className="h-4 w-4" />
                   View {artistTagInfo.name.replace(/_/g, ' ')}'s Artist Page

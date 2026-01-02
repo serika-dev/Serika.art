@@ -998,7 +998,7 @@ export default function ImagePage() {
                         {/* Artist page link */}
                         {tagType === 'artist' && (
                           <Link
-                            href={`/artist/${encodeURIComponent(tagName)}`}
+                            href={`/artist/${encodeURIComponent(tagName.replace(/ /g, '_'))}`}
                             className="absolute -top-1 -right-1 p-0.5 bg-red-600 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
                             title="View artist page"
                           >
