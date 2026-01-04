@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import axios from 'axios';
 import { Image as ImageType, Comment } from '@/lib/models';
-import { Heart, ThumbsUp, ThumbsDown, Eye, Download, Trash2, Sparkles, ExternalLink, Calendar, User, Maximize2, Minimize2, MessageCircle, Send, Shield, EyeOff, RotateCcw, AlertTriangle, Loader2, Palette, ArrowUpRight, Search } from 'lucide-react';
+import { Heart, ThumbsUp, ThumbsDown, Eye, Download, Trash2, Sparkles, ExternalLink, Calendar, User, Maximize2, Minimize2, MessageCircle, Send, Shield, EyeOff, RotateCcw, AlertTriangle, Loader2, Palette, ArrowUpRight, Search, Edit2, X, Tag as TagIcon } from 'lucide-react';
 import Link from 'next/link';
 import NextImage from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
+import { Tag as TagModel } from '@/lib/models';
 
 export default function ImagePage() {
   const { id } = useParams();
@@ -41,9 +46,22 @@ export default function ImagePage() {
   const [commentAsArtist, setCommentAsArtist] = useState(false);
   const [selectedArtistTag, setSelectedArtistTag] = useState<string | null>(null);
 
+  // Edit state
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editTags, setEditTags] = useState<{ name: string; type: 'general' | 'artist' | 'character' | 'copyright' | 'meta' }[]>([]);
+  const [editTagInput, setEditTagInput] = useState('');
+  const [editTagSuggestions, setEditTagSuggestions] = useState<TagModel[]>([]);
+  const [showEditTagSuggestions, setShowEditTagSuggestions] = useState(false);
+  const [editDescription, setEditDescription] = useState('');
+  const [editSource, setEditSource] = useState('');
+  const [editRating, setEditRating] = useState<'safe' | 'questionable' | 'explicit'>('safe');
+  const [editIsAIGenerated, setEditIsAIGenerated] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+
   // Check if user is a moderator or higher
   const canModerate = user && ['moderator', 'admin', 'owner'].includes(user.rank || '');
   const isAdmin = user && ['admin', 'owner'].includes(user.rank || '');
+  const canEdit = user && (canModerate || (image?.userId && user.id === image.userId.toString()));
 
   useEffect(() => {
     if (id) {
@@ -237,6 +255,118 @@ export default function ImagePage() {
       setModerating(false);
     }
   };
+
+  const openEditDialog = () => {
+    if (!image) return;
+    
+    // Initialize edit state with current image data
+    const currentTags = image.tags.map((tag: any) => ({
+      name: typeof tag === 'string' ? tag : tag.name,
+      type: typeof tag === 'object' && tag.type ? tag.type : 'general' as const,
+    }));
+    
+    setEditTags(currentTags);
+    setEditDescription(image.description || '');
+    setEditSource(image.source || '');
+    setEditRating(image.rating);
+    setEditIsAIGenerated(image.isAIGenerated);
+    setIsEditDialogOpen(true);
+  };
+
+  const fetchEditTagSuggestions = async () => {
+    try {
+      const response = await axios.post('/api/tags', { 
+        query: editTagInput.trim(), 
+        limit: 10 
+      });
+      if (response.data.success) {
+        setEditTagSuggestions(response.data.suggestions);
+        setShowEditTagSuggestions(true);
+      }
+    } catch (error) {
+      console.error('Error fetching suggestions:', error);
+    }
+  };
+
+  const addEditTag = (tag: TagModel) => {
+    if (!editTags.some(t => t.name === tag.name)) {
+      setEditTags([...editTags, { name: tag.name, type: tag.type }]);
+    }
+    setEditTagInput('');
+    setShowEditTagSuggestions(false);
+  };
+
+  const removeEditTag = (tagName: string) => {
+    setEditTags(editTags.filter(t => t.name !== tagName));
+  };
+
+  const handleEditTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const normalizedInput = editTagInput.trim().toLowerCase();
+      
+      if (!normalizedInput) return;
+      
+      // Check if there's an exact match in suggestions
+      const exactMatch = editTagSuggestions.find(
+        t => t.name.toLowerCase() === normalizedInput
+      );
+      
+      if (exactMatch) {
+        addEditTag(exactMatch);
+      } else if (editTagSuggestions.length > 0) {
+        // Use top suggestion
+        addEditTag(editTagSuggestions[0]);
+      } else {
+        // Add as new general tag
+        if (!editTags.some(t => t.name === normalizedInput)) {
+          setEditTags([...editTags, { name: normalizedInput, type: 'general' }]);
+          setEditTagInput('');
+        }
+      }
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!user || !image) return;
+    
+    if (editTags.length === 0) {
+      alert('At least one tag is required');
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const response = await axios.patch(`/api/images/${id}`, {
+        userId: user.id,
+        userRank: user.rank,
+        tags: editTags,
+        description: editDescription,
+        source: editSource,
+        rating: editRating,
+        isAIGenerated: editIsAIGenerated,
+      });
+
+      if (response.data.success) {
+        alert('Image updated successfully');
+        setIsEditDialogOpen(false);
+        fetchImage();
+      }
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to update image');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  useEffect(() => {
+    if (editTagInput.trim().length > 0) {
+      fetchEditTagSuggestions();
+    } else {
+      setEditTagSuggestions([]);
+      setShowEditTagSuggestions(false);
+    }
+  }, [editTagInput]);
 
   const getRatingColor = (rating: string) => {
     switch (rating) {
@@ -723,6 +853,12 @@ export default function ImagePage() {
                       Download
                     </a>
                   </Button>
+                  {canEdit && (
+                    <Button variant="secondary" size="sm" onClick={openEditDialog}>
+                      <Edit2 className="h-4 w-4 mr-1.5" />
+                      Edit
+                    </Button>
+                  )}
                   {user && image.userId && user.id === image.userId.toString() && (
                     <Button variant="destructive" size="sm" onClick={handleDelete}>
                       <Trash2 className="h-4 w-4 mr-1.5" />
@@ -1069,6 +1205,170 @@ export default function ImagePage() {
           {commentsSection}
         </div>
       )}
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Image</DialogTitle>
+            <DialogDescription>
+              Update tags, description, source, rating, and other metadata
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Tags */}
+            <div className="space-y-2">
+              <Label>Tags *</Label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {editTags.map((tag) => {
+                  const typeColors = {
+                    artist: 'bg-red-500/10 text-red-400 border-red-500/20',
+                    copyright: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+                    character: 'bg-green-500/10 text-green-400 border-green-500/20',
+                    general: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+                    meta: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+                  };
+                  return (
+                    <Badge
+                      key={tag.name}
+                      variant="outline"
+                      className={cn("px-2 py-1 text-xs", typeColors[tag.type])}
+                    >
+                      {tag.name}
+                      <button
+                        onClick={() => removeEditTag(tag.name)}
+                        className="ml-1.5 hover:text-destructive"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  );
+                })}
+              </div>
+              <div className="relative">
+                <Input
+                  value={editTagInput}
+                  onChange={(e) => setEditTagInput(e.target.value)}
+                  onKeyDown={handleEditTagKeyDown}
+                  placeholder="Type tag name and press Enter..."
+                  className="w-full"
+                />
+                {showEditTagSuggestions && editTagSuggestions.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {editTagSuggestions.map((tag) => {
+                      const typeColors = {
+                        artist: 'text-red-400',
+                        copyright: 'text-purple-400',
+                        character: 'text-green-400',
+                        general: 'text-blue-400',
+                        meta: 'text-yellow-400',
+                      };
+                      return (
+                        <button
+                          key={tag._id.toString()}
+                          onClick={() => addEditTag(tag)}
+                          className="w-full px-3 py-2 text-left hover:bg-zinc-800 flex items-center gap-2"
+                        >
+                          <span className={typeColors[tag.type]}>{tag.name}</span>
+                          <span className="text-xs text-zinc-500">({tag.count} uses)</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Description */}
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="Optional description..."
+                className="min-h-[80px]"
+                maxLength={5000}
+              />
+            </div>
+
+            {/* Source */}
+            <div className="space-y-2">
+              <Label>Source URL</Label>
+              <Input
+                type="url"
+                value={editSource}
+                onChange={(e) => setEditSource(e.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+
+            {/* Rating */}
+            <div className="space-y-2">
+              <Label>Rating *</Label>
+              <div className="flex gap-3">
+                {(['safe', 'questionable', 'explicit'] as const).map((ratingOption) => (
+                  <label
+                    key={ratingOption}
+                    className={cn(
+                      "flex-1 cursor-pointer rounded-lg border-2 p-3 text-center transition-all",
+                      editRating === ratingOption
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-primary/50"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="edit-rating"
+                      value={ratingOption}
+                      checked={editRating === ratingOption}
+                      onChange={(e) => setEditRating(e.target.value as any)}
+                      className="sr-only"
+                    />
+                    <div className="font-medium capitalize">{ratingOption}</div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* AI Generated */}
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="edit-ai-generated"
+                checked={editIsAIGenerated}
+                onCheckedChange={(checked) => setEditIsAIGenerated(checked as boolean)}
+              />
+              <Label htmlFor="edit-ai-generated" className="cursor-pointer flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-purple-400" />
+                AI Generated
+              </Label>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+              disabled={savingEdit}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={savingEdit || editTags.length === 0}
+            >
+              {savingEdit ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
