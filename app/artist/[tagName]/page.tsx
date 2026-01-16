@@ -535,6 +535,20 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
 
   const decodedTagName = decodeURIComponent(tagName);
 
+  // Helper function to safely parse JSON response
+  const safeParseJSON = async (res: Response): Promise<{ data: any | null; error: string | null }> => {
+    try {
+      const text = await res.text();
+      if (!text) {
+        return { data: null, error: 'Empty response' };
+      }
+      const data = JSON.parse(text);
+      return { data, error: null };
+    } catch {
+      return { data: null, error: 'Invalid JSON response' };
+    }
+  };
+
   useEffect(() => {
     fetchArtist();
     fetchReviews();
@@ -547,7 +561,11 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
   const fetchArtist = async () => {
     try {
       const res = await fetch(`/api/artists/${encodeURIComponent(tagName)}`);
-      const data = await res.json();
+      const { data, error } = await safeParseJSON(res);
+      
+      if (error || !data) {
+        throw new Error('Artist tag not found');
+      }
 
       if (!data.success) {
         throw new Error(data.error || 'Failed to fetch artist');
@@ -571,7 +589,10 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
   const fetchReviews = async () => {
     try {
       const res = await fetch(`/api/artists/${encodeURIComponent(tagName)}/reviews`);
-      const data = await res.json();
+      const { data, error } = await safeParseJSON(res);
+      
+      if (error || !data) return;
+      
       if (data.success) {
         setReviews(data.reviews);
         setAvgRatings(data.avgRatings);
@@ -585,7 +606,10 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
   const fetchWiki = async () => {
     try {
       const res = await fetch(`/api/artists/${encodeURIComponent(tagName)}/wiki`);
-      const data = await res.json();
+      const { data, error } = await safeParseJSON(res);
+      
+      if (error || !data) return;
+      
       if (data.success && data.wiki) {
         setWiki(data.wiki);
         setWikiContent(data.wiki.content);
@@ -599,7 +623,10 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
   const fetchClaimStatus = async () => {
     try {
       const res = await fetch(`/api/artists/${encodeURIComponent(tagName)}/claim`);
-      const data = await res.json();
+      const { data, error } = await safeParseJSON(res);
+      
+      if (error || !data) return;
+      
       if (data.success && data.claim) {
         setClaimStatus(data.claim);
       }

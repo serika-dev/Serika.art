@@ -10,11 +10,13 @@ export async function GET(
 ) {
   try {
     const { tagName } = await params;
-    const decoded = decodeURIComponent(tagName).toLowerCase();
+    // Next.js automatically decodes URL parameters, so tagName is already decoded
+    const normalized = tagName.toLowerCase().trim();
+    // Create variations with both spaces and underscores to match database storage
     const possibleNames = Array.from(new Set([
-      decoded,
-      decoded.replace(/ /g, '_'),
-      decoded.replace(/_/g, ' '),
+      normalized,
+      normalized.replace(/ /g, '_'),
+      normalized.replace(/_/g, ' '),
     ]));
 
     // First, check if the tag exists and is an artist tag
@@ -118,11 +120,13 @@ export async function PATCH(
     }
 
     const { tagName } = await params;
-    const decoded = decodeURIComponent(tagName).toLowerCase();
+    // Next.js automatically decodes URL parameters, so tagName is already decoded
+    const normalized = tagName.toLowerCase().trim();
+    // Create variations with both spaces and underscores to match database storage
     const possibleNames = Array.from(new Set([
-      decoded,
-      decoded.replace(/ /g, '_'),
-      decoded.replace(/_/g, ' '),
+      normalized,
+      normalized.replace(/ /g, '_'),
+      normalized.replace(/_/g, ' '),
     ]));
     const body = await request.json();
     const { bio, socials, avatarUrl, bannerUrl } = body;
