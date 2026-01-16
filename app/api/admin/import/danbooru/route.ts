@@ -11,7 +11,7 @@ import {
   DanbooruPost,
 } from '@/lib/danbooru';
 import { getCollection } from '@/lib/db';
-import { uploadToR2 } from '@/lib/r2';
+import { uploadToB2 } from '@/lib/b2';
 import sharp from 'sharp';
 import { ObjectId } from 'mongodb';
 
@@ -74,14 +74,14 @@ async function downloadAndUploadImage(
   const thumbFilename = `thumb-${timestamp}-danbooru-${postId}.jpg`;
 
   // Upload main image
-  const mainUrl = await uploadToR2(imageBuffer, mainFilename, `image/${ext}`);
+  const mainUrl = await uploadToB2(imageBuffer, mainFilename, `image/${ext}`);
 
   // Create and upload thumbnail (aggressive compression for previews)
   const thumbnailBuffer = await sharp(imageBuffer)
     .resize(320, 320, { fit: 'cover' })
     .jpeg({ quality: 45, mozjpeg: true, progressive: true })
     .toBuffer();
-  const thumbnailUrl = await uploadToR2(
+  const thumbnailUrl = await uploadToB2(
     thumbnailBuffer,
     thumbFilename,
     'image/jpeg',

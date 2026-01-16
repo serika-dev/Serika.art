@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCollection } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { uploadToR2 } from '@/lib/r2';
+import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
 import { ObjectId } from 'mongodb';
 import sharp from 'sharp';
@@ -133,8 +133,8 @@ export async function POST(request: NextRequest) {
         ]);
       } else {
         [imageUrl, thumbnailUrl] = await Promise.all([
-          uploadToR2(buffer, file.name, file.type),
-          uploadToR2(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
+          uploadToB2(buffer, file.name, file.type),
+          uploadToB2(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
         ]);
       }
     } catch (uploadError: any) {

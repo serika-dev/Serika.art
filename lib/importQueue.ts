@@ -9,7 +9,7 @@ import {
   isAIPost,
   DanbooruPost,
 } from '@/lib/danbooru';
-import { uploadToR2 } from '@/lib/r2';
+import { uploadToB2 } from '@/lib/b2';
 import axios from 'axios';
 import sharp from 'sharp';
 
@@ -266,12 +266,12 @@ async function downloadAndUploadImage(
 
   // Upload main and thumbnail in parallel
   const [mainUrl, thumbnailUrl] = await Promise.all([
-    uploadToR2(imageBuffer, mainFilename, `image/${ext}`),
+    uploadToB2(imageBuffer, mainFilename, `image/${ext}`),
     sharp(imageBuffer)
       .resize(320, 320, { fit: 'cover' })
       .jpeg({ quality: 45, mozjpeg: true, progressive: true })
       .toBuffer()
-      .then(thumbBuffer => uploadToR2(thumbBuffer, thumbFilename, 'image/jpeg', 'thumbnails'))
+      .then(thumbBuffer => uploadToB2(thumbBuffer, thumbFilename, 'image/jpeg', 'thumbnails'))
   ]);
 
   return { mainUrl, thumbnailUrl, width, height };

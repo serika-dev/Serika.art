@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { uploadToR2 } from '@/lib/r2';
+import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
 import { getCurrentUser } from '@/lib/auth';
 import sharp from 'sharp';
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     if (USE_LOCAL_STORAGE) {
       url = await uploadLocally(processedBuffer, filename, 'image/webp', folder);
     } else {
-      url = await uploadToR2(processedBuffer, filename, 'image/webp', folder);
+      url = await uploadToB2(processedBuffer, filename, 'image/webp', folder);
     }
 
     return NextResponse.json({

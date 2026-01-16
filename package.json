@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate:r2-to-b2": "npx tsx scripts/migrate-r2-to-b2.ts",
+    "verify-sync": "npx tsx scripts/verify-and-sync.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.946.0",

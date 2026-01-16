@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCollection } from '@/lib/db';
-import { uploadToR2 } from '@/lib/r2';
+import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
 import { requireAuth } from '@/lib/auth';
 import { ObjectId } from 'mongodb';
@@ -127,23 +127,23 @@ export async function POST(request: NextRequest) {
         ]);
       } else {
         [imageUrl, thumbnailUrl] = await Promise.all([
-          uploadToR2(buffer, file.name, file.type),
-          uploadToR2(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
+          uploadToB2(buffer, file.name, file.type),
+          uploadToB2(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
         ]);
       }
     } catch (uploadError: any) {
       console.error('Primary upload failed, trying fallback:', uploadError);
       
-      // Fallback to local storage if R2 fails
+      // Fallback to local storage if B2 fails
       if (!USE_LOCAL_STORAGE) {
-        console.log('R2 upload failed, falling back to local storage...');
+        console.log('B2 upload failed, falling back to local storage...');
         try {
           [imageUrl, thumbnailUrl] = await Promise.all([
             uploadLocally(buffer, file.name, file.type),
             uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
           ]);
         } catch (fallbackError) {
-          throw new Error('Both R2 and local storage uploads failed. Please check your configuration.');
+          throw new Error('Both B2 and local storage uploads failed. Please check your configuration.');
         }
       } else {
         throw uploadError;
@@ -208,8 +208,8 @@ export async function POST(request: NextRequest) {
     // Provide more specific error messages
     let errorMessage = 'Failed to upload image';
     
-    if (error.message?.includes('R2') || error.message?.includes('SSL') || error.code === 'EPROTO') {
-      errorMessage = 'Failed to upload to storage. Please check your R2 configuration or try again later.';
+    if (error.message?.includes('B2') || error.message?.includes('SSL') || error.code === 'EPROTO') {
+      errorMessage = 'Failed to upload to storage. Please check your B2 configuration or try again later.';
     } else if (error.message?.includes('MongoDB') || error.message?.includes('connection')) {
       errorMessage = 'Database connection error. Please try again.';
     } else if (error.message) {

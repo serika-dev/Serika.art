@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { uploadToR2 } from '@/lib/r2';
+import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
 import { getCurrentUser } from '@/lib/auth';
 
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     if (USE_LOCAL_STORAGE) {
       fileUrl = await uploadLocally(buffer, finalFilename, contentType, 'claim-files');
     } else {
-      fileUrl = await uploadToR2(buffer, finalFilename, contentType, 'claim-files');
+      fileUrl = await uploadToB2(buffer, finalFilename, contentType, 'claim-files');
     }
 
     return NextResponse.json({
