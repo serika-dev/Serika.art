@@ -316,14 +316,14 @@ async function main() {
       if (limit > 0 && processed >= limit) break;
       
       if (doc.url && doc.url.includes(r2CustomDomain)) {
-        await processUrl(doc.url, 'images', doc._id, 'url', db);
+        await processUrl(doc.url, 'images', doc._id.toString(), 'url', db);
         processed++;
       }
       
       if (limit > 0 && processed >= limit) break;
       
       if (doc.thumbnailUrl && doc.thumbnailUrl.includes(r2CustomDomain)) {
-        await processUrl(doc.thumbnailUrl, 'images', doc._id, 'thumbnailUrl', db);
+        await processUrl(doc.thumbnailUrl, 'images', doc._id.toString(), 'thumbnailUrl', db);
         processed++;
       }
     }
@@ -342,10 +342,10 @@ async function main() {
     
     for await (const doc of cursor) {
       if (doc.avatarUrl && doc.avatarUrl.includes(r2CustomDomain)) {
-        await processUrl(doc.avatarUrl, 'artists', doc._id, 'avatarUrl', db);
+        await processUrl(doc.avatarUrl, 'artists', doc._id.toString(), 'avatarUrl', db);
       }
       if (doc.bannerUrl && doc.bannerUrl.includes(r2CustomDomain)) {
-        await processUrl(doc.bannerUrl, 'artists', doc._id, 'bannerUrl', db);
+        await processUrl(doc.bannerUrl, 'artists', doc._id.toString(), 'bannerUrl', db);
       }
     }
   }
@@ -356,7 +356,7 @@ async function main() {
     
     for await (const doc of cursor) {
       if (doc.avatarUrl && doc.avatarUrl.includes(r2CustomDomain)) {
-        await processUrl(doc.avatarUrl, 'users', doc._id, 'avatarUrl', db);
+        await processUrl(doc.avatarUrl, 'users', doc._id.toString(), 'avatarUrl', db);
       }
     }
   }
