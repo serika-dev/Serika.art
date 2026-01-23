@@ -1,32 +1,125 @@
-# Serika.art - Modern Image Board
+<div align="center">
 
-A clean, modern Danbooru-style image board built with Next.js 16, featuring user authentication via Serika Accounts, MongoDB for data storage, and Cloudflare R2 for image hosting.
+# 🎨 Serika.art
 
-## Features
+**A modern, feature-rich image board platform**
 
-- 🎨 **Modern UI** - Clean, responsive design with Tailwind CSS
-- 🔐 **Authentication** - Integrated with Serika Accounts (accounts.serika.dev)
-- 📤 **Image Upload** - Support for images with proper tagging system
-- 🤖 **AI Toggle** - Mark and filter AI-generated content
-- 🏷️ **Tagging System** - Comprehensive tag-based organization
-- ⭐ **Interactions** - Upvote, downvote, and favorite images
-- 🔍 **Advanced Search** - Filter by tags, rating, AI status
-- 📊 **Statistics** - View counts, ratings, and engagement metrics
-- 🎯 **Content Rating** - Safe, Questionable, and Explicit ratings
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-green?style=for-the-badge&logo=mongodb)](https://www.mongodb.com/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
 
-## Tech Stack
+[Live Site](https://serika.art) • [Android App](https://serika.art/android-app) • [API Docs](https://serika.art/api-docs) • [Contact](https://serika.art/contact)
 
-- **Framework**: Next.js 16 (App Router)
-- **Styling**: Tailwind CSS
-- **Database**: MongoDB
-- **Storage**: Cloudflare R2
-- **Authentication**: Serika Accounts
-- **Image Processing**: Sharp
-- **Icons**: Lucide React
+</div>
 
-## Environment Variables
+---
 
-Required environment variables (see `.env.example`):
+## ✨ Overview
+
+Serika.art is a clean, modern Danbooru-style image board built from the ground up with Next.js 16. It features a beautiful responsive UI, comprehensive tagging system, user authentication via Serika Accounts, and a native Android app for mobile users.
+
+<div align="center">
+
+| 🖼️ Gallery | 🔍 Search | 📱 Mobile |
+|:---:|:---:|:---:|
+| Browse thousands of curated images | Powerful tag-based filtering | Native Android app available |
+
+</div>
+
+---
+
+## 🚀 Features
+
+### Core Platform
+| Feature | Description |
+|---------|-------------|
+| 🎨 **Modern UI** | Beautiful, responsive design with dark mode and smooth animations |
+| 🔐 **Authentication** | Secure login via Serika Accounts (accounts.serika.dev) |
+| 📤 **Image Upload** | Drag-and-drop upload with automatic thumbnail generation |
+| 🏷️ **Smart Tagging** | Comprehensive tag system with auto-suggestions and categories |
+| 🔍 **Advanced Search** | Filter by tags, rating, AI status, date, and more |
+| ⭐ **Interactions** | Upvote, downvote, favorite, and comment on images |
+| 👤 **User Profiles** | Customizable profiles with upload history and favorites |
+| 🤖 **AI Detection** | Mark and filter AI-generated content |
+
+### Content Management
+- **Rating System** — Safe, Questionable, and Explicit content ratings
+- **Artist Pages** — Dedicated pages for artists with their full portfolio
+- **Tag Wiki** — Community-maintained tag descriptions and guidelines
+- **DMCA Handling** — Built-in copyright claim processing system
+- **Moderation Tools** — Admin panel for content moderation and user management
+
+### API & Integration
+- **RESTful API** — Full API access for third-party integrations
+- **API Keys** — Generate personal API keys for programmatic access
+- **Danbooru Import** — Import metadata and images from Danbooru
+- **Webhook Support** — Receive notifications for uploads and interactions
+
+---
+
+## 📱 Android App
+
+A native Android app is available for mobile users:
+
+- **[Download APK](https://serika.art/android-app)** — Get the latest release
+- Built with Kotlin & Jetpack Compose
+- Material You design language
+- Offline favorites support
+- Push notifications
+
+---
+
+## 🛠️ Tech Stack
+
+<table>
+<tr>
+<td>
+
+### Frontend
+- **Next.js 16** — App Router & Server Components
+- **React 19** — UI library
+- **Tailwind CSS** — Utility-first styling
+- **Framer Motion** — Animations
+- **Lucide React** — Icon set
+
+</td>
+<td>
+
+### Backend
+- **MongoDB** — Document database
+- **Cloudflare R2** — Image storage & CDN
+- **Sharp** — Image processing
+- **Serika Accounts** — Authentication service
+
+</td>
+</tr>
+</table>
+
+---
+
+## 📋 Prerequisites
+
+- **Node.js** 18+ or **Bun** 1.0+
+- **MongoDB** 6.0+ (local or Atlas)
+- **Cloudflare R2** bucket (or compatible S3 storage)
+- **Serika Accounts** instance for authentication
+
+---
+
+## ⚡ Quick Start
+
+### 1. Clone & Install
+
+```bash
+git clone https://github.com/serika-dev/Serika.art.git
+cd Serika.art
+npm install  # or: bun install
+```
+
+### 2. Configure Environment
+
+Create `.env.local` with your credentials:
 
 ```env
 # Serika Accounts
@@ -40,144 +133,184 @@ MONGO_DB=serika-art
 
 # Cloudflare R2
 R2_ACCOUNT_ID=your-account-id
-R2_ACCESS_KEY_ID=your-access-key-id
-R2_SECRET_ACCESS_KEY=your-secret-access-key
-R2_BUCKET_NAME=serika-art-images
-R2_CUSTOM_DOMAIN=cdn.serika.art
+R2_ACCESS_KEY_ID=your-access-key
+R2_SECRET_ACCESS_KEY=your-secret-key
+R2_BUCKET_NAME=serika-art
+R2_CUSTOM_DOMAIN=cdn.yourdomain.com
 ```
 
-## Getting Started
+### 3. Run Development Server
 
-1. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-2. **Set up environment**
-   - Copy `.env.example` to `.env.local`
-   - Fill in your credentials
-
-3. **Run development server**
-   ```bash
-   npm run dev
-   ```
-
-4. **Open browser**
-   Navigate to [http://localhost:3000](http://localhost:3000)
-
-## Project Structure
-
-```
-app/
-├── api/              # API routes
-├── image/[id]/       # Image detail page
-├── search/           # Search page
-├── upload/           # Upload page
-└── page.tsx          # Gallery home
-
-components/
-├── Navbar.tsx        # Navigation
-├── ImageCard.tsx     # Image cards
-└── UploadForm.tsx    # Upload form
-
-lib/
-├── db.ts             # MongoDB
-├── r2.ts             # Cloudflare R2
-├── auth.ts           # Authentication
-├── models.ts         # Data models
-└── AuthContext.tsx   # Auth provider
+```bash
+npm run dev  # or: bun dev
 ```
 
-## Key Features
+Open [http://localhost:3000](http://localhost:3000) 🎉
 
-### Upload System
-- Multi-format support (PNG, JPG, GIF)
-- Automatic thumbnail generation
-- Required tagging with auto-suggest
-- Content rating (Safe/Questionable/Explicit)
-- AI-generated toggle
-- Optional source and description
+---
 
-### Search & Filtering
-- Keyword search
-- Tag-based filtering
-- Rating filters
-- AI content filter
-- Sort by: newest, popular, favorites, views
+## 📁 Project Structure
 
-### User Interactions
-- Upvote/downvote system
-- Favorite images
-- View tracking
-- User profiles
+```
+serika.art/
+├── app/                    # Next.js App Router
+│   ├── api/               # API routes
+│   │   ├── images/        # Image CRUD operations
+│   │   ├── upload/        # File upload handling
+│   │   ├── tags/          # Tag management
+│   │   ├── vote/          # Voting system
+│   │   └── ...
+│   ├── image/[id]/        # Image detail page
+│   ├── artist/[tagName]/  # Artist portfolio page
+│   ├── tags/              # Tag browser
+│   ├── upload/            # Upload form
+│   ├── admin/             # Admin dashboard
+│   └── ...
+│
+├── components/            # React components
+│   ├── ui/               # Shadcn/ui components
+│   ├── Navbar.tsx        # Navigation bar
+│   ├── ImageCard.tsx     # Image grid cards
+│   └── ...
+│
+├── lib/                   # Utilities & services
+│   ├── db.ts             # MongoDB connection
+│   ├── r2.ts             # Cloudflare R2 client
+│   ├── auth.ts           # Authentication helpers
+│   └── models.ts         # TypeScript interfaces
+│
+├── android/              # Native Android app
+│   └── ...               # Kotlin + Jetpack Compose
+│
+└── public/               # Static assets
+```
 
-## API Endpoints
+---
 
-- `GET /api/images` - List images
-- `GET /api/images/[id]` - Get image
-- `POST /api/upload` - Upload image
-- `POST /api/vote` - Vote on image
-- `POST /api/favorite` - Toggle favorite
-- `GET /api/tags` - Search tags
+## 🔌 API Reference
 
-## Troubleshooting
+### Public Endpoints
 
-### R2 Upload SSL/TLS Errors
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/images` | List images with pagination & filters |
+| `GET` | `/api/images/[id]` | Get single image details |
+| `GET` | `/api/tags` | Search and list tags |
+| `GET` | `/api/artists` | List artists |
 
-If you encounter `EPROTO` or SSL handshake failures when uploading to R2:
+### Authenticated Endpoints
 
-1. **Check R2 Credentials**
-   - Verify `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` are correct
-   - Ensure your R2 bucket exists and is properly configured
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/upload` | Upload new image |
+| `POST` | `/api/vote` | Vote on an image |
+| `POST` | `/api/favorite` | Toggle favorite status |
+| `GET` | `/api/users/[id]/favorites` | Get user's favorites |
 
-2. **Network Issues**
-   - Check if your network/firewall is blocking Cloudflare R2
-   - Try disabling VPN if you're using one
-   - Ensure you have a stable internet connection
+> 📖 Full API documentation available at [serika.art/api-docs](https://serika.art/api-docs)
 
-3. **Node.js Version**
-   - Use Node.js 18+ for better TLS support
-   - Update to the latest LTS version if issues persist
+---
 
-4. **R2 Bucket Configuration**
-   - Make sure your R2 bucket has proper CORS settings
-   - Verify public access is enabled if using custom domain
-   - Check bucket permissions for your access key
+## 🚀 Deployment
 
-5. **Alternative: Local Storage**
-   - For development, you can temporarily modify `lib/r2.ts` to save files locally
+### Vercel (Recommended)
 
-### MongoDB Connection Issues
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/serika-dev/Serika.art)
 
-If MongoDB fails to connect:
+1. Click the button above or import from GitHub
+2. Configure environment variables
+3. Deploy!
 
-1. Ensure MongoDB is running: `mongod` or your MongoDB service
-2. Check `MONGO_URI` is correct (default: `mongodb://localhost:27017`)
-3. Verify `MONGO_DB` database name is set
+### Self-Hosted
 
-### Serika Accounts Integration
+```bash
+# Build
+npm run build
 
-If authentication fails:
+# Start production server
+npm start
 
-1. Ensure Serika Accounts is running at the URL specified in `ACCOUNTS_URL`
-2. Verify `ACCOUNTS_INTERNAL_KEY` matches your Serika Accounts configuration
-3. Check that the service key is registered in Serika Accounts
+# Or with PM2
+pm2 start npm --name "serika-art" -- start
+```
 
-## Development Tips
+### Docker
 
-- Use `bun dev` or `npm run dev` for hot reloading
-- Check browser console and terminal logs for errors
-- MongoDB data persists between restarts
-- Clear cookies if authentication seems stuck
+```bash
+docker build -t serika-art .
+docker run -p 3000:3000 --env-file .env serika-art
+```
 
-## Deployment
+---
 
-Deploy to Vercel, Netlify, or any Node.js host:
+## 🔧 Troubleshooting
 
-1. Set environment variables in your hosting platform
-2. Build: `npm run build` or `bun build`
-3. Deploy or start: `npm start`
+<details>
+<summary><strong>R2 Upload SSL/TLS Errors</strong></summary>
 
-## License
+If you encounter `EPROTO` or SSL handshake failures:
+- Verify R2 credentials are correct
+- Use Node.js 18+ for better TLS support
+- Check firewall/VPN isn't blocking Cloudflare
+- Ensure R2 bucket has proper CORS settings
 
-See LICENSE file for details.
+</details>
+
+<details>
+<summary><strong>MongoDB Connection Issues</strong></summary>
+
+- Ensure MongoDB is running: `systemctl status mongod`
+- Verify `MONGO_URI` format: `mongodb://localhost:27017`
+- Check database user permissions if using authentication
+
+</details>
+
+<details>
+<summary><strong>Authentication Problems</strong></summary>
+
+- Verify Serika Accounts is accessible at `ACCOUNTS_URL`
+- Ensure `ACCOUNTS_INTERNAL_KEY` matches your configuration
+- Clear browser cookies and try logging in again
+
+</details>
+
+---
+
+## 🤝 Contributing
+
+While this project uses a source-available license that restricts commercial use, we welcome:
+
+- 🐛 Bug reports and feature requests via [Issues](https://github.com/serika-dev/Serika.art/issues)
+- 📝 Documentation improvements
+- 🌐 Translation contributions
+
+Please read the [LICENSE](LICENSE) carefully before contributing.
+
+---
+
+## 📄 License
+
+**Source Available — All Rights Reserved**
+
+This software is provided for **viewing and educational purposes only**. You may:
+- ✅ View and study the source code
+- ✅ Fork for personal, non-commercial experimentation
+- ✅ Submit bug reports and suggestions
+
+You may **NOT**:
+- ❌ Use this software for commercial purposes
+- ❌ Deploy this software publicly or privately without permission
+- ❌ Redistribute or sublicense this software
+- ❌ Create derivative works for distribution
+
+See the full [LICENSE](LICENSE) file for complete terms.
+
+---
+
+<div align="center">
+
+**Built with ❤️ by the Serika team**
+
+[Website](https://serika.art) • [Twitter](https://twitter.com/serikaart) • [Discord](https://discord.gg/serika)
+
+</div>
