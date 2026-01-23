@@ -16,6 +16,7 @@ import art.serika.app.ui.screens.settings.SettingsScreen
 import art.serika.app.ui.screens.favorites.FavoritesScreen
 import art.serika.app.ui.screens.tags.TagsScreen
 import art.serika.app.ui.screens.login.LoginScreen
+import art.serika.app.ui.screens.downloads.DownloadsScreen
 
 sealed class Screen(val route: String) {
     data object Home : Screen("home")
@@ -34,6 +35,7 @@ sealed class Screen(val route: String) {
     }
     data object Settings : Screen("settings")
     data object Favorites : Screen("favorites")
+    data object Downloads : Screen("downloads")
     data object Tags : Screen("tags?type={type}") {
         fun createRoute(type: String? = null) = "tags?type=${type ?: ""}"
     }
@@ -63,6 +65,9 @@ fun SerikaNavHost(
                 },
                 onTagsClick = {
                     navController.navigate(Screen.Tags.createRoute())
+                },
+                onDownloadsClick = {
+                    navController.navigate(Screen.Downloads.route)
                 }
             )
         }
@@ -174,6 +179,12 @@ fun SerikaNavHost(
                 onLoginClick = {
                     navController.navigate(Screen.Login.route)
                 }
+            )
+        }
+        
+        composable(Screen.Downloads.route) {
+            DownloadsScreen(
+                onBackClick = { navController.popBackStack() }
             )
         }
         

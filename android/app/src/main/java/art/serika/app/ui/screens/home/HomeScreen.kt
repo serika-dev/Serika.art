@@ -45,6 +45,7 @@ fun HomeScreen(
     onSettingsClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onTagsClick: () -> Unit,
+    onDownloadsClick: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -215,6 +216,12 @@ fun HomeScreen(
                     label = { Text("Favorites") },
                     selected = false,
                     onClick = onFavoritesClick
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Outlined.Download, contentDescription = "Downloads") },
+                    label = { Text("Downloads") },
+                    selected = false,
+                    onClick = onDownloadsClick
                 )
                 NavigationBarItem(
                     icon = { Icon(Icons.Outlined.Settings, contentDescription = "Settings") },
