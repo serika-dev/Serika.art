@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 
 const ACCOUNTS_URL = process.env.ACCOUNTS_URL || 'https://accounts.serika.dev';
 const ACCOUNTS_INTERNAL_KEY = process.env.ACCOUNTS_INTERNAL_KEY!;
@@ -17,8 +17,18 @@ export interface AuthUser {
 
 export async function getCurrentUser(): Promise<AuthUser | null> {
   try {
+    // Check for token in cookie first, then Authorization header (for mobile apps)
     const cookieStore = await cookies();
-    const sessionToken = cookieStore.get('session_token')?.value;
+    let sessionToken = cookieStore.get('session_token')?.value;
+
+    // If no cookie, check Authorization header (Bearer token)
+    if (!sessionToken) {
+      const headersList = await headers();
+      const authHeader = headersList.get('authorization');
+      if (authHeader?.startsWith('Bearer ')) {
+        sessionToken = authHeader.substring(7);
+      }
+    }
 
     if (!sessionToken) {
       return null;
