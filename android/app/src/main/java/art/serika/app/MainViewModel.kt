@@ -5,7 +5,9 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import art.serika.app.data.local.PreferencesManager
+import art.serika.app.data.repository.DownloadState
 import art.serika.app.data.repository.UpdateInfo
+import art.serika.app.data.repository.UpdateManager
 import art.serika.app.data.repository.UpdateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 data class MainUiState(
@@ -21,13 +24,16 @@ data class MainUiState(
     val showUpdateDialog: Boolean = false,
     val updateInfo: UpdateInfo? = null,
     val isCheckingUpdate: Boolean = false,
-    val currentChannel: String = "stable"
+    val currentChannel: String = "stable",
+    val downloadState: DownloadState = DownloadState.Idle,
+    val downloadedApkFile: File? = null
 )
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val preferencesManager: PreferencesManager,
-    private val updateRepository: UpdateRepository
+    private val updateRepository: UpdateRepository,
+    private val updateManager: UpdateManager
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(MainUiState())
@@ -35,6 +41,19 @@ class MainViewModel @Inject constructor(
     
     init {
         checkFirstLaunch()
+        observeDownloadState()
+    }
+    
+    private fun observeDownloadState() {
+        viewModelScope.launch {
+            updateManager.downloadState.collect { state ->
+                _uiState.update { it.copy(downloadState = state) }
+                
+                if (state is DownloadState.Downloaded) {
+                    _uiState.update { it.copy(downloadedApkFile = state.file) }
+                }
+            }
+        }
     }
     
     private fun checkFirstLaunch() {
@@ -104,6 +123,7 @@ class MainViewModel @Inject constructor(
     
     fun dismissUpdateDialog() {
         _uiState.update { it.copy(showUpdateDialog = false) }
+        updateManager.resetState()
     }
     
     fun skipThisVersion() {
@@ -112,7 +132,30 @@ class MainViewModel @Inject constructor(
                 preferencesManager.setSkippedVersion(info.versionName)
             }
             _uiState.update { it.copy(showUpdateDialog = false) }
+            updateManager.resetState()
         }
+    }
+    
+    fun downloadUpdate() {
+        val updateInfo = _uiState.value.updateInfo ?: return
+        
+        viewModelScope.launch {
+            updateManager.downloadUpdate(updateInfo.downloadUrl, updateInfo.versionName)
+                .collect { state ->
+                    _uiState.update { it.copy(downloadState = state) }
+                }
+        }
+    }
+    
+    fun installUpdate() {
+        val file = _uiState.value.downloadedApkFile
+        if (file != null && file.exists()) {
+            updateManager.installApk(file)
+        }
+    }
+    
+    fun cancelDownload() {
+        updateManager.cancelDownload()
     }
     
     fun getDownloadIntent(): Intent? {

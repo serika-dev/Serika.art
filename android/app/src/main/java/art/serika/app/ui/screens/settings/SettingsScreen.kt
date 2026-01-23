@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import art.serika.app.BuildConfig
 import art.serika.app.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -320,7 +321,7 @@ fun SettingsScreen(
                 
                 ListItem(
                     headlineContent = { Text("Version") },
-                    supportingContent = { Text("0.0.4") },
+                    supportingContent = { Text(BuildConfig.VERSION_NAME) },
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Default.Info,

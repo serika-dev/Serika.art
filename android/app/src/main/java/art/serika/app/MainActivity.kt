@@ -72,11 +72,15 @@ fun MainScreen(
         if (uiState.showUpdateDialog && uiState.updateInfo != null) {
             UpdateAvailableDialog(
                 updateInfo = uiState.updateInfo!!,
+                downloadState = uiState.downloadState,
                 onDownload = {
-                    viewModel.getDownloadIntent()?.let { intent ->
-                        context.startActivity(intent)
-                    }
-                    viewModel.dismissUpdateDialog()
+                    viewModel.downloadUpdate()
+                },
+                onInstall = {
+                    viewModel.installUpdate()
+                },
+                onCancel = {
+                    viewModel.cancelDownload()
                 },
                 onSkip = {
                     viewModel.skipThisVersion()
@@ -269,11 +273,19 @@ fun ReleaseChannelOption(
 @Composable
 fun UpdateAvailableDialog(
     updateInfo: art.serika.app.data.repository.UpdateInfo,
+    downloadState: art.serika.app.data.repository.DownloadState,
     onDownload: () -> Unit,
+    onInstall: () -> Unit,
+    onCancel: () -> Unit,
     onSkip: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = {
+        // Only allow dismiss if not downloading
+        if (downloadState !is art.serika.app.data.repository.DownloadState.Downloading) {
+            onDismiss()
+        }
+    }) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -285,16 +297,29 @@ fun UpdateAvailableDialog(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(
-                    imageVector = Icons.Default.SystemUpdate,
+                    imageVector = when (downloadState) {
+                        is art.serika.app.data.repository.DownloadState.Downloaded -> Icons.Default.CheckCircle
+                        is art.serika.app.data.repository.DownloadState.Error -> Icons.Default.Error
+                        else -> Icons.Default.SystemUpdate
+                    },
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = when (downloadState) {
+                        is art.serika.app.data.repository.DownloadState.Downloaded -> Color(0xFF4CAF50)
+                        is art.serika.app.data.repository.DownloadState.Error -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.primary
+                    }
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 Text(
-                    text = "Update Available",
+                    text = when (downloadState) {
+                        is art.serika.app.data.repository.DownloadState.Downloading -> "Downloading..."
+                        is art.serika.app.data.repository.DownloadState.Downloaded -> "Ready to Install"
+                        is art.serika.app.data.repository.DownloadState.Error -> "Download Failed"
+                        else -> "Update Available"
+                    },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -309,58 +334,163 @@ fun UpdateAvailableDialog(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                if (updateInfo.releaseNotes.isNotEmpty()) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = "What's new:",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold
+                // Download progress
+                when (downloadState) {
+                    is art.serika.app.data.repository.DownloadState.Downloading -> {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            LinearProgressIndicator(
+                                progress = { downloadState.progress / 100f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = updateInfo.releaseNotes.take(300) + 
-                                    if (updateInfo.releaseNotes.length > 300) "..." else "",
-                                style = MaterialTheme.typography.bodySmall,
+                                text = "${downloadState.progress}%",
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                    is art.serika.app.data.repository.DownloadState.Error -> {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer
+                            )
+                        ) {
+                            Text(
+                                text = downloadState.message,
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+                    else -> {
+                        if (updateInfo.releaseNotes.isNotEmpty()) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "What's new:",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = updateInfo.releaseNotes.take(300) + 
+                                            if (updateInfo.releaseNotes.length > 300) "..." else "",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                Button(
-                    onClick = onDownload,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Download,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Download Update")
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    TextButton(onClick = onSkip) {
-                        Text("Skip this version")
+                // Action buttons based on state
+                when (downloadState) {
+                    is art.serika.app.data.repository.DownloadState.Idle -> {
+                        Button(
+                            onClick = onDownload,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Download Update")
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            TextButton(onClick = onSkip) {
+                                Text("Skip this version")
+                            }
+                            
+                            TextButton(onClick = onDismiss) {
+                                Text("Later")
+                            }
+                        }
                     }
-                    
-                    TextButton(onClick = onDismiss) {
-                        Text("Later")
+                    is art.serika.app.data.repository.DownloadState.Downloading -> {
+                        OutlinedButton(
+                            onClick = onCancel,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Cancel")
+                        }
+                    }
+                    is art.serika.app.data.repository.DownloadState.Downloaded -> {
+                        Button(
+                            onClick = onInstall,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF4CAF50)
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.InstallMobile,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Install Now")
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        TextButton(onClick = onDismiss) {
+                            Text("Install Later")
+                        }
+                    }
+                    is art.serika.app.data.repository.DownloadState.Error -> {
+                        Button(
+                            onClick = onDownload,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Retry")
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        TextButton(onClick = onDismiss) {
+                            Text("Cancel")
+                        }
                     }
                 }
             }
