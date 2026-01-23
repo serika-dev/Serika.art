@@ -369,11 +369,7 @@ private fun FilterSheetContent(
                     Icon(Icons.Default.Search, contentDescription = null)
                 },
                 trailingIcon = {
-                    AnimatedVisibility(
-                        visible = uiState.tagQuery.isNotEmpty(),
-                        enter = fadeIn() + scaleIn(),
-                        exit = fadeOut() + scaleOut()
-                    ) {
+                    if (uiState.tagQuery.isNotEmpty()) {
                         IconButton(onClick = { onTagQueryChange("") }) {
                             Icon(Icons.Default.Clear, contentDescription = "Clear")
                         }
