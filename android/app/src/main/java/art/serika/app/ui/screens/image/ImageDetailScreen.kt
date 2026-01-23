@@ -27,7 +27,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.request.CachePolicy
 import coil.request.ImageRequest
 import art.serika.app.data.model.Comment
 import art.serika.app.ui.components.*
@@ -47,6 +48,11 @@ fun ImageDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    
+    // Force load when imageId changes
+    LaunchedEffect(imageId) {
+        viewModel.loadForImageId(imageId)
+    }
     
     Scaffold(
         topBar = {
@@ -119,16 +125,59 @@ fun ImageDetailScreen(
                 ) {
                     // Image
                     item {
-                        AsyncImage(
+                        SubcomposeAsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
                                 .data(image.url)
                                 .crossfade(true)
+                                .memoryCacheKey("${image.id}_full")
+                                .diskCacheKey("${image.id}_full")
+                                .diskCachePolicy(CachePolicy.ENABLED)
+                                .memoryCachePolicy(CachePolicy.ENABLED)
                                 .build(),
-                            contentDescription = image.description ?: "Image",
+                            contentDescription = image.description ?: "Image #${image.sequentialId ?: image.id.takeLast(6)}",
                             contentScale = ContentScale.FillWidth,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 200.dp, max = 500.dp)
+                                .heightIn(min = 200.dp, max = 500.dp),
+                            loading = {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(300.dp)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                }
+                            },
+                            error = {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(200.dp)
+                                        .background(MaterialTheme.colorScheme.errorContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(
+                                            imageVector = Icons.Default.BrokenImage,
+                                            contentDescription = "Failed to load",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(48.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = "Failed to load image",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        TextButton(onClick = { viewModel.refresh() }) {
+                                            Text("Retry")
+                                        }
+                                    }
+                                }
+                            }
                         )
                     }
                     

@@ -4,6 +4,7 @@ import art.serika.app.BuildConfig
 import art.serika.app.data.local.PreferencesManager
 import art.serika.app.data.remote.GitHubApi
 import art.serika.app.data.remote.SerikaApi
+import art.serika.app.data.remote.SerikaAccountsApi
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
 import dagger.Provides
@@ -119,5 +120,37 @@ object NetworkModule {
             .addConverterFactory(json.asConverterFactory(contentType))
             .build()
             .create(GitHubApi::class.java)
+    }
+    
+    @Provides
+    @Singleton
+    @Named("accounts")
+    fun provideAccountsOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor(
+                HttpLoggingInterceptor().apply {
+                    level = if (BuildConfig.DEBUG) {
+                        HttpLoggingInterceptor.Level.BODY
+                    } else {
+                        HttpLoggingInterceptor.Level.NONE
+                    }
+                }
+            )
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideSerikaAccountsApi(@Named("accounts") okHttpClient: OkHttpClient): SerikaAccountsApi {
+        val contentType = "application/json".toMediaType()
+        return Retrofit.Builder()
+            .baseUrl("https://accounts.serika.dev/")
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory(contentType))
+            .build()
+            .create(SerikaAccountsApi::class.java)
     }
 }

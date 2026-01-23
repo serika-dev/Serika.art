@@ -129,13 +129,13 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(32.dp))
             
             if (!showApiKeyLogin) {
-                // Username/Password login
+                // Email/Password login
                 OutlinedTextField(
-                    value = uiState.username,
-                    onValueChange = { viewModel.setUsername(it) },
-                    label = { Text("Username or Email") },
+                    value = uiState.email,
+                    onValueChange = { viewModel.setEmail(it) },
+                    label = { Text("Email") },
                     leadingIcon = {
-                        Icon(Icons.Default.Person, contentDescription = null)
+                        Icon(Icons.Default.Email, contentDescription = null)
                     },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
@@ -198,7 +198,7 @@ fun LoginScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    enabled = uiState.username.isNotBlank() && uiState.password.isNotBlank() && !uiState.isLoading,
+                    enabled = uiState.email.isNotBlank() && uiState.password.isNotBlank() && !uiState.isLoading,
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     if (uiState.isLoading) {
@@ -341,12 +341,12 @@ fun LoginScreen(
                 
                 TextButton(onClick = { showApiKeyLogin = false }) {
                     Icon(
-                        imageVector = Icons.Default.Person,
+                        imageVector = Icons.Default.Email,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Sign in with username instead")
+                    Text("Sign in with email instead")
                 }
             }
             

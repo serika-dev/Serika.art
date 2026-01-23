@@ -48,8 +48,8 @@ interface SerikaApi {
     suspend fun getArtist(@Path("tagName") tagName: String): ArtistDetailResponse
     
     // Auth
-    @POST("auth/login")
-    suspend fun login(
+    @POST("auth/exchange")
+    suspend fun exchangeToken(
         @Body body: Map<String, String>
     ): LoginResponse
     
