@@ -48,6 +48,23 @@ You a limited, non-exclusive, non-transferable, revocable license to:
    d) REFERENCE the Software in academic papers, articles, or educational
       materials, provided proper attribution is given.
 
+   e) DEPLOY the Software on a local network ("Local Deployment") for personal,
+      non-commercial use, provided that:
+      
+      i)   The Software is only accessible within Your private local network
+           (e.g., home network, internal corporate network) and is NOT exposed
+           to the public internet;
+      
+      ii)  No port forwarding, reverse proxies, tunneling services (such as
+           ngrok, Cloudflare Tunnel, or similar), or other methods are used to
+           make the Software accessible from outside the local network;
+      
+      iii) The deployment is for personal or household use only, not for
+           providing services to third parties;
+      
+      iv)  You do not charge any fees or receive compensation for access to
+           the locally deployed Software.
+
 --------------------------------------------------------------------------------
 3. RESTRICTIONS
 --------------------------------------------------------------------------------
@@ -56,9 +73,10 @@ You may NOT, without prior written permission from the copyright holder:
 
    a) USE the Software for any Commercial Use.
 
-   b) DEPLOY the Software publicly or privately, including but not limited to
-      hosting on servers, cloud platforms, or any environment accessible to
-      persons other than You.
+   b) DEPLOY the Software in any publicly accessible manner, including but not
+      limited to hosting on public servers, cloud platforms, or any environment
+      accessible via the public internet. This restriction does not apply to
+      Local Deployments as defined in Section 2(e).
 
    c) COPY, REPRODUCE, or DISTRIBUTE the Software or any portion thereof,
       except as expressly permitted in Section 2.
