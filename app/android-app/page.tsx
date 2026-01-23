@@ -24,7 +24,7 @@ export default function AndroidAppPage() {
   useEffect(() => {
     async function fetchReleases() {
       try {
-        const res = await fetch('https://api.github.com/repos/your-username/Serika.art/releases');
+        const res = await fetch('https://api.github.com/repos/serika-dev/Serika.art/releases');
         const releases: Release[] = await res.json();
         
         // Find latest stable release (not prerelease, not nightly)
@@ -92,7 +92,7 @@ export default function AndroidAppPage() {
                 </a>
               ) : (
                 <a
-                  href="https://github.com/your-username/Serika.art/releases"
+                  href="https://github.com/serika-dev/Serika.art/releases"
                   className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-500 hover:to-pink-500 rounded-xl font-semibold text-lg transition-all transform hover:scale-105 shadow-lg shadow-violet-500/25"
                 >
                   <FaGithub className="w-5 h-5" />
@@ -101,7 +101,7 @@ export default function AndroidAppPage() {
               )}
               
               <a
-                href="https://github.com/your-username/Serika.art/releases"
+                href="https://github.com/serika-dev/Serika.art/releases"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 px-6 py-4 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-medium transition-colors"
@@ -235,7 +235,7 @@ export default function AndroidAppPage() {
             </Link>
             {' '}• Android app is open source on{' '}
             <a
-              href="https://github.com/your-username/Serika.art"
+              href="https://github.com/serika-dev/Serika.art"
               target="_blank"
               rel="noopener noreferrer"
               className="text-violet-400 hover:text-violet-300"
