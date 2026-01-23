@@ -246,13 +246,14 @@ docker run -p 3000:3000 --env-file .env serika-art
 ## 🔧 Troubleshooting
 
 <details>
-<summary><strong>R2 Upload SSL/TLS Errors</strong></summary>
+<summary><strong>Backblaze B2 Upload Issues</strong></summary>
 
-If you encounter `EPROTO` or SSL handshake failures:
-- Verify R2 credentials are correct
+If you encounter upload failures:
+- Verify B2 application key ID and secret are correct
+- Ensure bucket name and endpoint are properly configured
 - Use Node.js 18+ for better TLS support
-- Check firewall/VPN isn't blocking Cloudflare
-- Ensure R2 bucket has proper CORS settings
+- Check firewall/VPN isn't blocking Backblaze
+- Verify bucket CORS settings allow your domain
 
 </details>
 
@@ -290,16 +291,18 @@ Please read the [LICENSE](LICENSE) carefully before contributing.
 
 ## 📄 License
 
-**Source Available — All Rights Reserved**
+**Source Available License**
 
-This software is provided for **viewing and educational purposes only**. You may:
+This software is provided for **viewing, educational, and personal use**. You may:
 - ✅ View and study the source code
 - ✅ Fork for personal, non-commercial experimentation
+- ✅ Deploy locally on your private network (not exposed to the internet)
 - ✅ Submit bug reports and suggestions
 
 You may **NOT**:
 - ❌ Use this software for commercial purposes
-- ❌ Deploy this software publicly or privately without permission
+- ❌ Deploy this software publicly on the internet
+- ❌ Use tunneling services (ngrok, Cloudflare Tunnel, etc.) to expose it
 - ❌ Redistribute or sublicense this software
 - ❌ Create derivative works for distribution
 
