@@ -49,6 +49,15 @@ fun ImageDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    
+    // Show download message
+    LaunchedEffect(uiState.downloadMessage) {
+        uiState.downloadMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearDownloadMessage()
+        }
+    }
     
     // Force load when imageId changes
     LaunchedEffect(imageId) {
@@ -56,6 +65,7 @@ fun ImageDetailScreen(
     }
     
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -75,16 +85,21 @@ fun ImageDetailScreen(
                 },
                 actions = {
                     // Download button
-                    IconButton(onClick = { 
-                        uiState.image?.url?.let { url ->
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            context.startActivity(intent)
+                    IconButton(
+                        onClick = { viewModel.downloadImage() },
+                        enabled = !uiState.isDownloading
+                    ) {
+                        if (uiState.isDownloading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Download"
+                            )
                         }
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Download"
-                        )
                     }
                     // Share button
                     IconButton(onClick = { 

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import art.serika.app.data.model.Comment
 import art.serika.app.data.model.Image
 import art.serika.app.data.model.Tag
+import art.serika.app.data.repository.DownloadRepository
 import art.serika.app.data.repository.ImageRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -24,13 +25,16 @@ data class ImageDetailUiState(
     val commentText: String = "",
     val isPostingComment: Boolean = false,
     val replyingTo: Comment? = null,
-    val currentImageId: String = ""
+    val currentImageId: String = "",
+    val isDownloading: Boolean = false,
+    val downloadMessage: String? = null
 )
 
 @HiltViewModel
 class ImageDetailViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
-    private val imageRepository: ImageRepository
+    private val imageRepository: ImageRepository,
+    private val downloadRepository: DownloadRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(ImageDetailUiState())
@@ -211,5 +215,37 @@ class ImageDetailViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             loadImageData(imageId)
         }
+    }
+    
+    fun downloadImage() {
+        val image = _uiState.value.image ?: return
+        val url = image.url ?: return
+        
+        viewModelScope.launch {
+            _uiState.update { it.copy(isDownloading = true, downloadMessage = null) }
+            
+            val filename = "serika_${image.sequentialId ?: image.id}.${url.substringAfterLast(".").take(4)}"
+            val result = downloadRepository.downloadImage(url, filename)
+            
+            result.onSuccess {
+                _uiState.update { 
+                    it.copy(
+                        isDownloading = false,
+                        downloadMessage = "Saved to Pictures/Serika.art"
+                    ) 
+                }
+            }.onFailure { e ->
+                _uiState.update { 
+                    it.copy(
+                        isDownloading = false,
+                        downloadMessage = "Download failed: ${e.localizedMessage}"
+                    ) 
+                }
+            }
+        }
+    }
+    
+    fun clearDownloadMessage() {
+        _uiState.update { it.copy(downloadMessage = null) }
     }
 }
