@@ -1,9 +1,17 @@
 package art.serika.app.ui.screens.home
 
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -11,12 +19,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
+import art.serika.app.data.model.TagType
 import art.serika.app.ui.components.*
+import art.serika.app.ui.theme.*
+import java.text.NumberFormat
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,9 +48,11 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val images = viewModel.images.collectAsLazyPagingItems()
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    val focusManager = LocalFocusManager.current
     
     var showSortMenu by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
+    var showTagSuggestions by remember { mutableStateOf(false) }
     
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -145,59 +164,115 @@ fun HomeScreen(
             }
         }
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            when {
-                images.loadState.refresh is LoadState.Loading -> {
-                    LoadingIndicator()
-                }
-                images.loadState.refresh is LoadState.Error -> {
-                    val error = (images.loadState.refresh as LoadState.Error).error
-                    ErrorMessage(
-                        message = error.localizedMessage ?: "Failed to load images",
-                        onRetry = { images.retry() }
-                    )
-                }
-                images.itemCount == 0 && images.loadState.refresh is LoadState.NotLoading -> {
-                    EmptyState(
-                        title = "No images found",
-                        description = "Try adjusting your filters"
-                    )
-                }
-                else -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(
-                            count = images.itemCount,
-                            key = { index -> images[index]?.id ?: index }
-                        ) { index ->
-                            val image = images[index]
-                            if (image != null) {
-                                ImageCard(
-                                    image = image,
-                                    onClick = { onImageClick(image.sequentialId?.toString() ?: image.id) }
-                                )
-                            }
+            // Selected tags row
+            AnimatedVisibility(
+                visible = uiState.selectedTags.isNotEmpty(),
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(uiState.selectedTags) { tag ->
+                        val tagColor = when (tag.type) {
+                            TagType.ARTIST -> ArtistTagColor
+                            TagType.CHARACTER -> CharacterTagColor
+                            TagType.COPYRIGHT -> CopyrightTagColor
+                            TagType.META -> MetaTagColor
+                            else -> GeneralTagColor
                         }
-                        
-                        // Loading more indicator
-                        if (images.loadState.append is LoadState.Loading) {
-                            item {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        InputChip(
+                            selected = true,
+                            onClick = { viewModel.removeTag(tag.name) },
+                            label = { 
+                                Text(
+                                    text = tag.name.replace("_", " "),
+                                    color = tagColor
+                                )
+                            },
+                            trailingIcon = {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
+                            colors = InputChipDefaults.inputChipColors(
+                                selectedContainerColor = tagColor.copy(alpha = 0.15f)
+                            )
+                        )
+                    }
+                    item {
+                        TextButton(
+                            onClick = { viewModel.clearFilters() }
+                        ) {
+                            Text("Clear all")
+                        }
+                    }
+                }
+            }
+            
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    images.loadState.refresh is LoadState.Loading -> {
+                        LoadingIndicator()
+                    }
+                    images.loadState.refresh is LoadState.Error -> {
+                        val error = (images.loadState.refresh as LoadState.Error).error
+                        ErrorMessage(
+                            message = error.localizedMessage ?: "Failed to load images",
+                            onRetry = { images.retry() }
+                        )
+                    }
+                    images.itemCount == 0 && images.loadState.refresh is LoadState.NotLoading -> {
+                        EmptyState(
+                            title = "No images found",
+                            description = if (uiState.selectedTags.isNotEmpty()) 
+                                "Try removing some tags or adjusting filters"
+                            else
+                                "Try adjusting your filters"
+                        )
+                    }
+                    else -> {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(2),
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(
+                                count = images.itemCount,
+                                key = { index -> images[index]?.id ?: index }
+                            ) { index ->
+                                val image = images[index]
+                                if (image != null) {
+                                    ImageCard(
+                                        image = image,
+                                        onClick = { onImageClick(image.sequentialId?.toString() ?: image.id) }
+                                    )
+                                }
+                            }
+                            
+                            // Loading more indicator
+                            if (images.loadState.append is LoadState.Loading) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                    }
                                 }
                             }
                         }
@@ -219,6 +294,20 @@ fun HomeScreen(
                 },
                 onHideAIToggle = { viewModel.setHideAI(it) },
                 onAIOnlyToggle = { viewModel.setAIOnly(it) },
+                onTagQueryChange = { 
+                    viewModel.setTagQuery(it)
+                    showTagSuggestions = it.length >= 2
+                },
+                onTagAdd = { tag ->
+                    viewModel.addTag(tag)
+                    showTagSuggestions = false
+                },
+                onTagRemove = { viewModel.removeTag(it) },
+                showTagSuggestions = showTagSuggestions,
+                onDismissTagSuggestions = { 
+                    showTagSuggestions = false
+                    viewModel.clearTagSuggestions()
+                },
                 onClearFilters = { viewModel.clearFilters() },
                 onDismiss = { showFilterSheet = false }
             )
@@ -232,6 +321,11 @@ private fun FilterSheetContent(
     onRatingToggle: (String, Boolean) -> Unit,
     onHideAIToggle: (Boolean) -> Unit,
     onAIOnlyToggle: (Boolean) -> Unit,
+    onTagQueryChange: (String) -> Unit,
+    onTagAdd: (art.serika.app.data.model.Tag) -> Unit,
+    onTagRemove: (String) -> Unit,
+    showTagSuggestions: Boolean,
+    onDismissTagSuggestions: () -> Unit,
     onClearFilters: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -257,6 +351,142 @@ private fun FilterSheetContent(
         
         Spacer(modifier = Modifier.height(16.dp))
         
+        // Tag search section
+        Text(
+            text = "Tags",
+            style = MaterialTheme.typography.titleMedium
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Box {
+            OutlinedTextField(
+                value = uiState.tagQuery,
+                onValueChange = onTagQueryChange,
+                placeholder = { Text("Search tags...") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                },
+                trailingIcon = {
+                    AnimatedVisibility(
+                        visible = uiState.tagQuery.isNotEmpty(),
+                        enter = fadeIn() + scaleIn(),
+                        exit = fadeOut() + scaleOut()
+                    ) {
+                        IconButton(onClick = { onTagQueryChange("") }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear")
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(12.dp)
+            )
+            
+            // Tag suggestions dropdown
+            if (showTagSuggestions && uiState.tagSuggestions.isNotEmpty()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 56.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 200.dp)
+                    ) {
+                        items(uiState.tagSuggestions) { tag ->
+                            val (tagIcon, tagColor) = when (tag.type) {
+                                TagType.ARTIST -> Icons.Default.Brush to ArtistTagColor
+                                TagType.CHARACTER -> Icons.Default.Person to CharacterTagColor
+                                TagType.COPYRIGHT -> Icons.Default.Copyright to CopyrightTagColor
+                                TagType.META -> Icons.Default.Info to MetaTagColor
+                                else -> Icons.Default.Tag to GeneralTagColor
+                            }
+                            
+                            val formattedCount = remember(tag.count) {
+                                NumberFormat.getNumberInstance(Locale.getDefault()).format(tag.count)
+                            }
+                            
+                            ListItem(
+                                headlineContent = { 
+                                    Text(
+                                        text = tag.name.replace("_", " "),
+                                        color = tagColor,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                supportingContent = { 
+                                    Text(
+                                        text = "$formattedCount posts",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                },
+                                leadingContent = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(tagColor.copy(alpha = 0.15f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = tagIcon,
+                                            contentDescription = null,
+                                            tint = tagColor,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.clickable { onTagAdd(tag) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Selected tags
+        if (uiState.selectedTags.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(uiState.selectedTags) { tag ->
+                    val tagColor = when (tag.type) {
+                        TagType.ARTIST -> ArtistTagColor
+                        TagType.CHARACTER -> CharacterTagColor
+                        TagType.COPYRIGHT -> CopyrightTagColor
+                        TagType.META -> MetaTagColor
+                        else -> GeneralTagColor
+                    }
+                    InputChip(
+                        selected = true,
+                        onClick = { onTagRemove(tag.name) },
+                        label = { 
+                            Text(
+                                text = tag.name.replace("_", " "),
+                                color = tagColor
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Remove",
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        colors = InputChipDefaults.inputChipColors(
+                            selectedContainerColor = tagColor.copy(alpha = 0.15f)
+                        )
+                    )
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
         // Rating filters
         Text(
             text = "Content Rating",
@@ -276,7 +506,11 @@ private fun FilterSheetContent(
                 label = { Text("Safe") },
                 leadingIcon = if (uiState.selectedRatings.contains("safe")) {
                     { Icon(Icons.Default.Check, contentDescription = null, Modifier.size(18.dp)) }
-                } else null
+                } else null,
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = SafeColor.copy(alpha = 0.2f),
+                    selectedLabelColor = SafeColor
+                )
             )
             FilterChip(
                 selected = uiState.selectedRatings.contains("questionable"),
@@ -286,7 +520,11 @@ private fun FilterSheetContent(
                 label = { Text("Questionable") },
                 leadingIcon = if (uiState.selectedRatings.contains("questionable")) {
                     { Icon(Icons.Default.Check, contentDescription = null, Modifier.size(18.dp)) }
-                } else null
+                } else null,
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = QuestionableColor.copy(alpha = 0.2f),
+                    selectedLabelColor = QuestionableColor
+                )
             )
             FilterChip(
                 selected = uiState.selectedRatings.contains("explicit"),
@@ -296,7 +534,11 @@ private fun FilterSheetContent(
                 label = { Text("Explicit") },
                 leadingIcon = if (uiState.selectedRatings.contains("explicit")) {
                     { Icon(Icons.Default.Check, contentDescription = null, Modifier.size(18.dp)) }
-                } else null
+                } else null,
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = ExplicitColor.copy(alpha = 0.2f),
+                    selectedLabelColor = ExplicitColor
+                )
             )
         }
         

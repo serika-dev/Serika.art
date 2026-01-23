@@ -256,18 +256,15 @@ fun SearchScreen(
                                     }
                                 },
                                 modifier = Modifier.clickable {
-                                    if (tag.type == TagType.ARTIST) {
-                                        onArtistClick(tag.name)
-                                    } else {
-                                        onTagClick(tag.name)
-                                    }
+                                    // Add tag to selected tags instead of navigating
+                                    viewModel.addTag(tag)
                                     showSuggestions = false
                                 }
                             )
                         }
                     }
                 }
-            } else if (uiState.query.isNotBlank()) {
+            } else if (uiState.query.isNotBlank() || uiState.selectedTags.isNotEmpty()) {
                 Column {
                     // Sort & filter info bar
                     Row(
@@ -296,12 +293,42 @@ fun SearchScreen(
                     }
                     
                     // Active filters chips
-                    if (uiState.activeFilterCount > 0) {
+                    if (uiState.activeFilterCount > 0 || uiState.selectedTags.isNotEmpty()) {
                         LazyRow(
                             modifier = Modifier.padding(horizontal = 8.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp)
                         ) {
+                            // Selected tags first
+                            items(uiState.selectedTags) { tag ->
+                                val tagColor = when (tag.type) {
+                                    TagType.ARTIST -> ArtistTagColor
+                                    TagType.CHARACTER -> CharacterTagColor
+                                    TagType.COPYRIGHT -> CopyrightTagColor
+                                    TagType.META -> MetaTagColor
+                                    else -> GeneralTagColor
+                                }
+                                FilterChip(
+                                    selected = true,
+                                    onClick = { viewModel.removeTag(tag.name) },
+                                    label = { 
+                                        Text(
+                                            text = tag.name.replace("_", " "),
+                                            color = tagColor
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Remove",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = tagColor.copy(alpha = 0.15f)
+                                    )
+                                )
+                            }
                             if (uiState.hideAI) {
                                 item {
                                     FilterChip(

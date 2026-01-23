@@ -22,17 +22,31 @@ data class SearchUiState(
     val sort: String = "relevance",
     val selectedRatings: List<String> = listOf("safe"),
     val hideAI: Boolean = false,
-    val aiOnly: Boolean = false
+    val aiOnly: Boolean = false,
+    val selectedTags: List<Tag> = emptyList()
 ) {
     val activeFilterCount: Int
         get() {
-            var count = 0
+            var count = selectedTags.size
             if (hideAI) count++
             if (aiOnly) count++
             // Count non-default ratings
             if (selectedRatings.contains("questionable")) count++
             if (selectedRatings.contains("explicit")) count++
             return count
+        }
+    
+    // Build the search query including selected tags
+    val effectiveSearchQuery: String
+        get() {
+            val tagNames = selectedTags.map { it.name }
+            return if (query.isNotBlank() && tagNames.isNotEmpty()) {
+                "${tagNames.joinToString(",")},$query"
+            } else if (tagNames.isNotEmpty()) {
+                tagNames.joinToString(",")
+            } else {
+                query
+            }
         }
 }
 
@@ -52,10 +66,11 @@ class SearchViewModel @Inject constructor(
         _uiState,
         searchTrigger
     ) { state, _ -> state }
-        .filter { it.query.isNotBlank() }
+        .filter { it.query.isNotBlank() || it.selectedTags.isNotEmpty() }
         .flatMapLatest { state ->
             imageRepository.getImagesPaged(
-                search = state.query,
+                tags = state.selectedTags.map { it.name }.takeIf { it.isNotEmpty() },
+                search = state.query.takeIf { it.isNotBlank() },
                 sort = state.sort,
                 ratings = state.selectedRatings.takeIf { it.isNotEmpty() },
                 hideAI = state.hideAI.takeIf { it },
@@ -133,7 +148,8 @@ class SearchViewModel @Inject constructor(
             it.copy(
                 selectedRatings = listOf("safe"),
                 hideAI = false,
-                aiOnly = false
+                aiOnly = false,
+                selectedTags = emptyList()
             )
         }
         searchTrigger.value++
@@ -141,5 +157,24 @@ class SearchViewModel @Inject constructor(
     
     fun clearSuggestions() {
         _uiState.update { it.copy(tagSuggestions = emptyList()) }
+    }
+    
+    fun addTag(tag: Tag) {
+        if (!_uiState.value.selectedTags.any { it.name == tag.name }) {
+            _uiState.update { 
+                it.copy(
+                    selectedTags = it.selectedTags + tag,
+                    tagSuggestions = emptyList()
+                )
+            }
+            searchTrigger.value++
+        }
+    }
+    
+    fun removeTag(tagName: String) {
+        _uiState.update { 
+            it.copy(selectedTags = it.selectedTags.filter { t -> t.name != tagName })
+        }
+        searchTrigger.value++
     }
 }

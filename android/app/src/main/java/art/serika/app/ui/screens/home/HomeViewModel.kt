@@ -6,9 +6,12 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import art.serika.app.data.local.PreferencesManager
 import art.serika.app.data.model.Image
+import art.serika.app.data.model.Tag
 import art.serika.app.data.repository.ImageRepository
+import art.serika.app.data.repository.TagRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -18,14 +21,17 @@ data class HomeUiState(
     val selectedRatings: List<String> = listOf("safe"),
     val hideAI: Boolean = false,
     val aiOnly: Boolean = false,
-    val isRefreshing: Boolean = false
+    val isRefreshing: Boolean = false,
+    val selectedTags: List<Tag> = emptyList(),
+    val tagQuery: String = "",
+    val tagSuggestions: List<Tag> = emptyList()
 ) {
     val hasActiveFilters: Boolean
-        get() = hideAI || aiOnly || selectedRatings != listOf("safe")
+        get() = hideAI || aiOnly || selectedRatings != listOf("safe") || selectedTags.isNotEmpty()
     
     val activeFilterCount: Int
         get() {
-            var count = 0
+            var count = selectedTags.size
             if (hideAI) count++
             if (aiOnly) count++
             if (selectedRatings.contains("questionable")) count++
@@ -38,6 +44,7 @@ data class HomeUiState(
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val imageRepository: ImageRepository,
+    private val tagRepository: TagRepository,
     private val preferencesManager: PreferencesManager
 ) : ViewModel() {
     
@@ -53,6 +60,7 @@ class HomeViewModel @Inject constructor(
     ) { state, _ -> state }
         .flatMapLatest { state ->
             imageRepository.getImagesPaged(
+                tags = state.selectedTags.map { it.name }.takeIf { it.isNotEmpty() },
                 ratings = state.selectedRatings.takeIf { it.isNotEmpty() },
                 sort = state.sort,
                 hideAI = state.hideAI.takeIf { it },
@@ -60,6 +68,17 @@ class HomeViewModel @Inject constructor(
             )
         }
         .cachedIn(viewModelScope)
+    
+    @OptIn(FlowPreview::class)
+    private val tagSuggestionsFlow = _uiState
+        .map { it.tagQuery }
+        .distinctUntilChanged()
+        .debounce(300)
+        .filter { it.length >= 2 }
+        .mapLatest { query ->
+            tagRepository.searchTags(query, limit = 10)
+                .getOrNull() ?: emptyList()
+        }
     
     init {
         // Load preferences
@@ -78,10 +97,41 @@ class HomeViewModel @Inject constructor(
                 _uiState.update { it.copy(hideAI = hide) }
             }
         }
+        viewModelScope.launch {
+            tagSuggestionsFlow.collect { tags ->
+                _uiState.update { it.copy(tagSuggestions = tags) }
+            }
+        }
     }
     
     fun setSort(sort: String) {
         _uiState.update { it.copy(sort = sort) }
+    }
+    
+    fun setTagQuery(query: String) {
+        _uiState.update { it.copy(tagQuery = query) }
+    }
+    
+    fun addTag(tag: Tag) {
+        if (!_uiState.value.selectedTags.any { it.name == tag.name }) {
+            _uiState.update { 
+                it.copy(
+                    selectedTags = it.selectedTags + tag,
+                    tagQuery = "",
+                    tagSuggestions = emptyList()
+                )
+            }
+        }
+    }
+    
+    fun removeTag(tagName: String) {
+        _uiState.update { 
+            it.copy(selectedTags = it.selectedTags.filter { t -> t.name != tagName })
+        }
+    }
+    
+    fun clearTagSuggestions() {
+        _uiState.update { it.copy(tagSuggestions = emptyList()) }
     }
     
     fun toggleRating(rating: String, enabled: Boolean) {
@@ -121,7 +171,10 @@ class HomeViewModel @Inject constructor(
             it.copy(
                 selectedRatings = listOf("safe"),
                 hideAI = false,
-                aiOnly = false
+                aiOnly = false,
+                selectedTags = emptyList(),
+                tagQuery = "",
+                tagSuggestions = emptyList()
             ) 
         }
         viewModelScope.launch {
