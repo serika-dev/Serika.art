@@ -13,15 +13,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '24', 10);
+
     const favoritesCollection = await getCollection('favorites');
     const imagesCollection = await getCollection('images');
     const tagsCollection = await getCollection('tags');
     const userObjectId = new ObjectId(user.id);
 
-    // Get user's favorited image IDs
+    // Count total favorites
+    const total = await favoritesCollection.countDocuments({ userId: userObjectId });
+
+    // Get user's favorited image IDs with pagination
     const favorites = await favoritesCollection
       .find({ userId: userObjectId })
       .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
       .toArray();
 
     const imageIds = favorites.map(f => f.imageId);
@@ -31,9 +40,15 @@ export async function GET(request: NextRequest) {
       .find({ _id: { $in: imageIds } })
       .toArray();
 
+    // Sort images to match favorites order
+    const imageMap = new Map(images.map(img => [img._id.toString(), img]));
+    const sortedImages = imageIds
+      .map(id => imageMap.get(id.toString()))
+      .filter(Boolean);
+
     // Populate tags for all images
     const allTagIds = new Set<string>();
-    images.forEach(img => {
+    sortedImages.forEach((img: any) => {
       if (Array.isArray(img.tags)) {
         img.tags.forEach((tagId: any) => allTagIds.add(tagId.toString()));
       }
@@ -48,7 +63,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Map images to replace tag IDs with populated tag data
-    const populatedImages = images.map((img: any) => ({
+    const populatedImages = sortedImages.map((img: any) => ({
       ...img,
       tags: (img.tags || []).map((tagId: any) => {
         const tag = tagMap.get(tagId.toString());
@@ -63,7 +78,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      favorites: populatedImages,
+      images: populatedImages,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error: any) {
     console.error('Error fetching favorites:', error);
@@ -108,6 +129,8 @@ export async function POST(request: NextRequest) {
       imageId: imageObjectId,
     });
 
+    let isFavorited = false;
+
     if (existingFavorite) {
       // Remove favorite
       await favoritesCollection.deleteOne({ _id: existingFavorite._id });
@@ -115,27 +138,28 @@ export async function POST(request: NextRequest) {
         { _id: imageObjectId },
         { $inc: { favorites: -1 } }
       );
-      return NextResponse.json({
-        success: true,
-        action: 'removed',
+      isFavorited = false;
+    } else {
+      // Add favorite
+      await favoritesCollection.insertOne({
+        userId: userObjectId,
+        imageId: imageObjectId,
+        createdAt: new Date(),
       });
+      await imagesCollection.updateOne(
+        { _id: imageObjectId },
+        { $inc: { favorites: 1 } }
+      );
+      isFavorited = true;
     }
 
-    // Add favorite
-    await favoritesCollection.insertOne({
-      userId: userObjectId,
-      imageId: imageObjectId,
-      createdAt: new Date(),
-    });
-
-    await imagesCollection.updateOne(
-      { _id: imageObjectId },
-      { $inc: { favorites: 1 } }
-    );
+    // Get updated image count
+    const updatedImage = await imagesCollection.findOne({ _id: imageObjectId });
 
     return NextResponse.json({
       success: true,
-      action: 'added',
+      isFavorited,
+      favorites: updatedImage?.favorites || 0,
     });
   } catch (error: any) {
     console.error('Error toggling favorite:', error);

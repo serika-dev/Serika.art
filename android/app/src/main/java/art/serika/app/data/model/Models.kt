@@ -138,6 +138,7 @@ data class Comment(
     val parentId: String? = null,
     val asArtist: Boolean = false,
     val artistTagId: String? = null,
+    val artistTagName: String? = null,
     val createdAt: String,
     val updatedAt: String? = null
 )

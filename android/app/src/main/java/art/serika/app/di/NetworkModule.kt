@@ -38,11 +38,14 @@ object NetworkModule {
         preferencesManager: PreferencesManager
     ): Interceptor {
         return Interceptor { chain ->
+            // Fetch token fresh on each request so login changes are reflected
             val token = runBlocking { preferencesManager.authToken.first() }
             val request = chain.request().newBuilder().apply {
                 addHeader("Accept", "application/json")
-                addHeader("Content-Type", "application/json")
-                if (token != null) {
+                if (chain.request().body != null) {
+                    addHeader("Content-Type", "application/json")
+                }
+                if (!token.isNullOrEmpty()) {
                     addHeader("Authorization", "Bearer $token")
                 }
             }.build()

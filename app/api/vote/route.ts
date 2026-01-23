@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!['upvote', 'downvote'].includes(type)) {
+    if (!['upvote', 'downvote', ''].includes(type)) {
       return NextResponse.json(
         { success: false, error: 'Invalid vote type' },
         { status: 400 }
@@ -44,56 +44,57 @@ export async function POST(request: NextRequest) {
       imageId: imageObjectId,
     });
 
-    if (existingVote) {
-      // If same vote, remove it
-      if (existingVote.type === type) {
+    let userVote: string | null = null;
+
+    if (type === '' || (existingVote && existingVote.type === type)) {
+      // Remove vote
+      if (existingVote) {
         await votesCollection.deleteOne({ _id: existingVote._id });
         await imagesCollection.updateOne(
           { _id: imageObjectId },
-          { $inc: { [type === 'upvote' ? 'upvotes' : 'downvotes']: -1 } }
+          { $inc: { [existingVote.type === 'upvote' ? 'upvotes' : 'downvotes']: -1 } }
         );
-        return NextResponse.json({
-          success: true,
-          action: 'removed',
-        });
-      } else {
-        // Change vote
-        await votesCollection.updateOne(
-          { _id: existingVote._id },
-          { $set: { type, createdAt: new Date() } }
-        );
-        await imagesCollection.updateOne(
-          { _id: imageObjectId },
-          {
-            $inc: {
-              [existingVote.type === 'upvote' ? 'upvotes' : 'downvotes']: -1,
-              [type === 'upvote' ? 'upvotes' : 'downvotes']: 1,
-            },
-          }
-        );
-        return NextResponse.json({
-          success: true,
-          action: 'changed',
-        });
       }
+      userVote = null;
+    } else if (existingVote) {
+      // Change vote
+      await votesCollection.updateOne(
+        { _id: existingVote._id },
+        { $set: { type, createdAt: new Date() } }
+      );
+      await imagesCollection.updateOne(
+        { _id: imageObjectId },
+        {
+          $inc: {
+            [existingVote.type === 'upvote' ? 'upvotes' : 'downvotes']: -1,
+            [type === 'upvote' ? 'upvotes' : 'downvotes']: 1,
+          },
+        }
+      );
+      userVote = type;
+    } else {
+      // Add new vote
+      await votesCollection.insertOne({
+        userId: userObjectId,
+        imageId: imageObjectId,
+        type,
+        createdAt: new Date(),
+      });
+      await imagesCollection.updateOne(
+        { _id: imageObjectId },
+        { $inc: { [type === 'upvote' ? 'upvotes' : 'downvotes']: 1 } }
+      );
+      userVote = type;
     }
 
-    // Add new vote
-    await votesCollection.insertOne({
-      userId: userObjectId,
-      imageId: imageObjectId,
-      type,
-      createdAt: new Date(),
-    });
-
-    await imagesCollection.updateOne(
-      { _id: imageObjectId },
-      { $inc: { [type === 'upvote' ? 'upvotes' : 'downvotes']: 1 } }
-    );
+    // Get updated image counts
+    const updatedImage = await imagesCollection.findOne({ _id: imageObjectId });
 
     return NextResponse.json({
       success: true,
-      action: 'added',
+      upvotes: updatedImage?.upvotes || 0,
+      downvotes: updatedImage?.downvotes || 0,
+      userVote,
     });
   } catch (error: any) {
     console.error('Error voting:', error);
