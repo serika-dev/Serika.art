@@ -89,7 +89,7 @@ fun ProfileScreen(
                         if (image != null) {
                             ImageCard(
                                 image = image,
-                                onClick = { onImageClick(image.id) }
+                                onClick = { onImageClick(image.sequentialId?.toString() ?: image.id) }
                             )
                         }
                     }
