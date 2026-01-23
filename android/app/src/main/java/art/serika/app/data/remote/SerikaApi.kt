@@ -48,8 +48,18 @@ interface SerikaApi {
     suspend fun getArtist(@Path("tagName") tagName: String): ArtistDetailResponse
     
     // Auth
+    @POST("auth/login")
+    suspend fun login(
+        @Body body: Map<String, String>
+    ): LoginResponse
+    
     @GET("auth/me")
     suspend fun getCurrentUser(): UserResponse
+    
+    @GET("auth/me")
+    suspend fun getCurrentUser(
+        @Header("Authorization") token: String
+    ): UserResponse
     
     @POST("auth/logout")
     suspend fun logout(): ApiError

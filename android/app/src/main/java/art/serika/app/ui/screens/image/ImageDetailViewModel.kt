@@ -3,6 +3,7 @@ package art.serika.app.ui.screens.image
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import art.serika.app.data.model.Comment
 import art.serika.app.data.model.Image
 import art.serika.app.data.model.Tag
 import art.serika.app.data.repository.ImageRepository
@@ -17,31 +18,53 @@ data class ImageDetailUiState(
     val tags: List<Tag> = emptyList(),
     val error: String? = null,
     val userVote: String? = null,
-    val isFavorited: Boolean = false
+    val isFavorited: Boolean = false,
+    val comments: List<Comment> = emptyList(),
+    val isLoadingComments: Boolean = false,
+    val commentText: String = "",
+    val isPostingComment: Boolean = false,
+    val replyingTo: Comment? = null
 )
 
 @HiltViewModel
 class ImageDetailViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val imageRepository: ImageRepository
 ) : ViewModel() {
     
-    private val imageId: String = checkNotNull(savedStateHandle["imageId"])
+    private var currentImageId: String = ""
     
     private val _uiState = MutableStateFlow(ImageDetailUiState())
     val uiState: StateFlow<ImageDetailUiState> = _uiState.asStateFlow()
     
     init {
+        // Watch for imageId changes
+        viewModelScope.launch {
+            savedStateHandle.getStateFlow("imageId", "").collect { newImageId ->
+                if (newImageId.isNotEmpty() && newImageId != currentImageId) {
+                    currentImageId = newImageId
+                    loadImageData()
+                }
+            }
+        }
+    }
+    
+    private fun loadImageData() {
+        // Reset state for new image
+        _uiState.update { 
+            ImageDetailUiState(isLoading = true) 
+        }
         loadImage()
         loadVoteStatus()
         loadFavoriteStatus()
+        loadComments()
     }
     
     private fun loadImage() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             
-            imageRepository.getImage(imageId)
+            imageRepository.getImage(currentImageId)
                 .onSuccess { response ->
                     if (response.success && response.image != null) {
                         _uiState.update {
@@ -73,7 +96,7 @@ class ImageDetailViewModel @Inject constructor(
     
     private fun loadVoteStatus() {
         viewModelScope.launch {
-            imageRepository.getVote(imageId)
+            imageRepository.getVote(currentImageId)
                 .onSuccess { response ->
                     _uiState.update { it.copy(userVote = response.userVote) }
                 }
@@ -82,9 +105,28 @@ class ImageDetailViewModel @Inject constructor(
     
     private fun loadFavoriteStatus() {
         viewModelScope.launch {
-            imageRepository.getFavoriteStatus(imageId)
+            imageRepository.getFavoriteStatus(currentImageId)
                 .onSuccess { response ->
                     _uiState.update { it.copy(isFavorited = response.isFavorited) }
+                }
+        }
+    }
+    
+    private fun loadComments() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingComments = true) }
+            
+            imageRepository.getComments(currentImageId)
+                .onSuccess { response ->
+                    _uiState.update { 
+                        it.copy(
+                            comments = response.comments,
+                            isLoadingComments = false
+                        ) 
+                    }
+                }
+                .onFailure {
+                    _uiState.update { it.copy(isLoadingComments = false) }
                 }
         }
     }
@@ -94,7 +136,7 @@ class ImageDetailViewModel @Inject constructor(
             val currentVote = _uiState.value.userVote
             val newType = if (currentVote == type) "" else type
             
-            imageRepository.vote(imageId, newType)
+            imageRepository.vote(currentImageId, newType)
                 .onSuccess { response ->
                     _uiState.update { state ->
                         state.copy(
@@ -111,7 +153,7 @@ class ImageDetailViewModel @Inject constructor(
     
     fun toggleFavorite() {
         viewModelScope.launch {
-            imageRepository.toggleFavorite(imageId)
+            imageRepository.toggleFavorite(currentImageId)
                 .onSuccess { response ->
                     _uiState.update { state ->
                         state.copy(
@@ -123,9 +165,45 @@ class ImageDetailViewModel @Inject constructor(
         }
     }
     
+    fun setCommentText(text: String) {
+        _uiState.update { it.copy(commentText = text) }
+    }
+    
+    fun setReplyingTo(comment: Comment?) {
+        _uiState.update { it.copy(replyingTo = comment) }
+    }
+    
+    fun postComment() {
+        val text = _uiState.value.commentText.trim()
+        if (text.isBlank()) return
+        
+        viewModelScope.launch {
+            _uiState.update { it.copy(isPostingComment = true) }
+            
+            val parentId = _uiState.value.replyingTo?.id
+            
+            imageRepository.postComment(currentImageId, text, parentId)
+                .onSuccess { response ->
+                    _uiState.update { 
+                        it.copy(
+                            commentText = "",
+                            replyingTo = null,
+                            comments = response.comments,
+                            isPostingComment = false
+                        ) 
+                    }
+                }
+                .onFailure {
+                    _uiState.update { it.copy(isPostingComment = false) }
+                }
+        }
+    }
+    
+    fun cancelReply() {
+        _uiState.update { it.copy(replyingTo = null) }
+    }
+    
     fun refresh() {
-        loadImage()
-        loadVoteStatus()
-        loadFavoriteStatus()
+        loadImageData()
     }
 }

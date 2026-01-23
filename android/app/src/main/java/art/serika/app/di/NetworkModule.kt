@@ -2,6 +2,7 @@ package art.serika.app.di
 
 import art.serika.app.BuildConfig
 import art.serika.app.data.local.PreferencesManager
+import art.serika.app.data.remote.GitHubApi
 import art.serika.app.data.remote.SerikaApi
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
@@ -17,6 +18,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -86,5 +88,36 @@ object NetworkModule {
     @Singleton
     fun provideSerikaApi(retrofit: Retrofit): SerikaApi {
         return retrofit.create(SerikaApi::class.java)
+    }
+    
+    @Provides
+    @Singleton
+    @Named("github")
+    fun provideGitHubOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor(
+                HttpLoggingInterceptor().apply {
+                    level = if (BuildConfig.DEBUG) {
+                        HttpLoggingInterceptor.Level.BODY
+                    } else {
+                        HttpLoggingInterceptor.Level.NONE
+                    }
+                }
+            )
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideGitHubApi(@Named("github") okHttpClient: OkHttpClient): GitHubApi {
+        val contentType = "application/json".toMediaType()
+        return Retrofit.Builder()
+            .baseUrl("https://api.github.com/")
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory(contentType))
+            .build()
+            .create(GitHubApi::class.java)
     }
 }

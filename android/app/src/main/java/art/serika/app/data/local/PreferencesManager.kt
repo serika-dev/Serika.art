@@ -31,6 +31,10 @@ class PreferencesManager @Inject constructor(
         private val HIDE_AI = booleanPreferencesKey("hide_ai")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
         private val GRID_COLUMNS = intPreferencesKey("grid_columns")
+        private val RELEASE_CHANNEL = stringPreferencesKey("release_channel")
+        private val FIRST_LAUNCH = booleanPreferencesKey("first_launch")
+        private val LAST_UPDATE_CHECK = longPreferencesKey("last_update_check")
+        private val SKIPPED_VERSION = stringPreferencesKey("skipped_version")
     }
     
     // Auth token
@@ -129,5 +133,48 @@ class PreferencesManager @Inject constructor(
     
     suspend fun setGridColumns(columns: Int) {
         dataStore.edit { it[GRID_COLUMNS] = columns }
+    }
+    
+    // Release channel (stable, beta)
+    val releaseChannel: Flow<String> = dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[RELEASE_CHANNEL] ?: "stable" }
+    
+    suspend fun setReleaseChannel(channel: String) {
+        dataStore.edit { it[RELEASE_CHANNEL] = channel }
+    }
+    
+    // First launch flag
+    val isFirstLaunch: Flow<Boolean> = dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[FIRST_LAUNCH] ?: true }
+    
+    suspend fun setFirstLaunch(isFirstLaunch: Boolean) {
+        dataStore.edit { it[FIRST_LAUNCH] = isFirstLaunch }
+    }
+    
+    suspend fun setFirstLaunchComplete() {
+        dataStore.edit { it[FIRST_LAUNCH] = false }
+    }
+    
+    // Last update check timestamp
+    val lastUpdateCheck: Flow<Long> = dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[LAST_UPDATE_CHECK] ?: 0L }
+    
+    suspend fun setLastUpdateCheck(timestamp: Long) {
+        dataStore.edit { it[LAST_UPDATE_CHECK] = timestamp }
+    }
+    
+    // Skipped version
+    val skippedVersion: Flow<String?> = dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[SKIPPED_VERSION] }
+    
+    suspend fun setSkippedVersion(version: String?) {
+        dataStore.edit { 
+            if (version != null) it[SKIPPED_VERSION] = version
+            else it.remove(SKIPPED_VERSION)
+        }
     }
 }

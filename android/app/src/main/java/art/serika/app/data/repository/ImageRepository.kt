@@ -7,6 +7,7 @@ import art.serika.app.data.model.*
 import art.serika.app.data.remote.SerikaApi
 import art.serika.app.data.remote.VoteRequest
 import art.serika.app.data.remote.FavoriteRequest
+import art.serika.app.data.remote.CommentRequest
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -80,6 +81,22 @@ class ImageRepository @Inject constructor(
     suspend fun getFavoriteStatus(imageId: String): Result<FavoriteResponse> {
         return try {
             Result.success(api.getFavoriteStatus(imageId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getComments(imageId: String): Result<CommentsResponse> {
+        return try {
+            Result.success(api.getComments(imageId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun postComment(imageId: String, content: String, parentId: String? = null): Result<CommentsResponse> {
+        return try {
+            Result.success(api.postComment(imageId, CommentRequest(content, parentId)))
         } catch (e: Exception) {
             Result.failure(e)
         }

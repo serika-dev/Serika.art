@@ -18,7 +18,8 @@ data class SettingsUiState(
     val showExplicit: Boolean = false,
     val hideAI: Boolean = false,
     val themeMode: String = "system",
-    val gridColumns: Int = 2
+    val gridColumns: Int = 2,
+    val releaseChannel: String = "stable"
 )
 
 @HiltViewModel
@@ -75,6 +76,12 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(gridColumns = columns) }
             }
         }
+        
+        viewModelScope.launch {
+            preferencesManager.releaseChannel.collect { channel ->
+                _uiState.update { it.copy(releaseChannel = channel) }
+            }
+        }
     }
     
     fun setRatingPreferences(safe: Boolean, questionable: Boolean, explicit: Boolean) {
@@ -98,6 +105,12 @@ class SettingsViewModel @Inject constructor(
     fun setGridColumns(columns: Int) {
         viewModelScope.launch {
             preferencesManager.setGridColumns(columns)
+        }
+    }
+    
+    fun setReleaseChannel(channel: String) {
+        viewModelScope.launch {
+            preferencesManager.setReleaseChannel(channel)
         }
     }
     

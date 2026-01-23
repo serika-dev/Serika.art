@@ -99,19 +99,22 @@ fun SerikaNavHost(
             )
         ) { backStackEntry ->
             val imageId = backStackEntry.arguments?.getString("imageId") ?: return@composable
-            ImageDetailScreen(
-                imageId = imageId,
-                onBackClick = { navController.popBackStack() },
-                onTagClick = { tagName ->
-                    navController.navigate(Screen.Search.createRoute(tagName))
-                },
-                onArtistClick = { tagName ->
-                    navController.navigate(Screen.Artist.createRoute(tagName))
-                },
-                onUserClick = { username ->
-                    navController.navigate(Screen.Profile.createRoute(username))
-                }
-            )
+            // Use imageId as key to force ViewModel recreation for different images
+            androidx.compose.runtime.key(imageId) {
+                ImageDetailScreen(
+                    imageId = imageId,
+                    onBackClick = { navController.popBackStack() },
+                    onTagClick = { tagName ->
+                        navController.navigate(Screen.Search.createRoute(tagName))
+                    },
+                    onArtistClick = { tagName ->
+                        navController.navigate(Screen.Artist.createRoute(tagName))
+                    },
+                    onUserClick = { username ->
+                        navController.navigate(Screen.Profile.createRoute(username))
+                    }
+                )
+            }
         }
         
         composable(
@@ -167,6 +170,9 @@ fun SerikaNavHost(
                 onBackClick = { navController.popBackStack() },
                 onImageClick = { imageId ->
                     navController.navigate(Screen.ImageDetail.createRoute(imageId))
+                },
+                onLoginClick = {
+                    navController.navigate(Screen.Login.route)
                 }
             )
         }

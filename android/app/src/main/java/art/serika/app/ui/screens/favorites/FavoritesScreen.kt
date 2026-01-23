@@ -8,10 +8,12 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Login
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import art.serika.app.ui.components.*
@@ -21,6 +23,7 @@ import art.serika.app.ui.components.*
 fun FavoritesScreen(
     onBackClick: () -> Unit,
     onImageClick: (String) -> Unit,
+    onLoginClick: () -> Unit = {},
     viewModel: FavoritesViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -34,7 +37,7 @@ fun FavoritesScreen(
             val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             lastVisibleItem >= totalItems - 6
         }.collect { shouldLoadMore ->
-            if (shouldLoadMore && !uiState.isLoading && !uiState.isLoadingMore) {
+            if (shouldLoadMore && !uiState.isLoading && !uiState.isLoadingMore && !uiState.requiresLogin) {
                 viewModel.loadMore()
             }
         }
@@ -59,7 +62,47 @@ fun FavoritesScreen(
             uiState.isLoading -> {
                 LoadingIndicator(modifier = Modifier.padding(paddingValues))
             }
-            uiState.error != null -> {
+            uiState.requiresLogin -> {
+                // Login required state
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Login,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Sign In Required",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "You need to sign in to view and manage your favorites.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(onClick = onLoginClick) {
+                        Icon(
+                            imageVector = Icons.Default.Login,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Sign In")
+                    }
+                }
+            }
+            uiState.error != null && !uiState.requiresLogin -> {
                 ErrorMessage(
                     message = uiState.error!!,
                     onRetry = { viewModel.refresh() },

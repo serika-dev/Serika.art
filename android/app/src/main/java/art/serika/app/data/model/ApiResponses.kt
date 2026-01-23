@@ -48,6 +48,14 @@ data class AuthResponse(
 )
 
 @Serializable
+data class LoginResponse(
+    val success: Boolean,
+    val user: User? = null,
+    val token: String? = null,
+    val error: String? = null
+)
+
+@Serializable
 data class VoteResponse(
     val success: Boolean,
     val upvotes: Int = 0,

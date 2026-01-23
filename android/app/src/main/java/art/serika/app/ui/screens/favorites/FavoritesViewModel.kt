@@ -8,6 +8,7 @@ import art.serika.app.data.remote.SerikaApi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 import javax.inject.Inject
 
 data class FavoritesUiState(
@@ -16,7 +17,8 @@ data class FavoritesUiState(
     val error: String? = null,
     val page: Int = 1,
     val hasMore: Boolean = true,
-    val isLoadingMore: Boolean = false
+    val isLoadingMore: Boolean = false,
+    val requiresLogin: Boolean = false
 )
 
 @HiltViewModel
@@ -33,7 +35,7 @@ class FavoritesViewModel @Inject constructor(
     
     fun loadFavorites() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            _uiState.update { it.copy(isLoading = true, error = null, requiresLogin = false) }
             
             try {
                 val response = api.getFavorites(page = 1, limit = 24)
@@ -44,6 +46,23 @@ class FavoritesViewModel @Inject constructor(
                         page = 1,
                         hasMore = response.pagination.page < response.pagination.pages
                     )
+                }
+            } catch (e: HttpException) {
+                if (e.code() == 401) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            requiresLogin = true,
+                            error = "Please sign in to view your favorites"
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "Error: ${e.message()}"
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.update {
@@ -58,7 +77,7 @@ class FavoritesViewModel @Inject constructor(
     
     fun loadMore() {
         val currentState = _uiState.value
-        if (currentState.isLoadingMore || !currentState.hasMore) return
+        if (currentState.isLoadingMore || !currentState.hasMore || currentState.requiresLogin) return
         
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingMore = true) }

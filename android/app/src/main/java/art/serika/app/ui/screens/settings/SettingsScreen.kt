@@ -249,9 +249,78 @@ fun SettingsScreen(
             
             // About section
             SettingsSection(title = "About") {
+                var showChannelDialog by remember { mutableStateOf(false) }
+                
+                ListItem(
+                    headlineContent = { Text("Release channel") },
+                    supportingContent = { 
+                        Text(
+                            when (uiState.releaseChannel) {
+                                "beta" -> "Beta"
+                                else -> "Stable"
+                            }
+                        )
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = when (uiState.releaseChannel) {
+                                "beta" -> Icons.Default.Science
+                                else -> Icons.Default.CheckCircle
+                            },
+                            contentDescription = null
+                        )
+                    },
+                    modifier = Modifier.clickable { showChannelDialog = true }
+                )
+                
+                if (showChannelDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showChannelDialog = false },
+                        title = { Text("Release channel") },
+                        text = {
+                            Column {
+                                listOf(
+                                    "stable" to "Stable" to "Recommended. Stable releases with tested features.",
+                                    "beta" to "Beta" to "Early access to new features. May have bugs."
+                                ).forEach { (valuePair, description) ->
+                                    val (value, label) = valuePair
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.setReleaseChannel(value)
+                                                showChannelDialog = false
+                                            }
+                                            .padding(vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = uiState.releaseChannel == value,
+                                            onClick = {
+                                                viewModel.setReleaseChannel(value)
+                                                showChannelDialog = false
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(label)
+                                            Text(
+                                                description,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {}
+                    )
+                }
+                
                 ListItem(
                     headlineContent = { Text("Version") },
-                    supportingContent = { Text("0.0.3") },
+                    supportingContent = { Text("0.0.4") },
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Default.Info,
