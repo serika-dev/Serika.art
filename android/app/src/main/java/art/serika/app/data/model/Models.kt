@@ -26,7 +26,7 @@ enum class UserRank {
 data class Tag(
     @SerialName("_id") val id: String,
     val name: String,
-    val type: TagType,
+    val type: TagType = TagType.GENERAL,
     val count: Int = 0,
     val createdAt: String? = null
 )
@@ -53,7 +53,7 @@ data class Image(
     val width: Int = 0,
     val height: Int = 0,
     val contentType: String? = null,
-    val tags: List<String> = emptyList(),
+    val tags: List<Tag> = emptyList(),
     val rating: Rating = Rating.SAFE,
     val isAIGenerated: Boolean = false,
     val source: String? = null,
@@ -63,9 +63,7 @@ data class Image(
     val favorites: Int = 0,
     val views: Int = 0,
     val createdAt: String,
-    val updatedAt: String? = null,
-    // Populated tag info for display
-    val tagInfo: List<Tag>? = null
+    val updatedAt: String? = null
 )
 
 @Serializable
