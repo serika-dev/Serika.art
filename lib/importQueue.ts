@@ -103,7 +103,7 @@ let activeJobCount = 0;
 const tagCache = new Map<string, ObjectId>();
 
 // Atomic counter for sequential IDs - prevents race conditions
-async function getNextSequentialId(): Promise<number> {
+export async function getNextSequentialId(): Promise<number> {
   const countersCollection = await getCollection('counters');
   
   const result = await countersCollection.findOneAndUpdate(
@@ -116,7 +116,7 @@ async function getNextSequentialId(): Promise<number> {
 }
 
 // Initialize counter if needed (run once on startup)
-async function initializeCounter(): Promise<void> {
+export async function initializeCounter(): Promise<void> {
   const countersCollection = await getCollection('counters');
   const imagesCollection = await getCollection('images');
   
@@ -141,7 +141,7 @@ async function initializeCounter(): Promise<void> {
 let counterInitialized = false;
 let indexesEnsured = false;
 
-async function ensureCounterInitialized(): Promise<void> {
+export async function ensureCounterInitialized(): Promise<void> {
   if (!counterInitialized) {
     await initializeCounter();
     counterInitialized = true;

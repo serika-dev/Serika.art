@@ -53,12 +53,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (response.ok) {
       const data = await response.json();
       if (data.images && Array.isArray(data.images)) {
-        imageRoutes = data.images.map((image: any) => ({
-          url: `${baseUrl}/image/${image.sequentialId || image._id}`,
-          lastModified: new Date(image.updatedAt || image.createdAt),
-          changeFrequency: "weekly" as const,
-          priority: 0.7,
-        }));
+        imageRoutes = data.images
+          .filter((image: any) => image.sequentialId) // Only include images with sequentialId
+          .map((image: any) => ({
+            url: `${baseUrl}/image/${image.sequentialId}`,
+            lastModified: new Date(image.updatedAt || image.createdAt),
+            changeFrequency: "weekly" as const,
+            priority: 0.7,
+          }));
       }
     }
   } catch (error) {
