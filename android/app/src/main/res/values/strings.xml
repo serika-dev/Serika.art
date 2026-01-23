@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Serika.art</string>
+    
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_search">Search</string>
+    <string name="nav_tags">Tags</string>
+    <string name="nav_favorites">Favorites</string>
+    <string name="nav_settings">Settings</string>
+    
+    <!-- Actions -->
+    <string name="action_search">Search</string>
+    <string name="action_sort">Sort</string>
+    <string name="action_filter">Filter</string>
+    <string name="action_share">Share</string>
+    <string name="action_back">Back</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_login">Log in</string>
+    <string name="action_logout">Log out</string>
+    
+    <!-- Sort options -->
+    <string name="sort_newest">Newest</string>
+    <string name="sort_top">Top Rated</string>
+    <string name="sort_favorites">Most Favorites</string>
+    
+    <!-- Ratings -->
+    <string name="rating_safe">Safe</string>
+    <string name="rating_questionable">Questionable</string>
+    <string name="rating_explicit">Explicit</string>
+    
+    <!-- Tag types -->
+    <string name="tag_type_all">All</string>
+    <string name="tag_type_general">General</string>
+    <string name="tag_type_artist">Artist</string>
+    <string name="tag_type_character">Character</string>
+    <string name="tag_type_copyright">Copyright</string>
+    <string name="tag_type_meta">Meta</string>
+    
+    <!-- User ranks -->
+    <string name="rank_user">User</string>
+    <string name="rank_moderator">Moderator</string>
+    <string name="rank_admin">Admin</string>
+    <string name="rank_owner">Owner</string>
+    
+    <!-- Empty states -->
+    <string name="empty_images">No images found</string>
+    <string name="empty_images_desc">Try adjusting your filters</string>
+    <string name="empty_search">Search for images</string>
+    <string name="empty_search_desc">Enter tags, artist names, or keywords</string>
+    <string name="empty_favorites">No favorites yet</string>
+    <string name="empty_favorites_desc">Images you favorite will appear here</string>
+    <string name="empty_tags">No tags found</string>
+    <string name="empty_tags_desc">Try a different search</string>
+    <string name="empty_results">No results found</string>
+    <string name="empty_results_desc">Try different search terms</string>
+    <string name="empty_uploads">No uploads yet</string>
+    
+    <!-- Errors -->
+    <string name="error_generic">Something went wrong</string>
+    <string name="error_network">Network error. Please check your connection.</string>
+    <string name="error_load_images">Failed to load images</string>
+    <string name="error_load_image">Failed to load image</string>
+    <string name="error_load_user">Failed to load user</string>
+    <string name="error_load_artist">Failed to load artist</string>
+    <string name="error_load_tags">Failed to load tags</string>
+    <string name="error_load_favorites">Failed to load favorites</string>
+    <string name="error_not_found">Not found</string>
+    
+    <!-- Settings -->
+    <string name="settings_account">Account</string>
+    <string name="settings_logged_in">Logged in</string>
+    <string name="settings_content">Content Preferences</string>
+    <string name="settings_safe_content">Safe content</string>
+    <string name="settings_safe_content_desc">Show safe-rated content</string>
+    <string name="settings_questionable_content">Questionable content</string>
+    <string name="settings_questionable_content_desc">Show questionable-rated content</string>
+    <string name="settings_explicit_content">Explicit content</string>
+    <string name="settings_explicit_content_desc">Show explicit-rated content (18+)</string>
+    <string name="settings_hide_ai">Hide AI-generated</string>
+    <string name="settings_hide_ai_desc">Hide AI-generated images from feed</string>
+    <string name="settings_display">Display</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_system">System default</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_website">Website</string>
+    
+    <!-- Image detail -->
+    <string name="image_upvote">Upvote</string>
+    <string name="image_downvote">Downvote</string>
+    <string name="image_favorite">Favorite</string>
+    <string name="image_views">Views</string>
+    <string name="image_tags">Tags</string>
+    <string name="image_no_tags">No tags</string>
+    <string name="image_ai_generated">AI Generated</string>
+    
+    <!-- Search -->
+    <string name="search_hint">Search images, tags…</string>
+    <string name="search_tags_hint">Search tags…</string>
+    
+    <!-- Misc -->
+    <string name="posts_count">%d posts</string>
+    <string name="verified">Verified</string>
+</resources>

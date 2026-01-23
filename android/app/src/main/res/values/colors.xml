@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="serika_primary">#FF7C3AED</color>
+    <color name="serika_primary_variant">#FF5B21B6</color>
+    <color name="serika_secondary">#FFF472B6</color>
+    <color name="serika_secondary_variant">#FFDB2777</color>
+    
+    <color name="dark_background">#FF0F0F0F</color>
+    <color name="dark_surface">#FF1A1A1A</color>
+    <color name="dark_surface_variant">#FF262626</color>
+    
+    <color name="light_background">#FFFAFAFA</color>
+    <color name="light_surface">#FFFFFFFF</color>
+    <color name="light_surface_variant">#FFF4F4F5</color>
+    
+    <color name="safe_color">#FF22C55E</color>
+    <color name="questionable_color">#FFFBBF24</color>
+    <color name="explicit_color">#FFEF4444</color>
+    
+    <color name="general_tag">#FF3B82F6</color>
+    <color name="artist_tag">#FFF97316</color>
+    <color name="character_tag">#FF22C55E</color>
+    <color name="copyright_tag">#FFA855F7</color>
+    <color name="meta_tag">#FF6B7280</color>
+    
+    <color name="upvote_color">#FF22C55E</color>
+    <color name="downvote_color">#FFEF4444</color>
+    <color name="ai_badge">#FF06B6D4</color>
+</resources>
