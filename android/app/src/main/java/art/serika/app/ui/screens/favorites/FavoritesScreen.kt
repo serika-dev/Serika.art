@@ -7,8 +7,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Login
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -73,7 +73,7 @@ fun FavoritesScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Login,
+                        imageVector = Icons.AutoMirrored.Filled.Login,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
                         tint = MaterialTheme.colorScheme.primary
@@ -93,7 +93,7 @@ fun FavoritesScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(onClick = onLoginClick) {
                         Icon(
-                            imageVector = Icons.Default.Login,
+                            imageVector = Icons.AutoMirrored.Filled.Login,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )

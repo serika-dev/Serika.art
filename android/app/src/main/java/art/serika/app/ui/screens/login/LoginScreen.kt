@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -208,7 +209,7 @@ fun LoginScreen(
                         )
                     } else {
                         Icon(
-                            imageVector = Icons.Default.Login,
+                            imageVector = Icons.AutoMirrored.Filled.Login,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp)
                         )
@@ -284,7 +285,7 @@ fun LoginScreen(
                         )
                     } else {
                         Icon(
-                            imageVector = Icons.Default.Login,
+                            imageVector = Icons.AutoMirrored.Filled.Login,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp)
                         )

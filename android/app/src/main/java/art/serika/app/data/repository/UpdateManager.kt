@@ -42,24 +42,24 @@ class UpdateManager @Inject constructor(
         _downloadState.value = DownloadState.Downloading(0)
         trySend(DownloadState.Downloading(0))
         
-        // Clean up old downloads
-        val updatesDir = File(context.cacheDir, "updates")
-        updatesDir.mkdirs()
-        updatesDir.listFiles()?.forEach { it.delete() }
-        
         val fileName = "serika-art-$versionName.apk"
-        val destinationFile = File(updatesDir, fileName)
         
         // Use DownloadManager for better reliability
         val request = DownloadManager.Request(Uri.parse(downloadUrl))
             .setTitle("Serika.art Update")
             .setDescription("Downloading version $versionName")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
-            .setDestinationUri(Uri.fromFile(destinationFile))
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(true)
         
         currentDownloadId = downloadManager.enqueue(request)
+        
+        // Destination file for install
+        val destinationFile = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            fileName
+        )
         
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {

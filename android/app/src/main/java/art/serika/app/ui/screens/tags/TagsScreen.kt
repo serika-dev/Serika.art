@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -299,7 +300,7 @@ private enum class SortOption(
     val label: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
-    COUNT("count", "Most Used", Icons.Default.TrendingUp),
+    COUNT("count", "Most Used", Icons.AutoMirrored.Filled.TrendingUp),
     NAME("name", "Alphabetical", Icons.Default.SortByAlpha),
     NEWEST("newest", "Newest", Icons.Default.NewReleases),
     UPDATED("updated", "Recently Updated", Icons.Default.Update)

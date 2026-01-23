@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+@OptIn(ExperimentalCoroutinesApi::class)
 data class HomeUiState(
     val sort: String = "newest",
     val selectedRatings: List<String> = listOf("safe"),
