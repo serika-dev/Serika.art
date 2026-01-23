@@ -88,7 +88,7 @@ A native Android app is available for mobile users:
 
 ### Backend
 - **MongoDB** — Document database
-- **Cloudflare R2** — Image storage & CDN
+- **Backblaze B2** — Image storage & CDN
 - **Sharp** — Image processing
 - **Serika Accounts** — Authentication service
 
