@@ -3,8 +3,7 @@ package art.serika.app.ui.screens.login
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import art.serika.app.data.local.PreferencesManager
-import art.serika.app.data.remote.AccountsLoginRequest
-import art.serika.app.data.remote.SerikaAccountsApi
+import art.serika.app.data.model.LoginRequest
 import art.serika.app.data.remote.SerikaApi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +25,6 @@ data class LoginUiState(
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    private val accountsApi: SerikaAccountsApi,
     private val api: SerikaApi,
     private val preferencesManager: PreferencesManager
 ) : ViewModel() {
@@ -63,40 +61,34 @@ class LoginViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             
             try {
-                // Step 1: Login to Serika Accounts
-                val accountsResponse = accountsApi.login(
-                    AccountsLoginRequest(
+                // Use the proxy login endpoint on serika.art
+                val response = api.login(
+                    LoginRequest(
                         email = email,
                         password = password,
-                        rememberMe = true,
-                        productId = "serika-art"
+                        rememberMe = true
                     )
                 )
                 
-                if (!accountsResponse.success || accountsResponse.token == null) {
-                    _uiState.update { 
-                        it.copy(
-                            isLoading = false, 
-                            error = accountsResponse.error ?: accountsResponse.message ?: "Login failed"
-                        ) 
+                if (response.success && response.token != null) {
+                    // Save the token
+                    preferencesManager.setAuthToken(response.token)
+                    
+                    // Save user info if available
+                    response.user?.let { user ->
+                        preferencesManager.setUserInfo(
+                            userId = user.id,
+                            username = user.username,
+                            avatarUrl = user.avatarUrl
+                        )
                     }
-                    return@launch
-                }
-                
-                // Step 2: Exchange the token with the backend
-                val exchangeResponse = api.exchangeToken(
-                    mapOf("token" to accountsResponse.token)
-                )
-                
-                if (exchangeResponse.success && exchangeResponse.token != null) {
-                    // Save the exchanged token
-                    preferencesManager.setAuthToken(exchangeResponse.token)
+                    
                     _uiState.update { it.copy(isLoading = false, loginSuccess = true) }
                 } else {
                     _uiState.update { 
                         it.copy(
                             isLoading = false, 
-                            error = exchangeResponse.error ?: "Token exchange failed"
+                            error = response.error ?: "Login failed"
                         ) 
                     }
                 }

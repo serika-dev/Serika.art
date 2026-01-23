@@ -56,6 +56,13 @@ data class LoginResponse(
 )
 
 @Serializable
+data class LoginRequest(
+    val email: String,
+    val password: String,
+    val rememberMe: Boolean = true
+)
+
+@Serializable
 data class VoteResponse(
     val success: Boolean,
     val upvotes: Int = 0,
