@@ -1,5 +1,6 @@
 package art.serika.app.ui.screens.home
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
@@ -7,6 +8,7 @@ import androidx.paging.cachedIn
 import art.serika.app.data.local.PreferencesManager
 import art.serika.app.data.model.Image
 import art.serika.app.data.model.Tag
+import art.serika.app.data.repository.DownloadRepository
 import art.serika.app.data.repository.ImageRepository
 import art.serika.app.data.repository.TagRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,7 +26,13 @@ data class HomeUiState(
     val isRefreshing: Boolean = false,
     val selectedTags: List<Tag> = emptyList(),
     val tagQuery: String = "",
-    val tagSuggestions: List<Tag> = emptyList()
+    val tagSuggestions: List<Tag> = emptyList(),
+    // Mass selection
+    val isSelectionMode: Boolean = false,
+    val selectedImages: Set<String> = emptySet(), // Image IDs
+    val selectedImageData: Map<String, Image> = emptyMap(), // Full image data for actions
+    val isBatchActionInProgress: Boolean = false,
+    val batchActionMessage: String? = null
 ) {
     val hasActiveFilters: Boolean
         get() = hideAI || aiOnly || selectedRatings != listOf("safe") || selectedTags.isNotEmpty()
@@ -39,12 +47,16 @@ data class HomeUiState(
             if (!selectedRatings.contains("safe")) count++
             return count
         }
+    
+    val selectedCount: Int
+        get() = selectedImages.size
 }
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val imageRepository: ImageRepository,
     private val tagRepository: TagRepository,
+    private val downloadRepository: DownloadRepository,
     private val preferencesManager: PreferencesManager
 ) : ViewModel() {
     
@@ -185,5 +197,164 @@ class HomeViewModel @Inject constructor(
     
     fun refresh() {
         refreshTrigger.value++
+    }
+    
+    // ===== Mass Selection =====
+    
+    fun enterSelectionMode(image: Image) {
+        val imageId = image.sequentialId?.toString() ?: image.id
+        _uiState.update { 
+            it.copy(
+                isSelectionMode = true,
+                selectedImages = setOf(imageId),
+                selectedImageData = mapOf(imageId to image)
+            ) 
+        }
+    }
+    
+    fun toggleImageSelection(image: Image) {
+        val imageId = image.sequentialId?.toString() ?: image.id
+        _uiState.update { state ->
+            val newSelected = if (state.selectedImages.contains(imageId)) {
+                state.selectedImages - imageId
+            } else {
+                state.selectedImages + imageId
+            }
+            val newImageData = if (newSelected.contains(imageId)) {
+                state.selectedImageData + (imageId to image)
+            } else {
+                state.selectedImageData - imageId
+            }
+            
+            // Exit selection mode if no images selected
+            if (newSelected.isEmpty()) {
+                state.copy(
+                    isSelectionMode = false,
+                    selectedImages = emptySet(),
+                    selectedImageData = emptyMap()
+                )
+            } else {
+                state.copy(
+                    selectedImages = newSelected,
+                    selectedImageData = newImageData
+                )
+            }
+        }
+    }
+    
+    fun isImageSelected(image: Image): Boolean {
+        val imageId = image.sequentialId?.toString() ?: image.id
+        return _uiState.value.selectedImages.contains(imageId)
+    }
+    
+    fun exitSelectionMode() {
+        _uiState.update { 
+            it.copy(
+                isSelectionMode = false,
+                selectedImages = emptySet(),
+                selectedImageData = emptyMap(),
+                batchActionMessage = null
+            ) 
+        }
+    }
+    
+    fun selectAll(images: List<Image>) {
+        _uiState.update { state ->
+            val newSelected = state.selectedImages + images.map { it.sequentialId?.toString() ?: it.id }
+            val newImageData = state.selectedImageData + images.associateBy { it.sequentialId?.toString() ?: it.id }
+            state.copy(
+                selectedImages = newSelected,
+                selectedImageData = newImageData
+            )
+        }
+    }
+    
+    fun massUpvote() {
+        val selectedImages = _uiState.value.selectedImages.toList()
+        if (selectedImages.isEmpty()) return
+        
+        viewModelScope.launch {
+            _uiState.update { it.copy(isBatchActionInProgress = true, batchActionMessage = "Upvoting...") }
+            
+            var success = 0
+            var failed = 0
+            
+            selectedImages.forEach { imageId ->
+                imageRepository.vote(imageId, "upvote")
+                    .onSuccess { success++ }
+                    .onFailure { failed++ }
+            }
+            
+            _uiState.update { 
+                it.copy(
+                    isBatchActionInProgress = false,
+                    batchActionMessage = "Upvoted $success images" + if (failed > 0) " ($failed failed)" else ""
+                ) 
+            }
+        }
+    }
+    
+    fun massFavorite() {
+        val selectedImages = _uiState.value.selectedImages.toList()
+        if (selectedImages.isEmpty()) return
+        
+        viewModelScope.launch {
+            _uiState.update { it.copy(isBatchActionInProgress = true, batchActionMessage = "Favoriting...") }
+            
+            var success = 0
+            var failed = 0
+            
+            selectedImages.forEach { imageId ->
+                imageRepository.toggleFavorite(imageId)
+                    .onSuccess { success++ }
+                    .onFailure { failed++ }
+            }
+            
+            _uiState.update { 
+                it.copy(
+                    isBatchActionInProgress = false,
+                    batchActionMessage = "Favorited $success images" + if (failed > 0) " ($failed failed)" else ""
+                ) 
+            }
+        }
+    }
+    
+    fun massDownload() {
+        val selectedImageData = _uiState.value.selectedImageData.values.toList()
+        if (selectedImageData.isEmpty()) return
+        
+        viewModelScope.launch {
+            _uiState.update { it.copy(isBatchActionInProgress = true, batchActionMessage = "Downloading...") }
+            
+            var success = 0
+            var failed = 0
+            
+            selectedImageData.forEach { image ->
+                val filename = "serika_${image.sequentialId ?: image.id.takeLast(8)}.${getExtension(image.url)}"
+                downloadRepository.downloadImage(image.url, filename)
+                    .onSuccess { success++ }
+                    .onFailure { failed++ }
+            }
+            
+            _uiState.update { 
+                it.copy(
+                    isBatchActionInProgress = false,
+                    batchActionMessage = "Downloaded $success images to Pictures/Serika.art" + if (failed > 0) " ($failed failed)" else ""
+                ) 
+            }
+        }
+    }
+    
+    private fun getExtension(url: String): String {
+        return when {
+            url.contains(".png", ignoreCase = true) -> "png"
+            url.contains(".gif", ignoreCase = true) -> "gif"
+            url.contains(".webp", ignoreCase = true) -> "webp"
+            else -> "jpg"
+        }
+    }
+    
+    fun clearBatchMessage() {
+        _uiState.update { it.copy(batchActionMessage = null) }
     }
 }

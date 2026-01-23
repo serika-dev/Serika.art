@@ -1,5 +1,6 @@
 package art.serika.app.ui.screens.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -8,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -54,9 +56,67 @@ fun HomeScreen(
     var showFilterSheet by remember { mutableStateOf(false) }
     var showTagSuggestions by remember { mutableStateOf(false) }
     
+    // Show snackbar for batch action messages
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(uiState.batchActionMessage) {
+        uiState.batchActionMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearBatchMessage()
+        }
+    }
+    
+    // Handle back press in selection mode
+    BackHandler(enabled = uiState.isSelectionMode) {
+        viewModel.exitSelectionMode()
+    }
+    
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
+            if (uiState.isSelectionMode) {
+                // Selection mode top bar
+                TopAppBar(
+                    title = {
+                        Text("${uiState.selectedCount} selected")
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { viewModel.exitSelectionMode() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Cancel")
+                        }
+                    },
+                    actions = {
+                        // Mass upvote
+                        IconButton(
+                            onClick = { viewModel.massUpvote() },
+                            enabled = !uiState.isBatchActionInProgress
+                        ) {
+                            Icon(Icons.Default.ThumbUp, contentDescription = "Upvote all")
+                        }
+                        
+                        // Mass favorite
+                        IconButton(
+                            onClick = { viewModel.massFavorite() },
+                            enabled = !uiState.isBatchActionInProgress
+                        ) {
+                            Icon(Icons.Default.Favorite, contentDescription = "Favorite all")
+                        }
+                        
+                        // Mass download
+                        IconButton(
+                            onClick = { viewModel.massDownload() },
+                            enabled = !uiState.isBatchActionInProgress
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = "Download all")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
+                    scrollBehavior = scrollBehavior
+                )
+            } else {
             TopAppBar(
                 title = {
                     Text("Serika.art")
@@ -134,6 +194,7 @@ fun HomeScreen(
                 },
                 scrollBehavior = scrollBehavior
             )
+            }
         },
         bottomBar = {
             NavigationBar {
@@ -257,7 +318,17 @@ fun HomeScreen(
                                 if (image != null) {
                                     ImageCard(
                                         image = image,
-                                        onClick = { onImageClick(image.sequentialId?.toString() ?: image.id) }
+                                        onClick = { onImageClick(image.sequentialId?.toString() ?: image.id) },
+                                        isSelectionMode = uiState.isSelectionMode,
+                                        isSelected = viewModel.isImageSelected(image),
+                                        onLongClick = {
+                                            if (!uiState.isSelectionMode) {
+                                                viewModel.enterSelectionMode(image)
+                                            }
+                                        },
+                                        onSelectionClick = {
+                                            viewModel.toggleImageSelection(image)
+                                        }
                                     )
                                 }
                             }
