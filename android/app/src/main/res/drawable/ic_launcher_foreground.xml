@@ -2,14 +2,21 @@
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
-    android:viewportHeight="108"
-    android:tint="#FFFFFF">
-    <group android:scaleX="0.5"
-        android:scaleY="0.5"
-        android:translateX="27"
-        android:translateY="27">
-        <path
-            android:fillColor="@android:color/white"
-            android:pathData="M21,19V5H3v14H21M21,3c1.1,0 2,0.9 2,2v14c0,1.1 -0.9,2 -2,2H3c-1.1,0 -2,-0.9 -2,-2V5c0,-1.1 0.9,-2 2,-2h18zM6.5,10c0.8,0 1.5,0.7 1.5,1.5S7.3,13 6.5,13 5,12.3 5,11.5 5.7,10 6.5,10M5,15h14l-4.5,-6 -3.5,4.5 -2.5,-3L5,15z"/>
-    </group>
+    android:viewportHeight="108">
+    
+    <!-- Background circle (optional, for visual balance) -->
+    <path
+        android:fillColor="#1a1a2e"
+        android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0"/>
+    
+    <!-- Letter S - White -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,38c0,-4.4 3.6,-8 8,-8h8c4.4,0 8,3.6 8,8v4h-6v-4c0,-1.1 -0.9,-2 -2,-2h-8c-1.1,0 -2,0.9 -2,2v8c0,1.1 0.9,2 2,2h8c4.4,0 8,3.6 8,8v8c0,4.4 -3.6,8 -8,8h-8c-4.4,0 -8,-3.6 -8,-8v-4h6v4c0,1.1 0.9,2 2,2h8c1.1,0 2,-0.9 2,-2v-8c0,-1.1 -0.9,-2 -2,-2h-8c-4.4,0 -8,-3.6 -8,-8v-8z"/>
+    
+    <!-- Letter B - Purple -->
+    <path
+        android:fillColor="#A855F7"
+        android:pathData="M60,30h14c4.4,0 8,3.6 8,8v8c0,2.8 -1.5,5.3 -3.7,6.7c2.2,1.4 3.7,3.9 3.7,6.7v8c0,4.4 -3.6,8 -8,8h-14v-46zM66,36v14h8c1.1,0 2,-0.9 2,-2v-10c0,-1.1 -0.9,-2 -2,-2h-8zM66,56v14h8c1.1,0 2,-0.9 2,-2v-10c0,-1.1 -0.9,-2 -2,-2h-8z"/>
+    
 </vector>

@@ -1,5 +1,6 @@
 package art.serika.app.data.repository
 
+import android.util.Log
 import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import art.serika.app.data.model.Image
@@ -34,14 +35,24 @@ class ImagesPagingSource(
                 username = username
             )
             
+            // Filter out any images with invalid/empty URLs
+            val validImages = response.images.filter { 
+                it.url.isNotBlank() || !it.thumbnailUrl.isNullOrBlank()
+            }
+            
             LoadResult.Page(
-                data = response.images,
+                data = validImages,
                 prevKey = if (page == 1) null else page - 1,
                 nextKey = if (response.images.isEmpty() || page >= response.pagination.pages) null else page + 1
             )
         } catch (e: IOException) {
+            Log.e("ImagesPagingSource", "Network error loading images", e)
             LoadResult.Error(e)
         } catch (e: HttpException) {
+            Log.e("ImagesPagingSource", "HTTP error loading images: ${e.code()}", e)
+            LoadResult.Error(e)
+        } catch (e: Exception) {
+            Log.e("ImagesPagingSource", "Unexpected error loading images", e)
             LoadResult.Error(e)
         }
     }

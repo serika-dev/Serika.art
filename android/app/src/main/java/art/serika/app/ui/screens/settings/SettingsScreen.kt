@@ -27,6 +27,7 @@ import art.serika.app.ui.theme.*
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
+    onLoginClick: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -110,7 +111,7 @@ fun SettingsScreen(
                                 contentDescription = null
                             )
                         },
-                        modifier = Modifier.clickable { /* Open login */ }
+                        modifier = Modifier.clickable { onLoginClick() }
                     )
                 }
             }
@@ -250,7 +251,7 @@ fun SettingsScreen(
             SettingsSection(title = "About") {
                 ListItem(
                     headlineContent = { Text("Version") },
-                    supportingContent = { Text("1.0.0") },
+                    supportingContent = { Text("0.0.1") },
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Default.Info,

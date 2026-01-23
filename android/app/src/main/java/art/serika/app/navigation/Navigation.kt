@@ -15,9 +15,11 @@ import art.serika.app.ui.screens.profile.ProfileScreen
 import art.serika.app.ui.screens.settings.SettingsScreen
 import art.serika.app.ui.screens.favorites.FavoritesScreen
 import art.serika.app.ui.screens.tags.TagsScreen
+import art.serika.app.ui.screens.login.LoginScreen
 
 sealed class Screen(val route: String) {
     data object Home : Screen("home")
+    data object Login : Screen("login")
     data object Search : Screen("search?query={query}") {
         fun createRoute(query: String = "") = "search?query=$query"
     }
@@ -146,7 +148,17 @@ fun SerikaNavHost(
         
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                onLoginClick = {
+                    navController.navigate(Screen.Login.route)
+                }
+            )
+        }
+        
+        composable(Screen.Login.route) {
+            LoginScreen(
+                onBackClick = { navController.popBackStack() },
+                onLoginSuccess = { navController.popBackStack() }
             )
         }
         
