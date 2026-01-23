@@ -50,9 +50,18 @@ data class AuthResponse(
 @Serializable
 data class LoginResponse(
     val success: Boolean,
-    val user: User? = null,
+    val user: LoginUser? = null,
     val token: String? = null,
     val error: String? = null
+)
+
+@Serializable
+data class LoginUser(
+    val id: String,
+    val username: String,
+    val email: String? = null,
+    val avatarUrl: String? = null,
+    val rank: String? = null
 )
 
 @Serializable
