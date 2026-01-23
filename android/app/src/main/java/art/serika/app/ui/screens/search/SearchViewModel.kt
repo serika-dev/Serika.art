@@ -18,8 +18,23 @@ import javax.inject.Inject
 data class SearchUiState(
     val query: String = "",
     val isSearching: Boolean = false,
-    val tagSuggestions: List<Tag> = emptyList()
-)
+    val tagSuggestions: List<Tag> = emptyList(),
+    val sort: String = "relevance",
+    val selectedRatings: List<String> = listOf("safe"),
+    val hideAI: Boolean = false,
+    val aiOnly: Boolean = false
+) {
+    val activeFilterCount: Int
+        get() {
+            var count = 0
+            if (hideAI) count++
+            if (aiOnly) count++
+            // Count non-default ratings
+            if (selectedRatings.contains("questionable")) count++
+            if (selectedRatings.contains("explicit")) count++
+            return count
+        }
+}
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
@@ -30,18 +45,29 @@ class SearchViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
     
-    private val searchQuery = MutableStateFlow("")
+    private val searchTrigger = MutableStateFlow(0)
     
     @OptIn(ExperimentalCoroutinesApi::class)
-    val searchResults: Flow<PagingData<Image>> = searchQuery
-        .filter { it.isNotBlank() }
-        .flatMapLatest { query ->
-            imageRepository.getImagesPaged(search = query)
+    val searchResults: Flow<PagingData<Image>> = combine(
+        _uiState,
+        searchTrigger
+    ) { state, _ -> state }
+        .filter { it.query.isNotBlank() }
+        .flatMapLatest { state ->
+            imageRepository.getImagesPaged(
+                search = state.query,
+                sort = state.sort,
+                ratings = state.selectedRatings.takeIf { it.isNotEmpty() },
+                hideAI = state.hideAI.takeIf { it },
+                aiOnly = state.aiOnly.takeIf { it }
+            )
         }
         .cachedIn(viewModelScope)
     
     @OptIn(FlowPreview::class)
-    private val tagSuggestionsFlow = searchQuery
+    private val tagSuggestionsFlow = _uiState
+        .map { it.query }
+        .distinctUntilChanged()
         .debounce(300)
         .filter { it.length >= 2 }
         .mapLatest { query ->
@@ -59,11 +85,58 @@ class SearchViewModel @Inject constructor(
     
     fun setQuery(query: String) {
         _uiState.update { it.copy(query = query) }
-        searchQuery.value = query
     }
     
     fun search() {
-        searchQuery.value = _uiState.value.query
+        searchTrigger.value++
+    }
+    
+    fun setSort(sort: String) {
+        _uiState.update { it.copy(sort = sort) }
+        searchTrigger.value++
+    }
+    
+    fun toggleRating(rating: String, enabled: Boolean) {
+        _uiState.update { state ->
+            val newRatings = if (enabled) {
+                state.selectedRatings + rating
+            } else {
+                state.selectedRatings - rating
+            }
+            state.copy(selectedRatings = newRatings.ifEmpty { listOf("safe") })
+        }
+        searchTrigger.value++
+    }
+    
+    fun toggleHideAI() {
+        _uiState.update { state ->
+            state.copy(
+                hideAI = !state.hideAI,
+                aiOnly = if (!state.hideAI) false else state.aiOnly
+            )
+        }
+        searchTrigger.value++
+    }
+    
+    fun toggleAIOnly() {
+        _uiState.update { state ->
+            state.copy(
+                aiOnly = !state.aiOnly,
+                hideAI = if (!state.aiOnly) false else state.hideAI
+            )
+        }
+        searchTrigger.value++
+    }
+    
+    fun clearFilters() {
+        _uiState.update { 
+            it.copy(
+                selectedRatings = listOf("safe"),
+                hideAI = false,
+                aiOnly = false
+            )
+        }
+        searchTrigger.value++
     }
     
     fun clearSuggestions() {
