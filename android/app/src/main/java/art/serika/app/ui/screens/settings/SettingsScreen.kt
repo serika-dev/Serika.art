@@ -251,7 +251,7 @@ fun SettingsScreen(
             SettingsSection(title = "About") {
                 ListItem(
                     headlineContent = { Text("Version") },
-                    supportingContent = { Text("0.0.1") },
+                    supportingContent = { Text("0.0.2") },
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Default.Info,
