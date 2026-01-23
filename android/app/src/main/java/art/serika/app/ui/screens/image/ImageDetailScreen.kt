@@ -135,9 +135,8 @@ fun ImageDetailScreen(
                 val image = uiState.image!!
                 
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues)
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = paddingValues
                 ) {
                     // Image
                     item {
