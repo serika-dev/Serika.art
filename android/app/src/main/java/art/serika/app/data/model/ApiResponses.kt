@@ -21,7 +21,6 @@ data class Pagination(
 data class ImageDetailResponse(
     val success: Boolean,
     val image: Image? = null,
-    val tags: List<Tag>? = null,
     val error: String? = null
 )
 

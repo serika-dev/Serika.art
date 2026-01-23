@@ -65,7 +65,7 @@ class ImageDetailViewModel @Inject constructor(
                             it.copy(
                                 isLoading = false,
                                 image = response.image,
-                                tags = response.tags ?: emptyList(),
+                                tags = response.image.tags,
                                 error = null
                             )
                         }
