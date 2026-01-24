@@ -18,6 +18,15 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+// Query-related state that triggers data refetch
+data class HomeQueryState(
+    val sort: String = "newest",
+    val selectedRatings: List<String> = listOf("safe"),
+    val hideAI: Boolean = false,
+    val aiOnly: Boolean = false,
+    val selectedTags: List<Tag> = emptyList()
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 data class HomeUiState(
     val sort: String = "newest",
@@ -51,6 +60,16 @@ data class HomeUiState(
     
     val selectedCount: Int
         get() = selectedImages.size
+    
+    // Extract query-relevant state for comparison
+    val queryState: HomeQueryState
+        get() = HomeQueryState(
+            sort = sort,
+            selectedRatings = selectedRatings,
+            hideAI = hideAI,
+            aiOnly = aiOnly,
+            selectedTags = selectedTags
+        )
 }
 
 @HiltViewModel
@@ -66,18 +85,20 @@ class HomeViewModel @Inject constructor(
     
     private val refreshTrigger = MutableStateFlow(0)
     
+    // Only listen to query-relevant state changes to avoid unnecessary refreshes
+    // when selection state changes
     @OptIn(ExperimentalCoroutinesApi::class)
     val images: Flow<PagingData<Image>> = combine(
-        _uiState,
+        _uiState.map { it.queryState }.distinctUntilChanged(),
         refreshTrigger
-    ) { state, _ -> state }
-        .flatMapLatest { state ->
+    ) { queryState, _ -> queryState }
+        .flatMapLatest { queryState ->
             imageRepository.getImagesPaged(
-                tags = state.selectedTags.map { it.name }.takeIf { it.isNotEmpty() },
-                ratings = state.selectedRatings.takeIf { it.isNotEmpty() },
-                sort = state.sort,
-                hideAI = state.hideAI.takeIf { it },
-                aiOnly = state.aiOnly.takeIf { it }
+                tags = queryState.selectedTags.map { it.name }.takeIf { it.isNotEmpty() },
+                ratings = queryState.selectedRatings.takeIf { it.isNotEmpty() },
+                sort = queryState.sort,
+                hideAI = queryState.hideAI.takeIf { it },
+                aiOnly = queryState.aiOnly.takeIf { it }
             )
         }
         .cachedIn(viewModelScope)
