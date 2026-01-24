@@ -439,6 +439,7 @@ fun TagPill(
 /**
  * Filter drawer content with tag search and suggestions
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FilterDrawerContent(
     uiState: HomeUiState,
@@ -486,52 +487,50 @@ private fun FilterDrawerContent(
         )
         Spacer(modifier = Modifier.height(8.dp))
         
-        Box {
-            OutlinedTextField(
-                value = uiState.tagQuery,
-                onValueChange = onTagQueryChange,
-                placeholder = { Text("Type to search tags...") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = null)
-                },
-                trailingIcon = {
-                    if (uiState.tagQuery.isNotEmpty()) {
-                        IconButton(onClick = { onTagQueryChange("") }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear")
-                        }
+        OutlinedTextField(
+            value = uiState.tagQuery,
+            onValueChange = onTagQueryChange,
+            placeholder = { Text("Type to search tags...") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            leadingIcon = {
+                Icon(Icons.Default.Search, contentDescription = null)
+            },
+            trailingIcon = {
+                if (uiState.tagQuery.isNotEmpty()) {
+                    IconButton(onClick = { onTagQueryChange("") }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Clear")
                     }
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(
-                    onSearch = { focusManager.clearFocus() }
-                ),
+                }
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(
+                onSearch = { focusManager.clearFocus() }
+            ),
+            shape = RoundedCornerShape(12.dp)
+        )
+        
+        // Tag suggestions dropdown
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showTagSuggestions && uiState.tagSuggestions.isNotEmpty(),
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 60.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 shape = RoundedCornerShape(12.dp)
-            )
-            
-            // Tag suggestions dropdown
-            AnimatedVisibility(
-                visible = showTagSuggestions && uiState.tagSuggestions.isNotEmpty(),
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
             ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 60.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    shape = RoundedCornerShape(12.dp)
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 250.dp)
                 ) {
-                    LazyColumn(
-                        modifier = Modifier.heightIn(max = 250.dp)
-                    ) {
-                        items(uiState.tagSuggestions) { tag ->
-                            TagSuggestionItem(
-                                tag = tag,
-                                onClick = { onTagAdd(tag) }
-                            )
-                        }
+                    items(uiState.tagSuggestions) { tag ->
+                        TagSuggestionItem(
+                            tag = tag,
+                            onClick = { onTagAdd(tag) }
+                        )
                     }
                 }
             }
