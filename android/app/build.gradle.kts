@@ -15,8 +15,8 @@ android {
         applicationId = "art.serika.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 20
-        versionName = "0.1.4"
+        versionCode = 21
+        versionName = "0.1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
