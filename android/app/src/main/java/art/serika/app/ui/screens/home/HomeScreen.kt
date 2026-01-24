@@ -39,7 +39,7 @@ import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(
     onImageClick: (String) -> Unit,
@@ -547,21 +547,16 @@ private fun FilterDrawerContent(
             )
             Spacer(modifier = Modifier.height(8.dp))
             
-            // Wrap tags in a flow layout style
-            Column(
+            // Use FlowRow for dynamic tag wrapping
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                uiState.selectedTags.chunked(2).forEach { tagRow ->
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        tagRow.forEach { tag ->
-                            TagPill(
-                                tag = tag,
-                                onRemove = { onTagRemove(tag.name) }
-                            )
-                        }
-                    }
+                uiState.selectedTags.forEach { tag ->
+                    TagPill(
+                        tag = tag,
+                        onRemove = { onTagRemove(tag.name) }
+                    )
                 }
             }
         }
@@ -601,7 +596,7 @@ private fun FilterDrawerContent(
                 onClick = { 
                     onRatingToggle("questionable", !uiState.selectedRatings.contains("questionable"))
                 },
-                label = { Text("Q") },
+                label = { Text("Quest.") },
                 leadingIcon = if (uiState.selectedRatings.contains("questionable")) {
                     { Icon(Icons.Default.Check, contentDescription = null, Modifier.size(18.dp)) }
                 } else null,
@@ -615,7 +610,7 @@ private fun FilterDrawerContent(
                 onClick = { 
                     onRatingToggle("explicit", !uiState.selectedRatings.contains("explicit"))
                 },
-                label = { Text("E") },
+                label = { Text("Expl.") },
                 leadingIcon = if (uiState.selectedRatings.contains("explicit")) {
                     { Icon(Icons.Default.Check, contentDescription = null, Modifier.size(18.dp)) }
                 } else null,
