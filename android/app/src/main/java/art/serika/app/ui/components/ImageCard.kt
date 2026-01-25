@@ -188,7 +188,7 @@ fun ImageCard(
                     )
             )
             
-            // Badges row at top with animation
+            // Badges row at top
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -199,27 +199,18 @@ fun ImageCard(
                 // Rating badge
                 RatingBadge(rating = image.rating)
                 
-                // AI badge with animation
-                AnimatedVisibility(
-                    visible = image.isAIGenerated,
-                    enter = fadeIn() + scaleIn(),
-                    exit = fadeOut() + scaleOut()
-                ) {
+                // AI badge
+                if (image.isAIGenerated) {
                     AIBadge()
                 }
             }
             
-            // Selection indicator at top right with animation
-            AnimatedVisibility(
-                visible = isSelectionMode,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp),
-                enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut()
-            ) {
+            // Selection indicator at top right
+            if (isSelectionMode) {
                 Box(
                     modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
                         .size(28.dp)
                         .clip(CircleShape)
                         .background(
@@ -228,11 +219,7 @@ fun ImageCard(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    AnimatedVisibility(
-                        visible = isSelected,
-                        enter = fadeIn() + scaleIn(),
-                        exit = fadeOut() + scaleOut()
-                    ) {
+                    if (isSelected) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = "Selected",

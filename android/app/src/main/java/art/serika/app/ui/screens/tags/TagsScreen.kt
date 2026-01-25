@@ -1,6 +1,7 @@
 package art.serika.app.ui.screens.tags
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,7 +55,7 @@ private val GlassWhite = Color.White.copy(alpha = 0.08f)
 private val GlassBorder = Color.White.copy(alpha = 0.12f)
 private val GlassHighlight = Color.White.copy(alpha = 0.15f)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TagsScreen(
     filterType: String?,
