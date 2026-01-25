@@ -1,5 +1,7 @@
 package art.serika.app.ui.components
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,8 +18,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,15 +43,55 @@ fun ImageCard(
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
     onLongClick: (() -> Unit)? = null,
-    onSelectionClick: (() -> Unit)? = null
+    onSelectionClick: (() -> Unit)? = null,
+    animationDelay: Int = 0
 ) {
+    // Appear animation
+    var isVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(animationDelay.toLong())
+        isVisible = true
+    }
+    
+    val animatedScale by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0.8f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "scale"
+    )
+    
+    val animatedAlpha by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0f,
+        animationSpec = tween(300),
+        label = "alpha"
+    )
+    
+    // Selection scale animation
+    val selectionScale by animateFloatAsState(
+        targetValue = if (isSelected) 0.95f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "selection_scale"
+    )
+    
     Card(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f)
+            .graphicsLayer {
+                scaleX = animatedScale * selectionScale
+                scaleY = animatedScale * selectionScale
+                alpha = animatedAlpha
+            }
             .then(
                 if (isSelected) {
-                    Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                    Modifier
+                        .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                        .shadow(8.dp, RoundedCornerShape(12.dp), ambientColor = MaterialTheme.colorScheme.primary)
                 } else {
                     Modifier
                 }
@@ -62,7 +107,7 @@ fun ImageCard(
                 onLongClick = onLongClick
             ),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             val imageUrl = image.thumbnailUrl ?: image.url
@@ -70,7 +115,7 @@ fun ImageCard(
                 SubcomposeAsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(imageUrl)
-                        .crossfade(true)
+                        .crossfade(400)
                         .memoryCacheKey("${image.id}_thumb")
                         .diskCacheKey("${image.id}_thumb")
                         .diskCachePolicy(CachePolicy.ENABLED)
@@ -80,17 +125,13 @@ fun ImageCard(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                     loading = {
+                        // Shimmer loading effect
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                .background(shimmerBrush()),
                             contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp
-                            )
-                        }
+                        ) {}
                     },
                     error = {
                         Box(
@@ -147,7 +188,7 @@ fun ImageCard(
                     )
             )
             
-            // Badges row at top
+            // Badges row at top with animation
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -158,18 +199,27 @@ fun ImageCard(
                 // Rating badge
                 RatingBadge(rating = image.rating)
                 
-                // AI badge
-                if (image.isAIGenerated) {
+                // AI badge with animation
+                AnimatedVisibility(
+                    visible = image.isAIGenerated,
+                    enter = fadeIn() + scaleIn(),
+                    exit = fadeOut() + scaleOut()
+                ) {
                     AIBadge()
                 }
             }
             
-            // Selection indicator at top right
-            if (isSelectionMode) {
+            // Selection indicator at top right with animation
+            AnimatedVisibility(
+                visible = isSelectionMode,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
                         .size(28.dp)
                         .clip(CircleShape)
                         .background(
@@ -178,7 +228,11 @@ fun ImageCard(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isSelected) {
+                    AnimatedVisibility(
+                        visible = isSelected,
+                        enter = fadeIn() + scaleIn(),
+                        exit = fadeOut() + scaleOut()
+                    ) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = "Selected",

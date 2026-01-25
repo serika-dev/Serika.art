@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import art.serika.app.data.model.Artist
 import art.serika.app.data.model.Tag
+import art.serika.app.data.repository.ArtistRepository
 import art.serika.app.data.repository.TagRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -19,7 +21,8 @@ data class TagsUiState(
 
 @HiltViewModel
 class TagsViewModel @Inject constructor(
-    private val tagRepository: TagRepository
+    private val tagRepository: TagRepository,
+    private val artistRepository: ArtistRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(TagsUiState())
@@ -34,6 +37,10 @@ class TagsViewModel @Inject constructor(
                 sort = state.sortBy
             )
         }
+        .cachedIn(viewModelScope)
+    
+    val artists: Flow<PagingData<Artist>> = artistRepository
+        .getArtistsPaged()
         .cachedIn(viewModelScope)
     
     fun setFilterType(type: String?) {

@@ -300,18 +300,29 @@ fun ImageDetailScreen(
                             }
                             
                             // Uploader
-                            if (image.username != null) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(vertical = 4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Person,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                val displayUsername = image.username ?: "Anonymous"
+                                val isAnonymous = image.username.isNullOrBlank() || 
+                                    image.username.equals("Anonymous", ignoreCase = true) ||
+                                    image.username.equals("anonymous", ignoreCase = true)
+                                
+                                if (isAnonymous) {
+                                    Text(
+                                        text = "Anonymous",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                } else {
                                     TextButton(onClick = { onUserClick(image.username!!) }) {
                                         Text(image.username!!)
                                     }

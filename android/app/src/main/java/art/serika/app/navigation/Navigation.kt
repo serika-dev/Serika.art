@@ -1,5 +1,7 @@
 package art.serika.app.navigation
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -41,13 +43,58 @@ sealed class Screen(val route: String) {
     }
 }
 
+// Smooth transition animations
+private val enterTransition: AnimatedContentTransitionScope<*>.() -> EnterTransition = {
+    fadeIn(
+        animationSpec = tween(300, easing = FastOutSlowInEasing)
+    ) + slideIntoContainer(
+        towards = AnimatedContentTransitionScope.SlideDirection.Start,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        initialOffset = { it / 4 }
+    )
+}
+
+private val exitTransition: AnimatedContentTransitionScope<*>.() -> ExitTransition = {
+    fadeOut(
+        animationSpec = tween(200, easing = FastOutSlowInEasing)
+    ) + slideOutOfContainer(
+        towards = AnimatedContentTransitionScope.SlideDirection.Start,
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
+        targetOffset = { it / 4 }
+    )
+}
+
+private val popEnterTransition: AnimatedContentTransitionScope<*>.() -> EnterTransition = {
+    fadeIn(
+        animationSpec = tween(300, easing = FastOutSlowInEasing)
+    ) + slideIntoContainer(
+        towards = AnimatedContentTransitionScope.SlideDirection.End,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        initialOffset = { it / 4 }
+    )
+}
+
+private val popExitTransition: AnimatedContentTransitionScope<*>.() -> ExitTransition = {
+    fadeOut(
+        animationSpec = tween(200, easing = FastOutSlowInEasing)
+    ) + slideOutOfContainer(
+        towards = AnimatedContentTransitionScope.SlideDirection.End,
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
+        targetOffset = { it / 4 }
+    )
+}
+
 @Composable
 fun SerikaNavHost(
     navController: NavHostController = rememberNavController()
 ) {
     NavHost(
         navController = navController,
-        startDestination = Screen.Home.route
+        startDestination = Screen.Home.route,
+        enterTransition = { enterTransition() },
+        exitTransition = { exitTransition() },
+        popEnterTransition = { popEnterTransition() },
+        popExitTransition = { popExitTransition() }
     ) {
         composable(Screen.Home.route) {
             HomeScreen(
@@ -204,6 +251,9 @@ fun SerikaNavHost(
                 onBackClick = { navController.popBackStack() },
                 onTagClick = { tagName ->
                     navController.navigate(Screen.Search.createRoute(tagName))
+                },
+                onArtistClick = { tagName ->
+                    navController.navigate(Screen.Artist.createRoute(tagName))
                 }
             )
         }
