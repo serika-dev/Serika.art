@@ -59,7 +59,13 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      image: { ...image, tags: populatedTags, views: image.views + 1 },
+      image: { 
+        ...image, 
+        dbid: image._id.toString(),
+        post_id: image.sequentialId,
+        tags: populatedTags, 
+        views: image.views + 1 
+      },
     });
   } catch (error: any) {
     console.error('Error fetching image:', error);

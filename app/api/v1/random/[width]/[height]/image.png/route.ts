@@ -228,6 +228,8 @@ export async function GET(
         'Pragma': 'no-cache',
         'Expires': '0',
         'X-Image-Id': image._id.toString(),
+        'X-DBID': image._id.toString(),
+        'X-Post-Id': String(image.sequentialId),
         'X-Original-Width': String(image.width),
         'X-Original-Height': String(image.height),
         'X-Rating': image.rating,

@@ -225,6 +225,8 @@ export async function GET(request: NextRequest) {
     // Map images with cached tag data
     const populatedImages = images.map((img: any) => ({
       ...img,
+      dbid: img._id.toString(),
+      post_id: img.sequentialId,
       tags: (img.tags || []).map((tagId: any) => {
         const idStr = tagId.toString();
         const tag = tagIdCache.get(idStr);

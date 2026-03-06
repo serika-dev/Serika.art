@@ -44,6 +44,8 @@ export async function GET(
     // Format response
     const formattedImage = {
       id: image._id.toString(),
+      dbid: image._id.toString(),
+      post_id: image.sequentialId,
       url: image.url,
       thumbnail_url: image.thumbnailUrl,
       original_filename: image.originalFilename,

@@ -1,4 +1,4 @@
-import { getCollection } from '@/lib/db';
+import { getCollection, getNextSequentialId } from '@/lib/db';
 import { ObjectId } from 'mongodb';
 import {
   fetchDanbooruPost,
@@ -103,17 +103,7 @@ let activeJobCount = 0;
 const tagCache = new Map<string, ObjectId>();
 
 // Atomic counter for sequential IDs - prevents race conditions
-async function getNextSequentialId(): Promise<number> {
-  const countersCollection = await getCollection('counters');
-  
-  const result = await countersCollection.findOneAndUpdate(
-    { name: 'imageSequentialId' },
-    { $inc: { value: 1 } },
-    { upsert: true, returnDocument: 'after' }
-  );
-  
-  return result?.value || 1;
-}
+
 
 // Initialize counter if needed (run once on startup)
 async function initializeCounter(): Promise<void> {

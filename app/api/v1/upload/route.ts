@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { getCollection, getNextSequentialId } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
 import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
@@ -149,7 +149,11 @@ export async function POST(request: NextRequest) {
     // Get user info
     const user = await usersCollection.findOne({ _id: validation.apiKey!.userId });
 
+    // Get next sequential ID
+    const nextSequentialId = await getNextSequentialId();
+    
     const imageDoc = {
+      sequentialId: nextSequentialId,
       userId: validation.apiKey!.userId,
       username: user?.username || validation.apiKey!.username,
       url: imageUrl,
@@ -185,6 +189,8 @@ export async function POST(request: NextRequest) {
 
     return apiResponse({
       id: result.insertedId.toString(),
+      dbid: result.insertedId.toString(),
+      post_id: nextSequentialId,
       url: imageUrl,
       thumbnail_url: thumbnailUrl,
       width: metadata.width || 0,

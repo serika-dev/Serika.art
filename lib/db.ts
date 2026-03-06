@@ -110,3 +110,17 @@ export async function getCachedCount(collectionName: string, query: any = {}): P
   countCache.set(cacheKey, { count, timestamp: Date.now() });
   return count;
 }
+
+// Atomic counter for sequential IDs - prevents race conditions
+export async function getNextSequentialId(name: string = 'imageSequentialId'): Promise<number> {
+  const { db } = await connectToDatabase();
+  const countersCollection = db.collection('counters');
+  
+  const result = await countersCollection.findOneAndUpdate(
+    { name },
+    { $inc: { value: 1 } },
+    { upsert: true, returnDocument: 'after' }
+  );
+  
+  return result?.value || 1;
+}

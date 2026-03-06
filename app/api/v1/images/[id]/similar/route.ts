@@ -72,6 +72,8 @@ export async function GET(
 
     const formattedImages = similarImages.map((img) => ({
       id: img._id.toString(),
+      dbid: img._id.toString(),
+      post_id: img.sequentialId,
       sequential_id: img.sequentialId,
       url: img.url,
       thumbnail_url: img.thumbnailUrl,

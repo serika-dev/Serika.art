@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { getCollection, getNextSequentialId } from '@/lib/db';
 import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
 import { requireAuth } from '@/lib/auth';
@@ -153,8 +153,7 @@ export async function POST(request: NextRequest) {
     const collection = await getCollection('images');
     
     // Get the next sequential ID
-    const lastImage = await collection.findOne({}, { sort: { sequentialId: -1 } });
-    const nextSequentialId = lastImage?.sequentialId ? lastImage.sequentialId + 1 : 1;
+    const nextSequentialId = await getNextSequentialId();
     
     // Create image document
     const imageDoc = {
@@ -193,7 +192,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      image: { ...imageDoc, _id: result.insertedId },
+      image: { 
+        ...imageDoc, 
+        _id: result.insertedId,
+        dbid: result.insertedId.toString(),
+        post_id: nextSequentialId 
+      },
     });
   } catch (error: any) {
     console.error('Error uploading image:', error);

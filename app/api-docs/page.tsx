@@ -254,6 +254,8 @@ export default function ApiDocsPage() {
   "data": [
     {
       "id": "507f1f77bcf86cd799439011",
+      "dbid": "507f1f77bcf86cd799439011",
+      "post_id": 1234,
       "url": "https://cdn.serika.art/uploads/image.png",
       "thumbnail_url": "https://cdn.serika.art/thumbnails/thumb-image.jpg",
       "width": 1920,
@@ -356,6 +358,8 @@ export default function ApiDocsPage() {
     "similar": [
       {
         "id": "507f1f77bcf86cd799439012",
+        "dbid": "507f1f77bcf86cd799439012",
+        "post_id": 42,
         "sequential_id": 42,
         "url": "https://cdn.serika.art/...",
         "thumbnail_url": "https://cdn.serika.art/...",
@@ -655,7 +659,15 @@ export default function ApiDocsPage() {
                   <tbody className="text-gray-300">
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>X-Image-Id</code></td>
-                      <td>Original image ID</td>
+                      <td>Original image ID (legacy)</td>
+                    </tr>
+                    <tr className="border-b border-white/5">
+                      <td className="py-2"><code>X-DBID</code></td>
+                      <td>Original image Database ID</td>
+                    </tr>
+                    <tr className="border-b border-white/5">
+                      <td className="py-2"><code>X-Post-Id</code></td>
+                      <td>Original image Sequential ID</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>X-Original-Width</code></td>

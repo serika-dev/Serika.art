@@ -10,7 +10,7 @@ import {
   isAIPost,
   DanbooruPost,
 } from '@/lib/danbooru';
-import { getCollection } from '@/lib/db';
+import { getCollection, getNextSequentialId } from '@/lib/db';
 import { uploadToB2 } from '@/lib/b2';
 import sharp from 'sharp';
 import { ObjectId } from 'mongodb';
@@ -138,8 +138,7 @@ async function importDanbooruPost(post: DanbooruPost): Promise<ImportResult> {
     }
 
     // Get the next sequential ID
-    const lastImage = await imagesCollection.findOne({}, { sort: { sequentialId: -1 } });
-    const nextSequentialId = lastImage?.sequentialId ? lastImage.sequentialId + 1 : 1;
+    const nextSequentialId = await getNextSequentialId();
 
     // Check if this is an AI-generated post
     const isAIGenerated = isAIPost(post);

@@ -62,6 +62,8 @@ export async function GET(request: NextRequest) {
 
       results.images = images.map((img) => ({
         id: img._id.toString(),
+        dbid: img._id.toString(),
+        post_id: img.sequentialId,
         url: img.url,
         thumbnail_url: img.thumbnailUrl,
         width: img.width,

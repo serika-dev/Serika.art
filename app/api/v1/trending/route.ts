@@ -94,6 +94,8 @@ export async function GET(request: NextRequest) {
     // Format images
     const formattedImages = trendingImages.map((img) => ({
       id: img._id.toString(),
+      dbid: img._id.toString(),
+      post_id: img.sequentialId,
       sequential_id: img.sequentialId,
       url: img.url,
       thumbnail_url: img.thumbnailUrl,
