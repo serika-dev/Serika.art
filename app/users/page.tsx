@@ -197,7 +197,7 @@ function UsersPageContent() {
           {/* Users Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
             {users.map((user) => (
-              <Link key={user._id} href={`/user/${encodeURIComponent(user.username)}`}>
+              <Link key={user._id} href={`/user/${encodeURIComponent(user.username.trim())}`}>
                 <Card className="overflow-hidden hover:border-primary/50 transition-all group">
                   <CardContent className="p-6">
                     <div className="flex flex-col items-center gap-4">

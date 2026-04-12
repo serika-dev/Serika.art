@@ -36,9 +36,12 @@ export default function ImageCard({ image }: ImageCardProps) {
               if (t && typeof t === 'object' && 'name' in t) return (t as any).name;
               return 'image';
             }).join(', ')}
+            title={image.tags.map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
             width={400}
             height={400}
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 25vw"
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+            loading="lazy"
           />
           
           {/* Overlays */}

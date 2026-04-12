@@ -81,10 +81,18 @@ export const metadata: Metadata = {
     // bing: "your-bing-verification-code",
   },
   category: "art",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Serika.art",
+  },
   other: {
     "theme-color": "#09090b",
     "color-scheme": "dark",
     "msapplication-TileColor": "#09090b",
+    "apple-mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-status-bar-style": "black-translucent",
   },
 };
 
@@ -94,11 +102,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#09090b" />
+        <script async type="application/javascript" src="https://a.magsrv.com/ad-provider.js"></script>
       </head>
       <body className={cn("min-h-screen bg-background font-sans antialiased flex flex-col", inter.className)}>
         <ChristmasSnow />

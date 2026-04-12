@@ -7,7 +7,7 @@ const ACCOUNTS_INTERNAL_KEY = process.env.ACCOUNTS_INTERNAL_KEY!;
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const username = searchParams.get('username');
+    const username = searchParams.get('username')?.trim();
     
     if (!username) {
       return NextResponse.json(
@@ -29,14 +29,22 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Try local DB first - use collation for case-insensitive search (faster than regex)
+    // Try local DB first - be lenient with trailing whitespace
     const { getCollection } = await import('@/lib/db');
     const usersCollection = await getCollection('users');
     
-    const localUser = await usersCollection.findOne(
+    // We try exact match first, then with regex to be lenient with trailing spaces
+    let localUser = await usersCollection.findOne(
       { username: username },
       { collation: { locale: 'en', strength: 2 } }
     );
+    
+    if (!localUser) {
+      // If not found, try a more lenient regex match for cases with trailing spaces/hidden chars
+      localUser = await usersCollection.findOne(
+        { username: { $regex: `^${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, $options: 'i' } }
+      );
+    }
     
     if (localUser) {
       // Try to get additional data from accounts API using user ID

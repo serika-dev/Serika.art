@@ -53,12 +53,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (response.ok) {
       const data = await response.json();
       if (data.images && Array.isArray(data.images)) {
-        imageRoutes = data.images.map((image: any) => ({
-          url: `${baseUrl}/image/${image.sequentialId || image._id}`,
-          lastModified: new Date(image.updatedAt || image.createdAt),
-          changeFrequency: "weekly" as const,
-          priority: 0.7,
-        }));
+        imageRoutes = data.images.map((image: any) => {
+          const id = image.sequentialId || (image._id ? image._id.toString() : null);
+          if (!id) return null;
+          
+          return {
+            url: `${baseUrl}/image/${id}`,
+            lastModified: new Date(image.updatedAt || image.createdAt || new Date()),
+            changeFrequency: "weekly" as const,
+            priority: 0.7,
+          };
+        }).filter(Boolean);
       }
     }
   } catch (error) {
