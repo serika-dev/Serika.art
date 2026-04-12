@@ -12,8 +12,6 @@ export default function robots(): MetadataRoute.Robots {
           '/settings/',
           '/api-keys/',
           '/login/',
-          '/upload/',
-          '/favorites/',
         ],
       },
       {
@@ -23,7 +21,7 @@ export default function robots(): MetadataRoute.Robots {
       },
       {
         userAgent: 'Googlebot-Image',
-        allow: ['/image/', '/posts'],
+        allow: '/',
       },
     ],
     sitemap: 'https://serika.art/sitemap.xml',

@@ -72,8 +72,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const charStr = characterTags.length > 0 ? ` featuring ${characterTags.join(', ')}` : '';
   const seriesStr = copyrightTags.length > 0 ? ` from ${copyrightTags.join(', ')}` : '';
   
-  const title = `${artistStr ? artistTags[0] + ' - ' : ''}${characterTags[0] || 'Artwork'} #${image.sequentialId}${seriesStr} | Serika.art`;
-  const description = `High-quality artwork${artistStr}${charStr}${seriesStr}. ${image.width}x${image.height}, ${image.rating} rated. Tags: ${tags}. Discover 1.5M+ artworks on Serika.art.`;
+  const title = `${artistStr ? artistTags[0] + ' - ' : ''}${characterTags[0] || 'Artwork'} #${image.sequentialId}${seriesStr} | Serika Booru`;
+  const description = `High-quality artwork${artistStr}${charStr}${seriesStr}. ${image.width}x${image.height}, ${image.rating} rated. Tags: ${tags}. Discover 1.5M+ artworks on Serika Booru (Serika Art).`;
   
   // Build expanded keywords: original tags + variants
   const keywords: string[] = [
@@ -81,7 +81,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     ...artistTags.map((a: string) => `${a} art`),
     ...characterTags.map((c: string) => `${c} fan art`),
     ...copyrightTags.map((c: string) => `${c} fan art`),
-    'anime art', 'illustration', 'digital art', 'fan art', 'serika.art',
+    'serika booru', 'serika art', 'anime art', 'illustration', 'digital art', 'fan art',
   ];
 
   return {
@@ -110,7 +110,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       ],
       type: 'article',
       url: `https://serika.art/image/${id}`,
-      siteName: 'Serika.art',
+      siteName: 'Serika Booru',
     },
     twitter: {
       card: 'summary_large_image',
@@ -130,15 +130,42 @@ export default async function ImagePage({ params }: PageProps) {
   }
 
   const artistTags = image.tags.filter((t: any) => t.type === 'artist').map((t: any) => t.name);
+  const characterTags = image.tags.filter((t: any) => t.type === 'character').map((t: any) => t.name);
   const copyrightTags = image.tags.filter((t: any) => t.type === 'copyright').map((t: any) => t.name);
   
+  // BreadcrumbList schema
+  const breadcrumbSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    'itemListElement': [
+      {
+        '@type': 'ListItem',
+        'position': 1,
+        'name': 'Home',
+        'item': 'https://serika.art',
+      },
+      {
+        '@type': 'ListItem',
+        'position': 2,
+        'name': 'Posts',
+        'item': 'https://serika.art/posts',
+      },
+      {
+        '@type': 'ListItem',
+        'position': 3,
+        'name': `Image #${image.sequentialId}`,
+        'item': `https://serika.art/image/${image.sequentialId}`,
+      },
+    ],
+  };
+
   // Structured Data for Google Images & Rich Results
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'ImageObject',
     '@id': `https://serika.art/image/${image.sequentialId}`,
-    name: `Artwork #${image.sequentialId}${artistTags.length > 0 ? ` by ${artistTags[0]}` : ''}`,
-    description: image.description || `Illustration shared on Serika.art with tags: ${image.tags.map((t: any) => t.name).join(', ')}`,
+    name: `${artistTags.length > 0 ? `${artistTags[0]} - ` : ''}${characterTags[0] || 'Artwork'} #${image.sequentialId}${copyrightTags.length > 0 ? ` from ${copyrightTags[0]}` : ''}`,
+    description: image.description || `Illustration (Serika Booru) shared on Serika Art with tags: ${image.tags.map((t: any) => t.name).join(', ')}`,
     contentUrl: image.url,
     url: `https://serika.art/image/${image.sequentialId}`,
     thumbnailUrl: image.thumbnailUrl || image.url,
@@ -169,7 +196,7 @@ export default async function ImagePage({ params }: PageProps) {
     contentRating: image.rating,
     isPartOf: {
       '@type': 'WebSite',
-      name: 'Serika.art',
+      name: 'Serika Booru',
       url: 'https://serika.art',
     },
     interactionStatistic: [
@@ -188,6 +215,10 @@ export default async function ImagePage({ params }: PageProps) {
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+      />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

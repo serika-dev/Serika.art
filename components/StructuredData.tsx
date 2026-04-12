@@ -7,6 +7,7 @@ export default function StructuredData() {
     '@type': 'Organization',
     '@id': 'https://serika.art/#organization',
     name: 'Serika.art',
+    alternateName: ['Serika Booru', 'Serika Art'],
     url: 'https://serika.art',
     logo: {
       '@type': 'ImageObject',
@@ -33,8 +34,9 @@ export default function StructuredData() {
     '@type': 'WebSite',
     '@id': 'https://serika.art/#website',
     name: 'Serika.art',
+    alternateName: ['Serika Booru', 'Serika Art'],
     url: 'https://serika.art',
-    description: 'Modern art image board with over 1.5 million artworks',
+    description: 'Modern art image board (Serika Booru) with over 1.5 million artworks',
     publisher: {
       '@id': 'https://serika.art/#organization',
     },

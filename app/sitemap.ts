@@ -1,4 +1,5 @@
 import { MetadataRoute } from "next";
+import { getCollection } from "@/lib/db";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = "https://serika.art";
@@ -49,60 +50,55 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  // Fetch popular/recent images for dynamic routes (limit to most relevant)
+  // Query ALL images directly from the database (no limit)
   let imageRoutes: MetadataRoute.Sitemap = [];
   try {
-    const response = await fetch(`${baseUrl}/api/images?limit=10000&sort=popularity`, {
-      next: { revalidate: 86400 },
-    });
-    if (response.ok) {
-      const data = await response.json();
-      if (data.images && Array.isArray(data.images)) {
-        imageRoutes = data.images.map((image: any) => {
-          const id = image.sequentialId || (image._id ? image._id.toString() : null);
-          if (!id) return null;
-          
-          return {
-            url: `${baseUrl}/image/${id}`,
-            lastModified: new Date(image.updatedAt || image.createdAt || new Date()),
-            changeFrequency: "weekly" as const,
-            priority: 0.7,
-          };
-        }).filter(Boolean);
-      }
-    }
+    const imagesCollection = await getCollection("images");
+    const images = await imagesCollection
+      .find(
+        { deleted: { $ne: true }, unlisted: { $ne: true } },
+        { projection: { sequentialId: 1, updatedAt: 1, createdAt: 1 } }
+      )
+      .sort({ sequentialId: -1 })
+      .toArray();
+
+    imageRoutes = images
+      .filter((img: any) => img.sequentialId)
+      .map((image: any) => ({
+        url: `${baseUrl}/image/${image.sequentialId}`,
+        lastModified: new Date(image.updatedAt || image.createdAt || new Date()),
+        changeFrequency: "weekly" as const,
+        priority: 0.7,
+      }));
   } catch (error) {
     console.error("Failed to generate image sitemap entries:", error);
   }
 
-  // Fetch popular tags — generate both tag search pages AND artist landing pages
+  // Query ALL tags directly from the database (no limit)
   let tagRoutes: MetadataRoute.Sitemap = [];
   let artistRoutes: MetadataRoute.Sitemap = [];
   try {
-    const response = await fetch(`${baseUrl}/api/tags?limit=1000&sort=count`, {
-      next: { revalidate: 86400 },
-    });
-    if (response.ok) {
-      const data = await response.json();
-      if (data.tags && Array.isArray(data.tags)) {
-        tagRoutes = data.tags.map((tag: any) => ({
-          url: `${baseUrl}/posts?tags=${encodeURIComponent(tag.name)}`,
-          lastModified: new Date(),
-          changeFrequency: "daily" as const,
-          priority: 0.75,
-        }));
+    const tagsCollection = await getCollection("tags");
+    const tags = await tagsCollection
+      .find({}, { projection: { name: 1, type: 1 } })
+      .toArray();
 
-        // Artist tags get their own landing pages
-        artistRoutes = data.tags
-          .filter((tag: any) => tag.type === 'artist')
-          .map((tag: any) => ({
-            url: `${baseUrl}/artist/${encodeURIComponent(tag.name.replace(/ /g, '_'))}`,
-            lastModified: new Date(),
-            changeFrequency: "weekly" as const,
-            priority: 0.8,
-          }));
-      }
-    }
+    tagRoutes = tags.map((tag: any) => ({
+      url: `${baseUrl}/posts?tags=${encodeURIComponent(tag.name)}`,
+      lastModified: new Date(),
+      changeFrequency: "daily" as const,
+      priority: 0.75,
+    }));
+
+    // Artist tags get their own landing pages
+    artistRoutes = tags
+      .filter((tag: any) => tag.type === "artist")
+      .map((tag: any) => ({
+        url: `${baseUrl}/artist/${encodeURIComponent(tag.name.replace(/ /g, "_"))}`,
+        lastModified: new Date(),
+        changeFrequency: "weekly" as const,
+        priority: 0.8,
+      }));
   } catch (error) {
     console.error("Failed to generate tag sitemap entries:", error);
   }

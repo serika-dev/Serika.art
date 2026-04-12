@@ -12,18 +12,19 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: {
-    default: "Serika.art - Modern Art Image Board | 1.5M+ Artworks",
-    template: "%s | Serika.art",
+    default: "Serika.art - Modern Art Image Board & Serika Booru | 1.5M+ Artworks",
+    template: "%s | Serika Booru",
   },
-  description: "Discover and share over 1.5 million artworks on Serika.art - a modern, clean image board for artists and art enthusiasts. Featuring powerful tagging, ratings, favorites, and community engagement.",
+  description: "Serika.art (Serika Booru) is a high-performance image board for artists and art enthusiasts. Discover over 1.5 million anime artworks, illustrations, and digital art with advanced tagging, ratings, and community features.",
   keywords: [
-    "image board", "art sharing", "booru", "anime art", "community", "tags", "artwork",
+    "serika booru", "serika art", "image board", "art sharing", "booru", "anime art", "community", "tags", "artwork",
     "illustration", "digital art", "fan art", "artists", "characters", "anime", "manga",
-    "wallpapers", "art gallery", "image gallery", "art community"
+    "wallpapers", "art gallery", "image gallery", "art community", "gelbooru alternative",
+    "danbooru clone", "safebooru", "konachan", "yande.re alternative"
   ],
   authors: [{ name: "Serika", url: "https://serika.art" }],
   creator: "Serika",
-  publisher: "Serika.art",
+  publisher: "Serika Booru",
   formatDetection: {
     email: false,
     address: false,
