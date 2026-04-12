@@ -10,11 +10,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const decodedName = decodeURIComponent(username);
 
   const title = `${decodedName} | User Profile | Serika.art`;
-  const description = `Check out ${decodedName}'s profile on Serika.art. See their uploads, liked artworks, and comments in our community of art enthusiasts.`;
+  const description = `Check out ${decodedName}'s profile on Serika.art. Browse their uploads, favorites, and activity in our art community of 1.5M+ images.`;
+  const keywords = [
+    decodedName, `${decodedName} profile`, `${decodedName} art uploads`,
+    'art community', 'serika artist', 'art uploader', 'serika.art',
+  ];
 
   return {
     title,
     description,
+    keywords,
+    alternates: {
+      canonical: `https://serika.art/user/${username}`,
+    },
+    robots: {
+      index: true,
+      follow: true,
+    },
     openGraph: {
       title,
       description,

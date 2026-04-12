@@ -24,10 +24,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.9,
     },
     {
-      url: `${baseUrl}/api-docs`,
+      url: `${baseUrl}/users`,
       lastModified: new Date(),
       changeFrequency: "weekly",
-      priority: 0.6,
+      priority: 0.7,
     },
     {
       url: `${baseUrl}/contact`,
@@ -41,14 +41,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly",
       priority: 0.3,
     },
+    {
+      url: `${baseUrl}/api-docs`,
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 0.6,
+    },
   ];
 
   // Fetch popular/recent images for dynamic routes (limit to most relevant)
   let imageRoutes: MetadataRoute.Sitemap = [];
   try {
-    // Get recent popular images (most likely to be searched/shared)
     const response = await fetch(`${baseUrl}/api/images?limit=10000&sort=popularity`, {
-      next: { revalidate: 86400 }, // Cache for 24 hours
+      next: { revalidate: 86400 },
     });
     if (response.ok) {
       const data = await response.json();
@@ -70,8 +75,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     console.error("Failed to generate image sitemap entries:", error);
   }
 
-  // Fetch popular tags
+  // Fetch popular tags — generate both tag search pages AND artist landing pages
   let tagRoutes: MetadataRoute.Sitemap = [];
+  let artistRoutes: MetadataRoute.Sitemap = [];
   try {
     const response = await fetch(`${baseUrl}/api/tags?limit=1000&sort=count`, {
       next: { revalidate: 86400 },
@@ -85,11 +91,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           changeFrequency: "daily" as const,
           priority: 0.75,
         }));
+
+        // Artist tags get their own landing pages
+        artistRoutes = data.tags
+          .filter((tag: any) => tag.type === 'artist')
+          .map((tag: any) => ({
+            url: `${baseUrl}/artist/${encodeURIComponent(tag.name.replace(/ /g, '_'))}`,
+            lastModified: new Date(),
+            changeFrequency: "weekly" as const,
+            priority: 0.8,
+          }));
       }
     }
   } catch (error) {
     console.error("Failed to generate tag sitemap entries:", error);
   }
 
-  return [...staticRoutes, ...tagRoutes, ...imageRoutes];
+  return [...staticRoutes, ...artistRoutes, ...tagRoutes, ...imageRoutes];
 }

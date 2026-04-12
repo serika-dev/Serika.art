@@ -58,17 +58,45 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!image) {
     return {
       title: 'Image Not Found | Serika.art',
+      robots: { index: false, follow: true },
     };
   }
 
-  const tags = image.tags.map((t: any) => t.name).join(', ');
-  const title = `Image #${image.sequentialId} - ${tags} | Serika.art`;
-  const description = `Discover art on Serika.art. Tags: ${tags}. Rating: ${image.rating}. Dimensions: ${image.width}x${image.height}.`;
+  const tagNames = image.tags.map((t: any) => t.name);
+  const artistTags = image.tags.filter((t: any) => t.type === 'artist').map((t: any) => t.name);
+  const characterTags = image.tags.filter((t: any) => t.type === 'character').map((t: any) => t.name);
+  const copyrightTags = image.tags.filter((t: any) => t.type === 'copyright').map((t: any) => t.name);
+  
+  const tags = tagNames.join(', ');
+  const artistStr = artistTags.length > 0 ? ` by ${artistTags.join(', ')}` : '';
+  const charStr = characterTags.length > 0 ? ` featuring ${characterTags.join(', ')}` : '';
+  const seriesStr = copyrightTags.length > 0 ? ` from ${copyrightTags.join(', ')}` : '';
+  
+  const title = `${artistStr ? artistTags[0] + ' - ' : ''}${characterTags[0] || 'Artwork'} #${image.sequentialId}${seriesStr} | Serika.art`;
+  const description = `High-quality artwork${artistStr}${charStr}${seriesStr}. ${image.width}x${image.height}, ${image.rating} rated. Tags: ${tags}. Discover 1.5M+ artworks on Serika.art.`;
+  
+  // Build expanded keywords: original tags + variants
+  const keywords: string[] = [
+    ...tagNames,
+    ...artistTags.map((a: string) => `${a} art`),
+    ...characterTags.map((c: string) => `${c} fan art`),
+    ...copyrightTags.map((c: string) => `${c} fan art`),
+    'anime art', 'illustration', 'digital art', 'fan art', 'serika.art',
+  ];
 
   return {
     title,
     description,
-    keywords: image.tags.map((t: any) => t.name),
+    keywords,
+    alternates: {
+      canonical: `https://serika.art/image/${id}`,
+    },
+    robots: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
     openGraph: {
       title,
       description,
@@ -81,6 +109,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         },
       ],
       type: 'article',
+      url: `https://serika.art/image/${id}`,
       siteName: 'Serika.art',
     },
     twitter: {
@@ -100,24 +129,49 @@ export default async function ImagePage({ params }: PageProps) {
     notFound();
   }
 
-  // Structured Data for Google Images
+  const artistTags = image.tags.filter((t: any) => t.type === 'artist').map((t: any) => t.name);
+  const copyrightTags = image.tags.filter((t: any) => t.type === 'copyright').map((t: any) => t.name);
+  
+  // Structured Data for Google Images & Rich Results
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'ImageObject',
-    name: `Artwork #${image.sequentialId}`,
+    '@id': `https://serika.art/image/${image.sequentialId}`,
+    name: `Artwork #${image.sequentialId}${artistTags.length > 0 ? ` by ${artistTags[0]}` : ''}`,
     description: image.description || `Illustration shared on Serika.art with tags: ${image.tags.map((t: any) => t.name).join(', ')}`,
     contentUrl: image.url,
+    url: `https://serika.art/image/${image.sequentialId}`,
     thumbnailUrl: image.thumbnailUrl || image.url,
-    width: image.width,
-    height: image.height,
+    width: { '@type': 'QuantitativeValue', value: image.width, unitCode: 'E37' },
+    height: { '@type': 'QuantitativeValue', value: image.height, unitCode: 'E37' },
     uploadDate: image.createdAt,
+    datePublished: image.createdAt,
     author: {
       '@type': 'Person',
       name: image.username,
-      url: `https://serika.art/user/${image.username}`,
+      url: `https://serika.art/user/${encodeURIComponent(image.username.trim())}`,
     },
+    ...(artistTags.length > 0 && {
+      creator: artistTags.map((a: string) => ({
+        '@type': 'Person',
+        name: a.replace(/_/g, ' '),
+        url: `https://serika.art/artist/${encodeURIComponent(a)}`,
+      })),
+    }),
+    ...(copyrightTags.length > 0 && {
+      copyrightHolder: copyrightTags.map((c: string) => ({
+        '@type': 'Organization',
+        name: c.replace(/_/g, ' '),
+      })),
+    }),
     keywords: image.tags.map((t: any) => t.name).join(', '),
-    genre: 'Art',
+    genre: 'Illustration',
+    contentRating: image.rating,
+    isPartOf: {
+      '@type': 'WebSite',
+      name: 'Serika.art',
+      url: 'https://serika.art',
+    },
     interactionStatistic: [
       {
         '@type': 'InteractionCounter',
