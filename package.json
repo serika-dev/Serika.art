@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "migrate:r2-to-b2": "npx tsx scripts/migrate-r2-to-b2.ts",
-    "verify-sync": "npx tsx scripts/verify-and-sync.ts"
+    "verify-sync": "npx tsx scripts/verify-and-sync.ts",
+    "seed:artist-wikis": "npx tsx scripts/seed-artist-wikis.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.946.0",
