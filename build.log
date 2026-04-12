@@ -1,4 +1,0 @@
-$ next build
-⨯ Unable to acquire lock at /media/pikachubolk/a0e3f5d8-2b3f-4298-a4b7-91ae89d31453/Documents/GitHub/Serika.art/.next/lock, is another instance of next build running?
-  Suggestion: If you intended to restart next build, terminate the other process, and then try again.
-error: script "build" exited with code 1
