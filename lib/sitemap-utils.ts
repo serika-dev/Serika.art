@@ -1,6 +1,6 @@
 import { getCollection } from "./db";
 
-export const SITEMAP_SIZE = 45000;
+export const SITEMAP_SIZE = 5000;
 export const BASE_URL = "https://serika.art";
 
 export function wrapInSitemapIndex(urls: string[]) {
