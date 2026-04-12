@@ -8,6 +8,7 @@ import { Image as ImageType, Comment, Tag as TagModel } from '@/lib/models';
 import { Heart, ThumbsUp, ThumbsDown, Eye, Download, Trash2, Sparkles, ExternalLink, Calendar, User, Maximize2, Minimize2, MessageCircle, Send, Shield, EyeOff, RotateCcw, History, Loader2, Palette, Search, Edit2, X } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import NativeAd from '@/components/NativeAd';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -766,7 +767,10 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
               </div>
             </CardContent>
           </Card>
+
+          <NativeAd rating={image.rating} id="sidebar-ad" />
         </div>
+
       </div>
       
       {/* Edit Dialog - Kept simple in extraction */}

@@ -644,13 +644,37 @@ function PostsPageContent() {
         ) : (
           <>
             <div className={`grid ${gridSizeClasses[gridSize]} gap-3 sm:gap-4 mb-8`}>
-              {filteredImages.map((image, index) => (
-                <Fragment key={image._id.toString()}>
-                  {([4, 8, 12, 16, 20, 24].includes(index)) && <NativeAd id={index} />}
-                  <ImageCard image={image} />
-                </Fragment>
-              ))}
+              {(() => {
+                // Spread 6 ads evenly, then stagger each by a different column offset
+                // so they don't all align to the same grid column.
+                const adCount = 6;
+                const step = Math.max(4, Math.floor(postsPerPage / adCount));
+                // Offsets 0..3 stagger each ad so it differs in column position
+                const staggerOffsets = [0, 2, 1, 3, 0, 2];
+                const adIndices = new Set(
+                  Array.from({ length: adCount }, (_, i) => {
+                    const base = (i + 1) * step;
+                    return base - 1 + staggerOffsets[i % staggerOffsets.length];
+                  })
+                );
+                const adRating = selectedRatings.length === 1 && selectedRatings[0] === 'safe' ? 'safe' : 'explicit';
+                let adNum = 0;
+
+                return filteredImages.map((image, index) => (
+                  <Fragment key={image._id.toString()}>
+                    {adIndices.has(index) && (
+                      <NativeAd
+                        id={`inline-${adNum++}`}
+                        rating={adRating}
+                      />
+                    )}
+                    <ImageCard image={image} />
+                  </Fragment>
+                ));
+              })()}
+
             </div>
+
 
             {infiniteScroll ? (
               <div ref={loadMoreRef} className="flex justify-center py-8">
