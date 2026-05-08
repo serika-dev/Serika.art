@@ -1,4 +1,4 @@
-import { MongoClient, Db } from 'mongodb';
+import { MongoClient, Db, Document, Filter } from 'mongodb';
 
 const MONGO_URI = process.env.MONGO_URI!;
 const MONGO_DB = process.env.MONGO_DB!;
@@ -56,7 +56,10 @@ async function ensureCriticalIndexes(db: Db) {
       images.createIndex({ createdAt: -1 }, { background: true }).catch(() => {}),
       images.createIndex({ rating: 1, createdAt: -1 }, { background: true }).catch(() => {}),
       images.createIndex({ rating: 1, isAIGenerated: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      images.createIndex({ deleted: 1, rating: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      images.createIndex({ deleted: 1, rating: 1, isAIGenerated: 1, createdAt: -1 }, { background: true }).catch(() => {}),
       images.createIndex({ tags: 1 }, { background: true }).catch(() => {}),
+      images.createIndex({ tags: 1, deleted: 1, rating: 1, createdAt: -1 }, { background: true }).catch(() => {}),
       images.createIndex({ sequentialId: 1 }, { background: true, unique: true, sparse: true }).catch(() => {}),
       
       // Tags: name lookup and sorting
@@ -89,7 +92,7 @@ export async function getCollection(collectionName: string) {
 const countCache = new Map<string, { count: number; timestamp: number }>();
 const COUNT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-export async function getCachedCount(collectionName: string, query: any = {}): Promise<number> {
+export async function getCachedCount(collectionName: string, query: Filter<Document> = {}): Promise<number> {
   const cacheKey = `${collectionName}:${JSON.stringify(query)}`;
   const cached = countCache.get(cacheKey);
   

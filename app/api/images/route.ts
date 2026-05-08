@@ -172,14 +172,10 @@ export async function GET(request: NextRequest) {
       createdAt: 1,
     };
 
-    // Execute query and count in parallel
-    // For large result sets, use estimatedDocumentCount when query is simple
-    const isSimpleQuery = Object.keys(query).length <= 2 && !query.$or;
-    
     let images: ImageDocument[];
-    let total: number;
+    let hasNext = false;
     
-    // Handle random sorting with aggregation
+    // Avoid blocking UI filter changes on expensive exact counts over huge result sets.
     if (sort === 'random') {
       const pipeline = [
         { $match: query },
@@ -187,19 +183,17 @@ export async function GET(request: NextRequest) {
         { $project: projection },
       ];
       
-      [images, total] = await Promise.all([
-        collection.aggregate<ImageDocument>(pipeline).toArray(),
-        isSimpleQuery && Object.keys(query).length === 0
-          ? collection.estimatedDocumentCount()
-          : collection.countDocuments(query),
-      ]);
+      images = await collection.aggregate<ImageDocument>(pipeline).toArray();
+      hasNext = images.length === limit;
     } else {
-      [images, total] = await Promise.all([
-        collection.find<ImageDocument>(query, { projection }).sort(sortOption).skip(skip).limit(limit).toArray(),
-        isSimpleQuery && Object.keys(query).length === 0
-          ? collection.estimatedDocumentCount()
-          : collection.countDocuments(query),
-      ]);
+      const rows = await collection
+        .find<ImageDocument>(query, { projection })
+        .sort(sortOption)
+        .skip(skip)
+        .limit(limit + 1)
+        .toArray();
+      hasNext = rows.length > limit;
+      images = rows.slice(0, limit);
     }
 
     // Populate tags for all images (batch lookup)
@@ -246,14 +240,19 @@ export async function GET(request: NextRequest) {
       }),
     }));
 
+    const approximateTotal = skip + populatedImages.length + (hasNext ? limit : 0);
+    const pages = Math.max(page, Math.ceil(approximateTotal / limit));
+
     return NextResponse.json({
       success: true,
       images: populatedImages,
       pagination: {
         page,
         limit,
-        total,
-        pages: Math.ceil(total / limit),
+        total: approximateTotal,
+        pages,
+        has_next: hasNext,
+        exact_total: false,
       },
     });
   } catch (error) {
