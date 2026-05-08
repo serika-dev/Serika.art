@@ -1,10 +1,12 @@
 import { ImageResponse } from "next/og";
 import { getCollection } from "@/lib/db";
 
+/* eslint-disable @next/next/no-img-element */
+
 export const runtime = "nodejs";
-// No caching - always get a fresh random image
-export const revalidate = 0;
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
+
+const OG_CACHE_CONTROL = "public, max-age=300, s-maxage=600, stale-while-revalidate=1800";
 
 export async function GET() {
   try {
@@ -18,6 +20,7 @@ export async function GET() {
         {
           $match: {
             rating: "safe",
+            deleted: { $ne: true },
             width: { $exists: true, $gt: 0 },
             height: { $exists: true, $gt: 0 },
           },
@@ -122,6 +125,9 @@ export async function GET() {
       {
         width: 1200,
         height: 630,
+        headers: {
+          "Cache-Control": OG_CACHE_CONTROL,
+        },
       }
     );
   } catch (error) {
@@ -163,6 +169,9 @@ export async function GET() {
       {
         width: 1200,
         height: 630,
+        headers: {
+          "Cache-Control": "no-cache",
+        },
       }
     );
   }

@@ -4,26 +4,39 @@ import React, { useEffect } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 
+declare global {
+  interface Window {
+    AdProvider?: Array<{ serve: Record<string, never> }>;
+  }
+}
+
 interface NativeAdProps {
   id?: string | number;
   rating?: 'safe' | 'questionable' | 'explicit';
   variant?: 'inline' | 'banner'; // inline = grid card, banner = full-width row
 }
 
+const SFW_ZONE_ID = process.env.NEXT_PUBLIC_SFW_AD_ZONE_ID || '5897078';
+const NSFW_ZONE_ID = process.env.NEXT_PUBLIC_NSFW_AD_ZONE_ID || '';
+
 const NativeAd: React.FC<NativeAdProps> = ({ id, rating = 'safe', variant = 'inline' }) => {
-  // 5897078 = SFW zone. Update NSFW zone ID when provided by user.
   const isSafe = rating === 'safe';
-  const zoneId = isSafe ? "5897078" : "5897078"; // TODO: replace second with NSFW zone ID
+  const zoneId = isSafe ? SFW_ZONE_ID : NSFW_ZONE_ID;
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (zoneId && typeof window !== 'undefined') {
       try {
-        ((window as any).AdProvider = (window as any).AdProvider || []).push({"serve": {}});
+        window.AdProvider = window.AdProvider || [];
+        window.AdProvider.push({ serve: {} });
       } catch (e) {
         console.error('AdProvider error:', e);
       }
     }
-  }, [id, rating]);
+  }, [id, rating, zoneId]);
+
+  if (!zoneId) {
+    return null;
+  }
 
   if (variant === 'banner') {
     return (

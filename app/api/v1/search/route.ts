@@ -1,7 +1,14 @@
 import { NextRequest } from 'next/server';
 import { getCollection } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { ObjectId } from 'mongodb';
+import { Document, Filter, ObjectId } from 'mongodb';
+import { publicImageMongoFilter, ratingMongoFilter } from '@/lib/contentFilters';
+
+type SearchResults = {
+  images?: unknown[];
+  tags?: unknown[];
+  users?: unknown[];
+};
 
 // GET /api/v1/search - Search across images, tags, and users
 export async function GET(request: NextRequest) {
@@ -15,12 +22,13 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get('q');
     const type = searchParams.get('type') || 'all'; // all, images, tags, users
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '10')));
+    const ratings = searchParams.get('ratings')?.split(',').filter(Boolean) || [];
 
     if (!query || query.length < 2) {
       return apiError('Query must be at least 2 characters', 400, 'INVALID_QUERY');
     }
 
-    const results: any = {};
+    const results: SearchResults = {};
 
     const imagesCollection = await getCollection('images');
     const tagsCollection = await getCollection('tags');
@@ -35,13 +43,18 @@ export async function GET(request: NextRequest) {
         .toArray();
       const tagIds = matchingTags.map((t) => t._id);
 
-      const imageQuery: any = {
+      const imageQuery: Filter<Document> & Record<string, unknown> = {
+        ...publicImageMongoFilter(),
         $or: [
           { tags: { $in: tagIds } },
           { description: { $regex: query, $options: 'i' } },
           { username: { $regex: query, $options: 'i' } },
         ],
       };
+      const ratingFilter = ratingMongoFilter(ratings);
+      if (ratingFilter) {
+        imageQuery.rating = ratingFilter;
+      }
 
       const images = await imagesCollection
         .find(imageQuery)
@@ -115,7 +128,7 @@ export async function GET(request: NextRequest) {
       query,
       type,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('API v1 search error:', error);
     return apiError('Internal server error', 500, 'INTERNAL_ERROR');
   }

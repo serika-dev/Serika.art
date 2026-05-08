@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCollection } from '@/lib/db';
+import { publicImageMongoFilter, ratingMongoFilter } from '@/lib/contentFilters';
+import { Document, Filter, ObjectId } from 'mongodb';
 import sharp from 'sharp';
+
+const RANDOM_IMAGE_CACHE_CONTROL = 'public, max-age=60, s-maxage=120, stale-while-revalidate=300';
+
+type ImageDocument = Document & {
+  _id: ObjectId;
+  url: string;
+  sequentialId?: number;
+  width?: number;
+  height?: number;
+  rating?: string;
+};
 
 // GET /api/v1/random/[width]/[height]/image.png - Get random image resized to specified dimensions
 // This endpoint returns the actual image file, not JSON
@@ -43,21 +56,19 @@ export async function GET(
     const grayscale = searchParams.get('grayscale') === 'true';
     const aiOnly = searchParams.get('ai') === 'true';
     const noAI = searchParams.get('no_ai') === 'true';
-    const matchSize = searchParams.get('match_size') !== 'false'; // Default: try to match dimensions
+    const matchSize = searchParams.get('match_size') === 'true'; // Default: fastest random sample
     const aspectTolerance = parseFloat(searchParams.get('aspect_tolerance') || '0.2'); // 20% tolerance
     
     const collection = await getCollection('images');
     const tagsCollection = await getCollection('tags');
     
     // Build query
-    const query: any = {};
+    const query: Filter<Document> & Record<string, unknown> = publicImageMongoFilter();
     
     // Default to safe-only unless specified
-    const validRatings = ratings.filter((r) =>
-      ['safe', 'questionable', 'explicit'].includes(r)
-    );
-    if (validRatings.length > 0) {
-      query.rating = { $in: validRatings };
+    const ratingFilter = ratingMongoFilter(ratings);
+    if (ratingFilter) {
+      query.rating = ratingFilter;
     }
     
     // AI filter
@@ -85,7 +96,8 @@ export async function GET(
         .toArray();
       const excludeTagIds = excludeTagDocs.map((t) => t._id);
       if (excludeTagIds.length > 0) {
-        query.tags = { ...query.tags, $nin: excludeTagIds };
+        const existingTagFilter = typeof query.tags === 'object' && query.tags ? query.tags : {};
+        query.tags = { ...existingTagFilter, $nin: excludeTagIds };
       }
     }
     
@@ -93,7 +105,7 @@ export async function GET(
     const requestedAspect = width / height;
     
     // Try to find images that match the requested dimensions/aspect ratio
-    let images: any[] = [];
+    let images: ImageDocument[] = [];
     
     if (matchSize) {
       // First, try to find images that match or exceed the requested dimensions
@@ -105,7 +117,7 @@ export async function GET(
       
       // Get candidates that are close to the requested aspect ratio
       const candidates = await collection
-        .aggregate([
+        .aggregate<ImageDocument>([
           { $match: sizeQuery },
           {
             $addFields: {
@@ -137,7 +149,7 @@ export async function GET(
     // If no matching size found, fall back to random
     if (images.length === 0) {
       images = await collection
-        .aggregate([
+        .aggregate<ImageDocument>([
           { $match: query },
           { $sample: { size: 1 } },
         ])
@@ -160,7 +172,7 @@ export async function GET(
       return new NextResponse(new Uint8Array(placeholder), {
         headers: {
           'Content-Type': 'image/png',
-          'Cache-Control': 'no-cache',
+          'Cache-Control': RANDOM_IMAGE_CACHE_CONTROL,
         },
       });
     }
@@ -224,18 +236,16 @@ export async function GET(
     return new NextResponse(new Uint8Array(outputBuffer), {
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
+        'Cache-Control': RANDOM_IMAGE_CACHE_CONTROL,
         'X-Image-Id': image._id.toString(),
         'X-DBID': image._id.toString(),
         'X-Post-Id': String(image.sequentialId),
         'X-Original-Width': String(image.width),
         'X-Original-Height': String(image.height),
-        'X-Rating': image.rating,
+        'X-Rating': image.rating || 'unknown',
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Random image error:', error);
     
     // Return error placeholder

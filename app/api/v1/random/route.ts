@@ -1,7 +1,13 @@
 import { NextRequest } from 'next/server';
 import { getCollection } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { ObjectId } from 'mongodb';
+import { Document, Filter, ObjectId } from 'mongodb';
+import { publicImageMongoFilter, ratingMongoFilter } from '@/lib/contentFilters';
+
+type ImageDocument = Document & {
+  _id: ObjectId;
+  tags?: ObjectId[];
+};
 
 // GET /api/v1/random - Get random image(s) with metadata
 export async function GET(request: NextRequest) {
@@ -27,16 +33,12 @@ export async function GET(request: NextRequest) {
     const tagsCollection = await getCollection('tags');
 
     // Build query
-    const query: any = {};
+    const query: Filter<Document> & Record<string, unknown> = publicImageMongoFilter();
 
     // Rating filter
-    if (ratings.length > 0) {
-      const validRatings = ratings.filter((r) =>
-        ['safe', 'questionable', 'explicit'].includes(r)
-      );
-      if (validRatings.length > 0) {
-        query.rating = { $in: validRatings };
-      }
+    const ratingFilter = ratingMongoFilter(ratings);
+    if (ratingFilter) {
+      query.rating = ratingFilter;
     }
 
     // Tag filters
@@ -59,7 +61,8 @@ export async function GET(request: NextRequest) {
         .toArray();
       const excludeTagIds = excludeTagDocs.map((t) => t._id);
       if (excludeTagIds.length > 0) {
-        query.tags = { ...query.tags, $nin: excludeTagIds };
+        const existingTagFilter = typeof query.tags === 'object' && query.tags ? query.tags : {};
+        query.tags = { ...existingTagFilter, $nin: excludeTagIds };
       }
     }
 
@@ -74,12 +77,12 @@ export async function GET(request: NextRequest) {
     if (noAi) query.isAIGenerated = { $ne: true };
 
     // Get random images using aggregation
-    const pipeline: any[] = [
+    const pipeline: Document[] = [
       { $match: query },
       { $sample: { size: count } },
     ];
 
-    const images = await collection.aggregate(pipeline).toArray();
+    const images = await collection.aggregate<ImageDocument>(pipeline).toArray();
 
     if (images.length === 0) {
       return apiResponse([], { message: 'No images match the criteria' });
@@ -135,7 +138,7 @@ export async function GET(request: NextRequest) {
       count: formattedImages.length,
       requested: count,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('API v1 random error:', error);
     return apiError('Internal server error', 500, 'INTERNAL_ERROR');
   }

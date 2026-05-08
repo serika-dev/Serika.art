@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection, getCachedCount } from '@/lib/db';
-import { ObjectId } from 'mongodb';
-import { Image } from '@/lib/models';
+import { getCollection } from '@/lib/db';
+import { Document, Filter, ObjectId, Sort } from 'mongodb';
+import { publicImageMongoFilter, ratingMongoFilter } from '@/lib/contentFilters';
+
+type ImageDocument = Document & {
+  _id: ObjectId;
+  sequentialId?: number;
+  tags?: ObjectId[];
+};
 
 // Cache tag lookups to reduce DB queries
 const tagNameCache = new Map<string, ObjectId>();
@@ -39,7 +45,7 @@ export async function GET(request: NextRequest) {
     const tagsCollection = await getCollection('tags');
     
     // Build query
-    const query: any = {};
+    const query: Filter<Document> & Record<string, unknown> = publicImageMongoFilter();
     
     if (username) {
       // Filter by username
@@ -76,8 +82,9 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    if (ratings.length > 0 && ratings.length < 3) {
-      query.rating = { $in: ratings };
+    const ratingFilter = ratingMongoFilter(ratings);
+    if (ratingFilter) {
+      query.rating = ratingFilter;
     }
     
     if (aiOnly) {
@@ -103,7 +110,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Determine sort
-    let sortOption: any = { createdAt: -1 };
+    let sortOption: Sort = { createdAt: -1 };
     switch (sort) {
       case 'popular':
         sortOption = { upvotes: -1, views: -1 };
@@ -169,7 +176,7 @@ export async function GET(request: NextRequest) {
     // For large result sets, use estimatedDocumentCount when query is simple
     const isSimpleQuery = Object.keys(query).length <= 2 && !query.$or;
     
-    let images: any[];
+    let images: ImageDocument[];
     let total: number;
     
     // Handle random sorting with aggregation
@@ -181,14 +188,14 @@ export async function GET(request: NextRequest) {
       ];
       
       [images, total] = await Promise.all([
-        collection.aggregate(pipeline).toArray(),
+        collection.aggregate<ImageDocument>(pipeline).toArray(),
         isSimpleQuery && Object.keys(query).length === 0
           ? collection.estimatedDocumentCount()
           : collection.countDocuments(query),
       ]);
     } else {
       [images, total] = await Promise.all([
-        collection.find(query, { projection }).sort(sortOption).skip(skip).limit(limit).toArray(),
+        collection.find<ImageDocument>(query, { projection }).sort(sortOption).skip(skip).limit(limit).toArray(),
         isSimpleQuery && Object.keys(query).length === 0
           ? collection.estimatedDocumentCount()
           : collection.countDocuments(query),
@@ -197,9 +204,9 @@ export async function GET(request: NextRequest) {
 
     // Populate tags for all images (batch lookup)
     const allTagIds = new Set<string>();
-    images.forEach(img => {
+    images.forEach((img) => {
       if (Array.isArray(img.tags)) {
-        img.tags.forEach((tagId: any) => {
+        img.tags.forEach((tagId) => {
           const idStr = tagId.toString();
           if (!tagIdCache.has(idStr)) {
             allTagIds.add(idStr);
@@ -223,11 +230,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Map images with cached tag data
-    const populatedImages = images.map((img: any) => ({
+    const populatedImages = images.map((img) => ({
       ...img,
       dbid: img._id.toString(),
       post_id: img.sequentialId,
-      tags: (img.tags || []).map((tagId: any) => {
+      tags: (img.tags || []).map((tagId) => {
         const idStr = tagId.toString();
         const tag = tagIdCache.get(idStr);
         return {
@@ -249,7 +256,7 @@ export async function GET(request: NextRequest) {
         pages: Math.ceil(total / limit),
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching images:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch images' },

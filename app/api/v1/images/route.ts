@@ -1,7 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getCollection } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { ObjectId } from 'mongodb';
+import { Document, Filter, ObjectId, Sort } from 'mongodb';
+import { publicImageMongoFilter, ratingMongoFilter } from '@/lib/contentFilters';
+
+type ImageDocument = Document & {
+  _id: ObjectId;
+  tags?: ObjectId[];
+};
 
 // GET /api/v1/images - List images with pagination and filters
 export async function GET(request: NextRequest) {
@@ -30,7 +36,7 @@ export async function GET(request: NextRequest) {
     const tagsCollection = await getCollection('tags');
 
     // Build query
-    const query: any = {};
+    const query: Filter<Document> & Record<string, unknown> = publicImageMongoFilter();
 
     if (userId) {
       if (ObjectId.isValid(userId)) {
@@ -53,13 +59,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (ratings.length > 0 && ratings.length < 3) {
-      const validRatings = ratings.filter((r) =>
-        ['safe', 'questionable', 'explicit'].includes(r)
-      );
-      if (validRatings.length > 0) {
-        query.rating = { $in: validRatings };
-      }
+    const ratingFilter = ratingMongoFilter(ratings);
+    if (ratingFilter) {
+      query.rating = ratingFilter;
     }
 
     if (aiOnly) {
@@ -88,7 +90,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Determine sort
-    let sortOption: any = { createdAt: -1 };
+    let sortOption: Sort = { createdAt: -1 };
     switch (sort) {
       case 'popular':
         sortOption = { upvotes: -1, views: -1 };
@@ -107,18 +109,18 @@ export async function GET(request: NextRequest) {
         break;
     }
 
-    let images: any[];
+    let images: ImageDocument[];
     let total: number;
 
     if (sort === 'random') {
-      const pipeline: any[] = [{ $match: query }];
+      const pipeline: Document[] = [{ $match: query }];
       pipeline.push({ $sample: { size: limit } });
 
-      images = await collection.aggregate(pipeline).toArray();
+      images = await collection.aggregate<ImageDocument>(pipeline).toArray();
       total = await collection.countDocuments(query);
     } else {
       [images, total] = await Promise.all([
-        collection.find(query).sort(sortOption).skip(skip).limit(limit).toArray(),
+        collection.find<ImageDocument>(query).sort(sortOption).skip(skip).limit(limit).toArray(),
         collection.countDocuments(query),
       ]);
     }
@@ -177,7 +179,7 @@ export async function GET(request: NextRequest) {
         has_prev: page > 1,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('API v1 images error:', error);
     return apiError('Internal server error', 500, 'INTERNAL_ERROR');
   }

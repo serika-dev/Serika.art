@@ -1,9 +1,9 @@
-import { NextRequest } from 'next/server';
 import { getCollection } from '@/lib/db';
 import { apiResponse, apiError } from '@/lib/apiAuth';
+import { publicImageMongoFilter } from '@/lib/contentFilters';
 
 // GET /api/v1/stats - Get platform statistics (public endpoint, no auth required)
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const imagesCollection = await getCollection('images');
     const tagsCollection = await getCollection('tags');
@@ -18,10 +18,13 @@ export async function GET(request: NextRequest) {
       aiStats,
       recentUploads,
     ] = await Promise.all([
-      imagesCollection.countDocuments(),
+      imagesCollection.countDocuments(publicImageMongoFilter()),
       tagsCollection.countDocuments(),
       usersCollection.countDocuments(),
       imagesCollection.aggregate([
+        {
+          $match: publicImageMongoFilter(),
+        },
         {
           $group: {
             _id: '$rating',
@@ -31,6 +34,9 @@ export async function GET(request: NextRequest) {
       ]).toArray(),
       imagesCollection.aggregate([
         {
+          $match: publicImageMongoFilter(),
+        },
+        {
           $group: {
             _id: '$isAIGenerated',
             count: { $sum: 1 },
@@ -38,6 +44,7 @@ export async function GET(request: NextRequest) {
         },
       ]).toArray(),
       imagesCollection.countDocuments({
+        ...publicImageMongoFilter(),
         createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
       }),
     ]);
@@ -71,7 +78,7 @@ export async function GET(request: NextRequest) {
         uploads_last_24h: recentUploads,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('API v1 stats error:', error);
     return apiError('Internal server error', 500, 'INTERNAL_ERROR');
   }

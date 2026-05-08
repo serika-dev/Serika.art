@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getCollection } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
 import { ObjectId } from 'mongodb';
+import { publicImageMongoFilter } from '@/lib/contentFilters';
 
 // GET /api/v1/similar/:id - Get similar images based on tags
 export async function GET(
@@ -30,7 +31,7 @@ export async function GET(
     const tagsCollection = await getCollection('tags');
 
     // Find the source image
-    const sourceImage = await collection.findOne({ _id: objectId });
+    const sourceImage = await collection.findOne({ ...publicImageMongoFilter(), _id: objectId });
     if (!sourceImage) {
       return apiError('Image not found', 404, 'NOT_FOUND');
     }
@@ -40,6 +41,7 @@ export async function GET(
       .aggregate([
         {
           $match: {
+            ...publicImageMongoFilter(),
             _id: { $ne: objectId },
             tags: { $in: sourceImage.tags || [] },
             rating: sourceImage.rating, // Same rating

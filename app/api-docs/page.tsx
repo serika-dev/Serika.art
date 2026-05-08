@@ -222,7 +222,7 @@ export default function ApiDocsPage() {
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>ratings</code></td>
-                      <td>safe, questionable, explicit</td>
+                      <td>safe, questionable, explicit (default: safe)</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>sort</code></td>
@@ -491,9 +491,13 @@ export default function ApiDocsPage() {
                       <td className="py-2"><code>type</code></td>
                       <td>all, images, tags, users (default: all)</td>
                     </tr>
-                    <tr>
+                    <tr className="border-b border-white/5">
                       <td className="py-2"><code>limit</code></td>
                       <td>Results per type (1-50, default: 10)</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2"><code>ratings</code></td>
+                      <td>Filter image results by rating (default: safe)</td>
                     </tr>
                   </tbody>
                 </table>
@@ -537,7 +541,7 @@ export default function ApiDocsPage() {
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>ratings</code></td>
-                      <td>Comma-separated ratings</td>
+                      <td>Comma-separated ratings (default: safe)</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>tags</code></td>
@@ -645,7 +649,7 @@ export default function ApiDocsPage() {
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2"><code>match_size</code></td>
-                      <td>false to disable dimension matching (default: true)</td>
+                      <td>true to enable dimension/aspect matching (default: false)</td>
                     </tr>
                     <tr>
                       <td className="py-2"><code>aspect_tolerance</code></td>

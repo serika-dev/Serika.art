@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getCollection } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { ObjectId } from 'mongodb';
+import { publicImageMongoFilter } from '@/lib/contentFilters';
 
 // GET /api/v1/tags/[name] - Get tag details
 export async function GET(
@@ -29,13 +29,16 @@ export async function GET(
 
     // Get sample images with this tag
     const sampleImages = await imagesCollection
-      .find({ tags: tag._id })
+      .find({ ...publicImageMongoFilter(), tags: tag._id, rating: 'safe' })
       .sort({ upvotes: -1 })
       .limit(5)
       .toArray();
 
     // Get actual count (in case cached count is wrong)
-    const actualCount = await imagesCollection.countDocuments({ tags: tag._id });
+    const actualCount = await imagesCollection.countDocuments({
+      ...publicImageMongoFilter(),
+      tags: tag._id,
+    });
 
     const formattedTag = {
       id: tag._id.toString(),
@@ -51,7 +54,7 @@ export async function GET(
     };
 
     return apiResponse(formattedTag);
-  } catch (error: any) {
+  } catch (error) {
     console.error('API v1 tag detail error:', error);
     return apiError('Internal server error', 500, 'INTERNAL_ERROR');
   }
