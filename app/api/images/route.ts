@@ -173,27 +173,31 @@ export async function GET(request: NextRequest) {
     };
 
     let images: ImageDocument[];
-    let hasNext = false;
-    
-    // Avoid blocking UI filter changes on expensive exact counts over huge result sets.
+    let total: number;
+
     if (sort === 'random') {
       const pipeline = [
         { $match: query },
         { $sample: { size: limit } },
         { $project: projection },
       ];
-      
-      images = await collection.aggregate<ImageDocument>(pipeline).toArray();
-      hasNext = images.length === limit;
+
+      [images, total] = await Promise.all([
+        collection.aggregate<ImageDocument>(pipeline).toArray(),
+        collection.countDocuments(query),
+      ]);
     } else {
-      const rows = await collection
-        .find<ImageDocument>(query, { projection })
-        .sort(sortOption)
-        .skip(skip)
-        .limit(limit + 1)
-        .toArray();
-      hasNext = rows.length > limit;
-      images = rows.slice(0, limit);
+      const [rows, countResult] = await Promise.all([
+        collection
+          .find<ImageDocument>(query, { projection })
+          .sort(sortOption)
+          .skip(skip)
+          .limit(limit)
+          .toArray(),
+        collection.countDocuments(query),
+      ]);
+      images = rows;
+      total = countResult;
     }
 
     // Populate tags for all images (batch lookup)
@@ -240,8 +244,7 @@ export async function GET(request: NextRequest) {
       }),
     }));
 
-    const approximateTotal = skip + populatedImages.length + (hasNext ? limit : 0);
-    const pages = Math.max(page, Math.ceil(approximateTotal / limit));
+    const pages = Math.ceil(total / limit);
 
     return NextResponse.json({
       success: true,
@@ -249,10 +252,9 @@ export async function GET(request: NextRequest) {
       pagination: {
         page,
         limit,
-        total: approximateTotal,
+        total,
         pages,
-        has_next: hasNext,
-        exact_total: false,
+        has_next: page < pages,
       },
     });
   } catch (error) {

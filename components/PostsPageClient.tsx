@@ -338,6 +338,7 @@ function PostsPageContent() {
     const newRatings = toggleRatingUtil(selectedRatings, rating);
     setSelectedRatings(newRatings);
     setRatingsCookie(newRatings);
+    if (urlPage > 1) updateUrl(undefined, undefined, 1);
   };
 
   const typeColors: Record<TagType, string> = {
@@ -445,7 +446,7 @@ function PostsPageContent() {
           AI Content
         </h3>
         <button
-          onClick={() => setHideAI(!hideAI)}
+          onClick={() => { setHideAI(!hideAI); if (urlPage > 1) updateUrl(undefined, undefined, 1); }}
           className={cn(
             "w-full flex items-center gap-3 px-3 py-2 rounded-md border transition-all text-sm",
             hideAI
@@ -558,7 +559,7 @@ function PostsPageContent() {
         })}
       </div>
     </div>
-  ), [tagSuggestions, showSuggestions, selectedRatings, hideAI, selectedTags, tagsByType, blacklistEnabled, blacklistedTags, uploaderParam]);
+  ), [tagSuggestions, showSuggestions, selectedRatings, hideAI, selectedTags, tagsByType, blacklistEnabled, blacklistedTags, uploaderParam, urlPage]);
 
   const filteredImages = useMemo(() => {
     const sourceImages = infiniteScroll && allImages.length > 0 ? allImages : images;
