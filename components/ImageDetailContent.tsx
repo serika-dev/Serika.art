@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type FormEvent } from 'react';
+import React, { useState, useEffect, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import axios from 'axios';
@@ -63,6 +63,12 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
   const isAdmin = user && ['admin', 'owner'].includes(user.rank || '');
   const canEdit = user && (canModerate || (image?.userId && user.id === image.userId.toString()));
 
+  const isMounted = React.useRef(false);
+  React.useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+
   useEffect(() => {
     fetchComments();
     fetchArtistStatus();
@@ -73,7 +79,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
     if (!user) return;
     try {
       const response = await axios.get(`/api/images/${imageId}/user-interaction`);
-      if (response.data.success) {
+      if (response.data.success && isMounted.current) {
         setUserVote(response.data.vote);
         setIsFavorited(response.data.isFavorited);
       }
@@ -85,7 +91,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
   const fetchArtistStatus = async () => {
     try {
       const response = await axios.get(`/api/images/${imageId}/artist-status`);
-      if (response.data.success) {
+      if (response.data.success && isMounted.current) {
         setCanCommentAsArtist(response.data.canCommentAsArtist);
         setUserArtistTags(response.data.artistTags || []);
         if (response.data.artistTags?.length === 1) {
@@ -100,7 +106,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
   const fetchImage = async () => {
     try {
       const response = await axios.get(`/api/images/${imageId}`);
-      if (response.data.success) {
+      if (response.data.success && isMounted.current) {
         setImage(response.data.image);
       }
     } catch (error) {
@@ -111,7 +117,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
   const fetchComments = async () => {
     try {
       const response = await axios.get(`/api/images/${imageId}/comments`);
-      if (response.data.success) {
+      if (response.data.success && isMounted.current) {
         setComments(response.data.comments);
       }
     } catch (error) {

@@ -19,7 +19,7 @@ interface NativeAdProps {
 }
 
 const SFW_ZONE_ID = process.env.NEXT_PUBLIC_SFW_AD_ZONE_ID || '5897078';
-const NSFW_ZONE_ID = process.env.NEXT_PUBLIC_NSFW_AD_ZONE_ID || '';
+const NSFW_ZONE_ID = process.env.NEXT_PUBLIC_NSFW_AD_ZONE_ID || SFW_ZONE_ID;
 
 interface AdData {
   title: string;
@@ -35,13 +35,21 @@ const NativeAd: React.FC<NativeAdProps> = ({ id, rating = 'safe', variant = 'inl
   const insRef = useRef<HTMLModElement>(null);
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [adData, setAdData] = useState<AdData | null>(null);
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   // Track when ad script loads
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     // Check if script already loaded
-    if (window.AdProvider) {
+    if (window.AdProvider && isMounted.current) {
       setScriptLoaded(true);
       return;
     }
@@ -52,7 +60,7 @@ const NativeAd: React.FC<NativeAdProps> = ({ id, rating = 'safe', variant = 'inl
     const interval = setInterval(() => {
       attempts++;
       if (window.AdProvider) {
-        setScriptLoaded(true);
+        if (isMounted.current) setScriptLoaded(true);
         clearInterval(interval);
       } else if (attempts >= maxAttempts) {
         clearInterval(interval);
@@ -72,7 +80,7 @@ const NativeAd: React.FC<NativeAdProps> = ({ id, rating = 'safe', variant = 'inl
         if (!response.ok) return;
         const data = await response.json();
         
-        if (data.title) {
+        if (data.title && isMounted.current) {
           setAdData({
             title: data.title,
             description: data.description || '',
