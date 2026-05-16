@@ -27,13 +27,13 @@ export async function GET(request: NextRequest) {
     
     switch (sort) {
       case 'oldest':
-        sortOption = { createdAt: 1 };
+        sortOption = { createdAt: 1, _id: 1 };
         break;
       case 'alphabetical':
-        sortOption = { username: 1 };
+        sortOption = { username: 1, _id: 1 };
         break;
       case 'alphabetical-reverse':
-        sortOption = { username: -1 };
+        sortOption = { username: -1, _id: -1 };
         break;
       case 'uploads':
       case 'uploads-asc':
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
         break;
       case 'newest':
       default:
-        sortOption = { createdAt: -1 };
+        sortOption = { createdAt: -1, _id: -1 };
         break;
     }
 
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
           },
         },
         {
-          $sort: { uploadCount: sort === 'uploads' ? -1 : 1 },
+          $sort: { uploadCount: sort === 'uploads' ? -1 : 1, _id: -1 },
         },
       ];
 

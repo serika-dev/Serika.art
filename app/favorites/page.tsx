@@ -31,7 +31,7 @@ export default function FavoritesPage() {
     try {
       const response = await axios.get('/api/favorite');
       if (response.data.success) {
-        setImages(response.data.favorites);
+        setImages(response.data.images || []);
       }
     } catch (error) {
       console.error('Error fetching favorites:', error);
