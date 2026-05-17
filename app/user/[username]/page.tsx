@@ -64,10 +64,10 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
         
         setUser(userData.user);
 
-        // Fetch user images - for anonymous use userId=null, for others use username
+        // Fetch user images - use userId for indexed fast query
         const imageQuery = isAnonymousUser 
           ? `userId=null&limit=${LIMIT}&page=1`
-          : `username=${encodeURIComponent(username)}&limit=${LIMIT}&page=1`;
+          : `userId=${encodeURIComponent(userData.user.id)}&limit=${LIMIT}&page=1`;
         const imagesRes = await fetch(`/api/images?${imageQuery}`);
         const imagesData = await imagesRes.json();
 
@@ -113,7 +113,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
       const nextPage = page + 1;
       const imageQuery = isAnonymousUser 
         ? `userId=null&limit=${LIMIT}&page=${nextPage}`
-        : `username=${encodeURIComponent(username)}&limit=${LIMIT}&page=${nextPage}`;
+        : `userId=${encodeURIComponent(user!.id)}&limit=${LIMIT}&page=${nextPage}`;
       const imagesRes = await fetch(`/api/images?${imageQuery}`);
       const imagesData = await imagesRes.json();
       if (imagesData.success) {

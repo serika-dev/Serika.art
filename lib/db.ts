@@ -75,6 +75,19 @@ async function ensureCriticalIndexes(db: Db) {
       artistClaims.createIndex({ status: 1, createdAt: -1 }, { background: true }).catch(() => {}),
       artistClaims.createIndex({ userId: 1, artistTagId: 1 }, { background: true }).catch(() => {}),
       artistClaims.createIndex({ artistTagId: 1 }, { background: true }).catch(() => {}),
+      
+      // Users: username lookup
+      db.collection('users').createIndex({ username: 1 }, { background: true, unique: true }).catch(() => {}),
+      
+      // Images: User profile lookups
+      images.createIndex({ userId: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      images.createIndex({ username: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      
+      // Activity: User profile lookups (Likes, Favorites, Comments)
+      db.collection('votes').createIndex({ userId: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      db.collection('favorites').createIndex({ userId: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      db.collection('comments').createIndex({ userId: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      db.collection('comments').createIndex({ imageId: 1, createdAt: -1 }, { background: true }).catch(() => {}),
     ]);
 
     console.log('[DB] Critical indexes ensured');
