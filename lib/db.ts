@@ -56,10 +56,11 @@ async function ensureCriticalIndexes(db: Db) {
       images.createIndex({ createdAt: -1 }, { background: true }).catch(() => {}),
       images.createIndex({ rating: 1, createdAt: -1 }, { background: true }).catch(() => {}),
       images.createIndex({ rating: 1, isAIGenerated: 1, createdAt: -1 }, { background: true }).catch(() => {}),
-      images.createIndex({ deleted: 1, rating: 1, createdAt: -1 }, { background: true }).catch(() => {}),
-      images.createIndex({ deleted: 1, rating: 1, isAIGenerated: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      images.createIndex({ deleted: 1, unlisted: 1, rating: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      images.createIndex({ deleted: 1, unlisted: 1, rating: 1, isAIGenerated: 1, createdAt: -1 }, { background: true }).catch(() => {}),
       images.createIndex({ tags: 1 }, { background: true }).catch(() => {}),
-      images.createIndex({ tags: 1, deleted: 1, rating: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      images.createIndex({ tags: 1, deleted: 1, unlisted: 1, rating: 1, createdAt: -1 }, { background: true }).catch(() => {}),
+      images.createIndex({ username: 1 }, { background: true, collation: { locale: 'en', strength: 2 } }).catch(() => {}),
       images.createIndex({ sequentialId: 1 }, { background: true, unique: true, sparse: true }).catch(() => {}),
       
       // Tags: name lookup and sorting

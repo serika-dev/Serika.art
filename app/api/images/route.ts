@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { getCollection, getCachedCount } from '@/lib/db';
 import { Document, Filter, ObjectId, Sort } from 'mongodb';
 import { publicImageMongoFilter, ratingMongoFilter } from '@/lib/contentFilters';
 
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     
     if (username) {
       // Filter by username
-      query.username = { $regex: new RegExp(`^${username}$`, 'i') };
+      query.username = username;
     } else if (userId) {
       if (userId === 'null') {
         // Anonymous images
@@ -175,6 +175,8 @@ export async function GET(request: NextRequest) {
     let images: ImageDocument[];
     let total: number;
 
+    const usernameCollation = username ? { locale: 'en', strength: 2 } : undefined;
+
     if (sort === 'random') {
       const pipeline = [
         { $match: query },
@@ -184,17 +186,19 @@ export async function GET(request: NextRequest) {
 
       [images, total] = await Promise.all([
         collection.aggregate<ImageDocument>(pipeline).toArray(),
-        collection.countDocuments(query),
+        getCachedCount('images', query),
       ]);
     } else {
+      const findCursor = collection
+        .find<ImageDocument>(query, { projection })
+        .sort(sortOption)
+        .skip(skip)
+        .limit(limit);
+      if (usernameCollation) findCursor.collation(usernameCollation);
+
       const [rows, countResult] = await Promise.all([
-        collection
-          .find<ImageDocument>(query, { projection })
-          .sort(sortOption)
-          .skip(skip)
-          .limit(limit)
-          .toArray(),
-        collection.countDocuments(query),
+        findCursor.toArray(),
+        getCachedCount('images', query),
       ]);
       images = rows;
       total = countResult;
