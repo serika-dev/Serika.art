@@ -30,5 +30,6 @@ export function ratingMongoFilter(ratings: string[]) {
 export function publicImageMongoFilter() {
   return {
     deleted: { $ne: true },
+    unlisted: { $ne: true },
   };
 }

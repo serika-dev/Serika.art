@@ -2,7 +2,12 @@ import type { NextConfig } from "next";
 import { hostname } from "os";
 import path from "path";
 
+const allowedDevOrigins = process.env.ALLOWED_DEV_ORIGINS
+  ? process.env.ALLOWED_DEV_ORIGINS.split(',').map(s => s.trim())
+  : [];
+
 const nextConfig: NextConfig = {
+  ...(allowedDevOrigins.length > 0 && { allowedDevOrigins }),
   turbopack: {
     root: path.resolve(__dirname),
   },

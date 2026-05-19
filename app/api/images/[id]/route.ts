@@ -28,6 +28,20 @@ export async function GET(
       );
     }
 
+    if (image.deleted) {
+      return NextResponse.json(
+        { success: false, error: 'Image not found' },
+        { status: 404 }
+      );
+    }
+
+    if (image.unlisted) {
+      return NextResponse.json(
+        { success: false, error: 'Image not found' },
+        { status: 404 }
+      );
+    }
+
     // Fetch tag data for display
     const tags = image.tags || [];
     let populatedTags: any[] = [];
