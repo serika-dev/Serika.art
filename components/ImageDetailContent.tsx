@@ -18,6 +18,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
 interface ImageDetailContentProps {
@@ -783,7 +785,95 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-zinc-950 border-zinc-800">
           <DialogHeader><DialogTitle>Edit Metadata</DialogTitle></DialogHeader>
-          {/* Form details omitted for brevity, identical to original but using imageId */}
+          <div className="space-y-4 py-4">
+            {/* Tags */}
+            <div className="space-y-2">
+              <Label>Tags</Label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {editTags.map((tag) => (
+                  <Badge key={tag.name} variant="secondary" className="cursor-pointer hover:bg-destructive" onClick={() => removeEditTag(tag.name)}>
+                    {tag.name} ×
+                  </Badge>
+                ))}
+              </div>
+              <div className="relative">
+                <Input
+                  value={editTagInput}
+                  onChange={(e) => {
+                    setEditTagInput(e.target.value);
+                    if (e.target.value.trim()) {
+                      fetchEditTagSuggestions();
+                    } else {
+                      setShowEditTagSuggestions(false);
+                    }
+                  }}
+                  onKeyDown={handleEditTagKeyDown}
+                  placeholder="Add tags..."
+                />
+                {showEditTagSuggestions && editTagSuggestions.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-zinc-900 border border-zinc-800 rounded-md shadow-lg max-h-48 overflow-auto">
+                    {editTagSuggestions.map((tag) => (
+                      <button
+                        key={tag.name}
+                        className="w-full px-3 py-2 text-left hover:bg-zinc-800 text-sm"
+                        onClick={() => addEditTag(tag)}
+                      >
+                        {tag.name} <span className="text-muted-foreground text-xs">({tag.type})</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Description */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea
+                id="edit-description"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="Enter description..."
+                rows={3}
+              />
+            </div>
+
+            {/* Source */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-source">Source URL</Label>
+              <Input
+                id="edit-source"
+                value={editSource}
+                onChange={(e) => setEditSource(e.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+
+            {/* Rating */}
+            <div className="space-y-2">
+              <Label>Rating</Label>
+              <Select value={editRating} onValueChange={(v) => setEditRating(v as any)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="safe">Safe</SelectItem>
+                  <SelectItem value="questionable">Questionable</SelectItem>
+                  <SelectItem value="explicit">Explicit</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* AI Generated */}
+            <div className="flex items-center gap-2">
+              <Switch
+                id="edit-ai"
+                checked={editIsAIGenerated}
+                onCheckedChange={setEditIsAIGenerated}
+              />
+              <Label htmlFor="edit-ai">AI Generated</Label>
+            </div>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSaveEdit} disabled={savingEdit}>Save</Button>
