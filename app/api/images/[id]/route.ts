@@ -30,7 +30,26 @@ export async function GET(
 
     const image = result.rows[0];
 
-    if (image.deleted || image.unlisted) {
+    let isAuthorized = false;
+    try {
+      const { getCurrentUser } = await import('@/lib/auth');
+      const user = await getCurrentUser();
+      if (user) {
+        if (user.id === image.user_id) {
+          isAuthorized = true;
+        } else {
+          const userResult = await query(`SELECT rank FROM users WHERE id = $1`, [user.id]);
+          const rank = userResult.rows[0]?.rank || 'user';
+          if (['moderator', 'admin', 'owner'].includes(rank)) {
+            isAuthorized = true;
+          }
+        }
+      }
+    } catch (e) {
+      // Ignored: anonymous user
+    }
+
+    if ((image.deleted || image.unlisted) && !isAuthorized) {
       return NextResponse.json(
         { success: false, error: 'Image not found' },
         { status: 404 }
@@ -282,22 +301,25 @@ export async function DELETE(
     }
 
     await withTransaction(async (client) => {
-      // Get tag IDs before deleting
-      const tagsResult = await client.query(
-        `SELECT tag_id FROM image_tags WHERE image_id = $1`,
-        [image.id]
+      // Soft-delete the image
+      const now = new Date();
+      const reversibleUntil = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+      
+      await client.query(
+        `UPDATE images 
+         SET deleted = TRUE, 
+             deleted_at = $1, 
+             deleted_by = $2,
+             deleted_by_username = (SELECT username FROM users WHERE id = $2),
+             deletion_reason = 'User deleted their own image',
+             deletion_reversible_until = $3,
+             updated_at = NOW() 
+         WHERE id = $4`,
+        [now, userId, reversibleUntil, image.id]
       );
-
-      // Delete the image (cascades to image_tags, votes, favorites, comments)
-      await client.query(`DELETE FROM images WHERE id = $1`, [image.id]);
-
-      // Decrement tag counts
-      for (const row of tagsResult.rows) {
-        await client.query(
-          `UPDATE tags SET count = GREATEST(count - 1, 0) WHERE id = $1`,
-          [row.tag_id]
-        );
-      }
+      
+      // We don't decrement tag counts for soft-deleted images
+      // as they still exist in the database and might be restored.
     });
 
     return NextResponse.json({

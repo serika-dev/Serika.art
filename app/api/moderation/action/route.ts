@@ -40,7 +40,9 @@ export async function POST(request: NextRequest) {
     const now = new Date();
     const reversibleUntil = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
+    let prevState: any = null;
     if (normalizedAction === 'delete') {
+      prevState = { deleted: image.deleted, deleted_at: image.deleted_at };
       await query(
         `UPDATE images SET deleted = TRUE, deleted_at = $1, deleted_by = $2,
          deleted_by_username = $3, deletion_reason = $4, deletion_reversible_until = $5,
@@ -48,6 +50,7 @@ export async function POST(request: NextRequest) {
         [now, user.id, user.username, reason || null, reversibleUntil, image.id]
       );
     } else if (normalizedAction === 'unlist') {
+      prevState = { unlisted: image.unlisted, unlisted_at: image.unlisted_at };
       await query(
         `UPDATE images SET unlisted = TRUE, unlisted_at = $1, unlisted_by = $2,
          unlisted_by_username = $3, unlist_reason = $4, unlist_reversible_until = $5,
@@ -55,12 +58,32 @@ export async function POST(request: NextRequest) {
         [now, user.id, user.username, reason || null, reversibleUntil, image.id]
       );
     } else if (normalizedAction === 'restore') {
+      prevState = { deleted: image.deleted, unlisted: image.unlisted };
       await query(
         `UPDATE images SET deleted = FALSE, unlisted = FALSE, restored_at = $1,
          restored_by = $2, restored_by_username = $3, updated_at = NOW() WHERE id = $4`,
         [now, user.id, user.username, image.id]
       );
     }
+
+    // Log the moderation action
+    await query(
+      `INSERT INTO moderation_logs (
+        action, target_type, target_id, performed_by, performed_by_username,
+        reason, previous_state, reversible, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        normalizedAction,
+        'image',
+        image.id,
+        user.id,
+        user.username,
+        reason || null,
+        JSON.stringify(prevState),
+        normalizedAction !== 'restore',
+        now
+      ]
+    );
 
     return NextResponse.json({ success: true, message: `Image ${normalizedAction}d successfully` });
   } catch (error) {
