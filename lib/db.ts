@@ -452,7 +452,7 @@ export async function ensureSchema(): Promise<void> {
         id SERIAL PRIMARY KEY,
         type TEXT NOT NULL,
         query TEXT NOT NULL,
-        "limit" INTEGER NOT NULL DEFAULT 100,
+        limit_val INTEGER NOT NULL DEFAULT 100,
         status TEXT NOT NULL DEFAULT 'pending',
         progress JSONB DEFAULT '{"current":0,"total":0,"successful":0,"failed":0,"skipped":0}',
         post_ids JSONB,

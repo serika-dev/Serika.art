@@ -1,4 +1,4 @@
-import { query, getNextSequentialId, withTransaction } from '@/lib/db';
+import { query, withTransaction } from '@/lib/db';
 import {
   fetchDanbooruPost,
   fetchDanbooruPostsByArtist,
@@ -248,9 +248,6 @@ async function importSinglePost(post: DanbooruPost): Promise<ImportResult> {
     const tagData = extractDanbooruTags(post);
     const tagIds = await getOrCreateTagsBulk(tagData);
 
-    // Get next sequential ID using ATOMIC counter
-    const nextSequentialId = await getNextSequentialId();
-
     const metadataJson = {
       danbooruId: post.id,
       md5: post.md5,
@@ -258,8 +255,17 @@ async function importSinglePost(post: DanbooruPost): Promise<ImportResult> {
       importedAt: new Date().toISOString(),
     };
 
-    // Run transaction for image creation
+    // Run transaction for image creation (sequential ID allocated atomically inside)
     await withTransaction(async (client) => {
+      // Get next sequential ID INSIDE the transaction to prevent races
+      const seqResult = await client.query(
+        `INSERT INTO counters (name, value)
+         VALUES ('imageSequentialId', 1)
+         ON CONFLICT (name) DO UPDATE SET value = counters.value + 1
+         RETURNING value`
+      );
+      const nextSequentialId = seqResult.rows[0].value;
+
       const imgRes = await client.query(
         `INSERT INTO images (
           sequential_id, user_id, username, url, thumbnail_url,

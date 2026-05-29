@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, getCachedCount, cacheGet, cacheSet } from '@/lib/db';
+import { query, cacheGet, cacheSet } from '@/lib/db';
 import { publicImageFilter, ratingFilter } from '@/lib/contentFilters';
 
 // Cache tag lookups
@@ -121,6 +121,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Execute queries in parallel
+    // Use direct count query with alias since whereClause contains subqueries referencing 'i.'
+    const countCacheKey = `count:images:${whereClause}:${JSON.stringify(params)}`;
     const [imagesResult, countResult] = await Promise.all([
       query(
         `SELECT i.id, i.sequential_id, i.user_id, i.username, i.url, i.thumbnail_url,
@@ -132,7 +134,17 @@ export async function GET(request: NextRequest) {
          LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
         [...params, limit, offset]
       ),
-      getCachedCount('images', whereClause.replace(/i\./g, ''), params),
+      (async () => {
+        const cached = await cacheGet(countCacheKey);
+        if (cached !== null) return parseInt(cached, 10);
+        const res = await query(
+          `SELECT COUNT(*) as count FROM images i WHERE ${whereClause}`,
+          params
+        );
+        const count = parseInt(res.rows[0]?.count ?? '0', 10);
+        await cacheSet(countCacheKey, String(count), 300);
+        return count;
+      })(),
     ]);
 
     const images = imagesResult.rows;

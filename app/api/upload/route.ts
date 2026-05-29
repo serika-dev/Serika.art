@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, getNextSequentialId, withTransaction } from '@/lib/db';
+import { query, withTransaction } from '@/lib/db';
 import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
 import { requireAuth } from '@/lib/auth';
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
         `INSERT INTO users (id, username, email, avatar_url, rank, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
          ON CONFLICT (id) DO UPDATE SET
-           username = $2, email = $3, avatar_url = $4, updated_at = NOW()`,
+           username = $2, email = $3, avatar_url = $4, rank = CASE WHEN users.rank IN ('moderator','admin','owner') THEN users.rank ELSE $5 END, updated_at = NOW()`,
         [user.id, user.username, user.email, user.avatarUrl || '', rank]
       );
     }
@@ -115,11 +115,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Get the next sequential ID
-    const nextSequentialId = await getNextSequentialId();
-
-    // Insert image and tags in a transaction
+    // Insert image and tags in a transaction (sequential ID is allocated atomically inside)
     const imageResult = await withTransaction(async (client) => {
+      // Get the next sequential ID INSIDE the transaction to prevent races
+      const seqResult = await client.query(
+        `INSERT INTO counters (name, value)
+         VALUES ('imageSequentialId', 1)
+         ON CONFLICT (name) DO UPDATE SET value = counters.value + 1
+         RETURNING value`
+      );
+      const nextSequentialId = seqResult.rows[0].value;
+
       // Resolve tags
       const tagIds: number[] = [];
       for (const tagInfo of tagsData) {
@@ -177,17 +183,18 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      return imgResult.rows[0];
+      return { ...imgResult.rows[0], _nextSequentialId: nextSequentialId };
     });
 
+    const { _nextSequentialId, ...imageData } = imageResult;
     return NextResponse.json({
       success: true,
       image: {
-        ...imageResult,
-        _id: String(imageResult.id),
-        dbid: String(imageResult.id),
-        post_id: nextSequentialId,
-        sequentialId: nextSequentialId,
+        ...imageData,
+        _id: String(imageData.id),
+        dbid: String(imageData.id),
+        post_id: _nextSequentialId,
+        sequentialId: _nextSequentialId,
       },
     });
   } catch (error: any) {
