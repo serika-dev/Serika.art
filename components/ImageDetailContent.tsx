@@ -60,6 +60,11 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
   const [editIsAIGenerated, setEditIsAIGenerated] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Comment edit/delete states
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [updatingComment, setUpdatingComment] = useState(false);
+
   // Check if user is a moderator or higher
   const canModerate = user && ['moderator', 'admin', 'owner'].includes(user.rank || '');
   const isAdmin = user && ['admin', 'owner'].includes(user.rank || '');
@@ -150,6 +155,42 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
       alert(error.response?.data?.error || 'Failed to post comment');
     } finally {
       setSubmittingComment(false);
+    }
+  };
+
+  const handleEditComment = (commentId: string, content: string) => {
+    setEditingCommentId(commentId);
+    setEditingCommentText(content);
+  };
+
+  const handleUpdateComment = async (commentId: string) => {
+    if (!editingCommentText.trim()) return;
+    setUpdatingComment(true);
+    try {
+      const response = await axios.patch(`/api/comments/${commentId}`, {
+        content: editingCommentText,
+      });
+      if (response.data.success) {
+        setEditingCommentId(null);
+        setEditingCommentText('');
+        fetchComments();
+      }
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to update comment');
+    } finally {
+      setUpdatingComment(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!confirm('Are you sure you want to delete this comment?')) return;
+    try {
+      const response = await axios.delete(`/api/comments/${commentId}`);
+      if (response.data.success) {
+        fetchComments();
+      }
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to delete comment');
     }
   };
 
@@ -273,7 +314,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
     if (!image) return;
     
     // Initialize edit state with current image data
-    const currentTags = image.tags.map((tag: any) => ({
+    const currentTags = (image.tags || []).map((tag: any) => ({
       name: typeof tag === 'string' ? tag : tag.name,
       type: typeof tag === 'object' && tag.type ? tag.type : 'general' as const,
     }));
@@ -282,7 +323,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
     setEditDescription(image.description || '');
     setEditSource(image.source || '');
     setEditRating(image.rating);
-    setEditIsAIGenerated(image.isAIGenerated);
+    setEditIsAIGenerated(image.isAIGenerated || false);
     setIsEditDialogOpen(true);
   };
 
@@ -401,13 +442,19 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
     const topLevel: (Comment & { replies: Comment[] })[] = [];
 
     comments.forEach(comment => {
-      commentMap.set(comment._id.toString(), { ...comment, replies: [] });
+      const idStr = (comment.id || comment._id)?.toString();
+      if (idStr) {
+        commentMap.set(idStr, { ...comment, replies: [] });
+      }
     });
 
     comments.forEach(comment => {
-      const commentWithReplies = commentMap.get(comment._id.toString())!;
-      if (comment.parentId) {
-        const parent = commentMap.get(comment.parentId.toString());
+      const idStr = (comment.id || comment._id)?.toString();
+      if (!idStr) return;
+      const commentWithReplies = commentMap.get(idStr)!;
+      const parentId = comment.parentId || comment.parent_id;
+      if (parentId) {
+        const parent = commentMap.get(parentId.toString());
         if (parent) {
           parent.replies.push(commentWithReplies);
         }
@@ -495,7 +542,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
 
         <div className="space-y-6">
           {organizeComments(comments).map((comment) => (
-            <div key={comment._id.toString()} className="space-y-4">
+            <div key={(comment.id || comment._id)?.toString()} className="space-y-4">
               <div className="flex gap-3">
                 <Avatar className="h-10 w-10">
                   <AvatarImage src={comment.avatarUrl || undefined} />
@@ -521,19 +568,50 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
                       {new Date(comment.createdAt).toLocaleString()}
                     </span>
                   </div>
-                  <p className="text-sm text-foreground/90 whitespace-pre-wrap mb-2">{comment.content}</p>
-                  {user && (
-                    <Button variant="ghost" size="sm" onClick={() => setReplyTo(comment._id.toString())} className="h-auto py-0.5 px-2 text-xs text-muted-foreground hover:text-primary">
-                      Reply
-                    </Button>
+                  {editingCommentId === (comment.id || comment._id)?.toString() ? (
+                    <div className="space-y-2 mb-2 mt-1">
+                      <textarea
+                        value={editingCommentText}
+                        onChange={(e) => setEditingCommentText(e.target.value)}
+                        className="w-full text-sm bg-background border border-input rounded-md p-2 focus:ring-1 focus:ring-primary focus:outline-none"
+                        rows={3}
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => handleUpdateComment((comment.id || comment._id)!.toString())} disabled={updatingComment}>
+                          Save
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingCommentId(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-foreground/90 whitespace-pre-wrap mb-2">{comment.content}</p>
                   )}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {user && (
+                      <Button variant="ghost" size="sm" onClick={() => setReplyTo((comment.id || comment._id)?.toString())} className="h-auto py-0.5 px-2 text-xs text-muted-foreground hover:text-primary">
+                        Reply
+                      </Button>
+                    )}
+                    {user && (comment.userId === user.id || canModerate) && editingCommentId !== (comment.id || comment._id)?.toString() && (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => handleEditComment((comment.id || comment._id)!.toString(), comment.content)} className="h-auto py-0.5 px-2 text-xs text-muted-foreground hover:text-primary">
+                          Edit
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteComment((comment.id || comment._id)!.toString())} className="h-auto py-0.5 px-2 text-xs text-red-400 hover:text-red-500 hover:bg-red-500/10">
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {comment.replies.length > 0 && (
                 <div className="ml-12 space-y-4 border-l-2 border-border pl-4">
                   {comment.replies.map((reply) => (
-                    <div key={reply._id.toString()} className="flex gap-3">
+                    <div key={(reply.id || reply._id)?.toString()} className="flex gap-3">
                       <Avatar className="h-8 w-8">
                         <AvatarImage src={reply.avatarUrl || undefined} />
                         <AvatarFallback>{reply.username[0].toUpperCase()}</AvatarFallback>
@@ -547,7 +625,36 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
                             {new Date(reply.createdAt).toLocaleString()}
                           </span>
                         </div>
-                        <p className="text-sm text-foreground/90 whitespace-pre-wrap">{reply.content}</p>
+                        {editingCommentId === (reply.id || reply._id)?.toString() ? (
+                          <div className="space-y-2 mb-2 mt-1">
+                            <textarea
+                              value={editingCommentText}
+                              onChange={(e) => setEditingCommentText(e.target.value)}
+                              className="w-full text-sm bg-background border border-input rounded-md p-2 focus:ring-1 focus:ring-primary focus:outline-none"
+                              rows={3}
+                            />
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={() => handleUpdateComment((reply.id || reply._id)!.toString())} disabled={updatingComment}>
+                                Save
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditingCommentId(null)}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-foreground/90 whitespace-pre-wrap">{reply.content}</p>
+                        )}
+                        {user && (reply.userId === user.id || canModerate) && editingCommentId !== (reply.id || reply._id)?.toString() && (
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <Button variant="ghost" size="sm" onClick={() => handleEditComment((reply.id || reply._id)!.toString(), reply.content)} className="h-auto py-0.5 px-2 text-xs text-muted-foreground hover:text-primary">
+                              Edit
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteComment((reply.id || reply._id)!.toString())} className="h-auto py-0.5 px-2 text-xs text-red-400 hover:text-red-500 hover:bg-red-500/10">
+                              Delete
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -567,7 +674,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
           <Card className="overflow-hidden">
             <div className="bg-muted/50 border-b px-4 py-2 flex items-center justify-between">
               <span className="text-sm text-muted-foreground font-mono">
-                {image.width} × {image.height} • {(image.fileSize / 1024 / 1024).toFixed(2)} MB • ID #{image.sequentialId}
+                {image.width} × {image.height} • {((image.fileSize || image.file_size || 0) / 1024 / 1024).toFixed(2)} MB • ID #{image.sequentialId}
               </span>
               <Button
                 variant="secondary"
@@ -584,7 +691,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={image.url}
-                alt={image.tags.map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
+                alt={(image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
                 className={imageSize === 'fit' ? 'max-w-full max-h-[85vh] object-contain shadow-2xl rounded-sm' : 'w-auto h-auto'}
                 fetchPriority="high"
               />
@@ -735,9 +842,9 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
                 <span className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Metadata</span>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
                   <div><span className="text-[10px] text-muted-foreground block">Dimensions</span><span className="text-sm font-medium">{image.width} × {image.height}</span></div>
-                  <div><span className="text-[10px] text-muted-foreground block">Size</span><span className="text-sm font-medium">{(image.fileSize / 1024 / 1024).toFixed(2)} MB</span></div>
+                  <div><span className="text-[10px] text-muted-foreground block">Size</span><span className="text-sm font-medium">{((image.fileSize || image.file_size || 0) / 1024 / 1024).toFixed(2)} MB</span></div>
                   <div><span className="text-[10px] text-muted-foreground block">Rating</span><Badge variant="outline" className={cn("uppercase text-[10px]", getRatingColor(image.rating))}>{image.rating}</Badge></div>
-                  <div><span className="text-[10px] text-muted-foreground block">Date</span><span className="text-sm font-medium">{new Date(image.createdAt).toLocaleDateString()}</span></div>
+                  <div><span className="text-[10px] text-muted-foreground block">Date</span><span className="text-sm font-medium">{new Date(image.createdAt || image.created_at || new Date()).toLocaleDateString()}</span></div>
                 </div>
               </div>
               {image.source && (
@@ -756,7 +863,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
             <CardHeader><CardTitle>Tags</CardTitle></CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-1.5">
-                {image.tags.map((tag: any) => {
+                {(image.tags || []).map((tag: any) => {
                   const tagName = typeof tag === 'string' ? tag : tag.name;
                   const tagType = typeof tag === 'object' ? tag.type : 'general';
                   const typeColors = {
@@ -776,7 +883,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
             </CardContent>
           </Card>
 
-          <NativeAd rating={image.rating} id="sidebar-ad" />
+          <NativeAd rating={image.rating} id="sidebar-ad" variant="sidebar" />
         </div>
 
       </div>

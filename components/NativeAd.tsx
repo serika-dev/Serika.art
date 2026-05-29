@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 import { Badge } from '@/components/ui/badge';
 import { CardContent } from '@/components/ui/card';
@@ -15,7 +16,7 @@ declare global {
 interface NativeAdProps {
   id?: string | number;
   rating?: 'safe' | 'questionable' | 'explicit';
-  variant?: 'inline' | 'banner'; // inline = grid card, banner = full-width row
+  variant?: 'inline' | 'banner' | 'sidebar'; // inline = grid card, banner = full-width row, sidebar = compact sidebar block
 }
 
 const SFW_ZONE_ID = process.env.NEXT_PUBLIC_SFW_AD_ZONE_ID || '5897078';
@@ -36,6 +37,9 @@ const NativeAd: React.FC<NativeAdProps> = ({ id, rating = 'safe', variant = 'inl
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [adData, setAdData] = useState<AdData | null>(null);
   const isMounted = useRef(false);
+
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     isMounted.current = true;
@@ -70,7 +74,7 @@ const NativeAd: React.FC<NativeAdProps> = ({ id, rating = 'safe', variant = 'inl
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch ad data from API
+  // Fetch ad data from API - also trigger on path/search changes to refresh metadata
   useEffect(() => {
     if (!zoneId || typeof window === 'undefined') return;
 
@@ -95,35 +99,64 @@ const NativeAd: React.FC<NativeAdProps> = ({ id, rating = 'safe', variant = 'inl
     };
 
     fetchAdData();
-  }, [zoneId]);
+  }, [zoneId, id, pathname, searchParams]);
 
-  // Trigger ad render when script is ready and zoneId exists
+  // Clean up and reset the ad container whenever pathname or search params change
+  useEffect(() => {
+    const el = insRef.current;
+    if (el) {
+      el.removeAttribute('data-processed');
+      el.innerHTML = '';
+      
+      const parent = el.parentElement;
+      if (parent) {
+        Array.from(parent.children).forEach((child) => {
+          if (child !== el && child.getAttribute('data-ad-badge') !== 'true') {
+            child.remove();
+          }
+        });
+      }
+    }
+  }, [pathname, searchParams]);
+
+  // Trigger ad render when script is ready, zoneId exists, and the element is in the DOM
   useEffect(() => {
     if (!zoneId || !scriptLoaded || typeof window === 'undefined') return;
 
-    const tryRender = () => {
-      try {
-        window.AdProvider = window.AdProvider || [];
-        window.AdProvider.push({
-          serve: {
-            zoneId: zoneId,
-          },
-        });
-      } catch (e) {
-        console.error('AdProvider render error:', e);
+    let timer: NodeJS.Timeout;
+    let attempts = 0;
+    const maxAttempts = 50; // Poll for up to 5 seconds
+
+    const checkAndRender = () => {
+      attempts++;
+      const el = insRef.current;
+      
+      if (el && document.body.contains(el)) {
+        if (el.getAttribute('data-processed') !== 'true') {
+          try {
+            window.AdProvider = window.AdProvider || [];
+            window.AdProvider.push({
+              serve: {},
+            });
+          } catch (e) {
+            console.error('AdProvider render error:', e);
+          }
+        }
+      } else if (attempts < maxAttempts) {
+        timer = setTimeout(checkAndRender, 100);
       }
     };
 
-    const timer = setTimeout(tryRender, 100);
+    timer = setTimeout(checkAndRender, 100);
     return () => clearTimeout(timer);
-  }, [id, rating, zoneId, scriptLoaded]);
+  }, [id, rating, zoneId, scriptLoaded, pathname, searchParams]);
 
   // Don't render if no zone configured (but still return placeholder to avoid layout shift)
   if (!zoneId) {
     return (
       <div className="native-ad-item group flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40 relative">
         <div className="relative aspect-square overflow-hidden bg-muted flex items-center justify-center">
-          <Badge className="absolute top-3 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-gray-500/20 text-gray-400 border-gray-500/30 z-10">
+          <Badge data-ad-badge="true" className="absolute top-3 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-gray-500/20 text-gray-400 border-gray-500/30 z-10">
             Ad Unavailable
           </Badge>
         </div>
@@ -134,7 +167,7 @@ const NativeAd: React.FC<NativeAdProps> = ({ id, rating = 'safe', variant = 'inl
   if (variant === 'banner') {
     return (
       <div className="native-ad-banner w-full flex items-center justify-center bg-card/30 rounded-2xl overflow-hidden border border-border/30 relative py-2 min-h-[120px]">
-        <Badge className="absolute top-2 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-blue-500/20 text-blue-400 border-blue-500/30 z-10 pointer-events-none">
+        <Badge data-ad-badge="true" className="absolute top-2 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-blue-500/20 text-blue-400 border-blue-500/30 z-10 pointer-events-none">
           Sponsored{isSafe ? "" : " (18+)"}
         </Badge>
         <ins ref={insRef} className="eas6a97888e20" data-zoneid={zoneId} style={{ display: 'block', width: '100%', minHeight: '90px' }}></ins>
@@ -142,10 +175,39 @@ const NativeAd: React.FC<NativeAdProps> = ({ id, rating = 'safe', variant = 'inl
     );
   }
 
+  if (variant === 'sidebar') {
+    return (
+      <div className="native-ad-sidebar group flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative">
+        <div className="relative aspect-[16/10] overflow-hidden bg-muted shrink-0">
+          <Badge data-ad-badge="true" className="absolute top-2 left-2 backdrop-blur-md uppercase text-[9px] font-black tracking-widest px-1.5 py-0.5 border bg-blue-500/20 text-blue-400 border-blue-500/30 z-10 pointer-events-none">
+            Sponsored{isSafe ? "" : " (18+)"}
+          </Badge>
+          <ins ref={insRef} className="eas6a97888e20 absolute inset-0" data-zoneid={zoneId} style={{ display: 'block', width: '100%', height: '100%' }}></ins>
+        </div>
+        <CardContent className="p-3 flex flex-col flex-1">
+          <h3 className="text-xs font-bold text-foreground mb-1 line-clamp-1">
+            {adData?.title || 'Advertisement'}
+          </h3>
+          <div className="flex items-center justify-between mt-auto">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <div className="w-4 h-4 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <Megaphone size={8} className="text-primary" />
+              </div>
+              <span className="text-[10px] font-bold text-foreground/70 truncate group-hover:text-primary transition-colors">
+                {adData?.brand || 'ExoClick'}
+              </span>
+            </div>
+            <span className="text-[9px] font-bold text-muted-foreground/40">Ad</span>
+          </div>
+        </CardContent>
+      </div>
+    );
+  }
+
   return (
     <div className="native-ad-item group flex flex-col h-full bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative">
       <div className="relative aspect-square overflow-hidden bg-muted shrink-0">
-        <Badge className="absolute top-3 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-blue-500/20 text-blue-400 border-blue-500/30 z-10 pointer-events-none">
+        <Badge data-ad-badge="true" className="absolute top-3 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-blue-500/20 text-blue-400 border-blue-500/30 z-10 pointer-events-none">
           Sponsored{isSafe ? "" : " (18+)"}
         </Badge>
         <ins ref={insRef} className="eas6a97888e20 absolute inset-0" data-zoneid={zoneId} style={{ display: 'block', width: '100%', height: '100%' }}></ins>

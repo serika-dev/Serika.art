@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query as dbQuery } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { Document, Filter, ObjectId } from 'mongodb';
-import { publicImageMongoFilter, ratingMongoFilter } from '@/lib/contentFilters';
+import { publicImageFilter, ratingFilter } from '@/lib/contentFilters';
 
 type SearchResults = {
   images?: unknown[];
@@ -30,79 +29,104 @@ export async function GET(request: NextRequest) {
 
     const results: SearchResults = {};
 
-    const imagesCollection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
-    const usersCollection = await getCollection('users');
-
     // Search images
     if (type === 'all' || type === 'images') {
       // Find matching tags first
-      const matchingTags = await tagsCollection
-        .find({ name: { $regex: query, $options: 'i' } })
-        .limit(100)
-        .toArray();
-      const tagIds = matchingTags.map((t) => t._id);
+      const matchingTagsResult = await dbQuery(
+        `SELECT id FROM tags WHERE name ILIKE $1 LIMIT 100`,
+        [`%${query}%`]
+      );
+      const tagIds = matchingTagsResult.rows.map((t) => t.id);
 
-      const imageQuery: Filter<Document> & Record<string, unknown> = {
-        ...publicImageMongoFilter(),
-        $or: [
-          { tags: { $in: tagIds } },
-          { description: { $regex: query, $options: 'i' } },
-          { username: { $regex: query, $options: 'i' } },
-        ],
-      };
-      const ratingFilter = ratingMongoFilter(ratings);
-      if (ratingFilter) {
-        imageQuery.rating = ratingFilter;
+      const whereClauses: string[] = [publicImageFilter()];
+      const queryParams: any[] = [];
+      let paramIndex = 1;
+
+      // Search match either by tag, description, or username
+      const orClauses: string[] = [];
+      
+      if (tagIds.length > 0) {
+        orClauses.push(`i.id IN (SELECT image_id FROM image_tags WHERE tag_id = ANY($${paramIndex}))`);
+        queryParams.push(tagIds);
+        paramIndex++;
+      }
+      
+      orClauses.push(`i.description ILIKE $${paramIndex}`);
+      queryParams.push(`%${query}%`);
+      paramIndex++;
+
+      orClauses.push(`i.username ILIKE $${paramIndex}`);
+      queryParams.push(`%${query}%`);
+      paramIndex++;
+
+      whereClauses.push(`(${orClauses.join(' OR ')})`);
+
+      // Ratings filter
+      const rFilter = ratingFilter(ratings, paramIndex);
+      if (rFilter) {
+        whereClauses.push(`i.${rFilter.clause}`);
+        queryParams.push(...rFilter.params);
+        paramIndex += rFilter.params.length;
       }
 
-      const images = await imagesCollection
-        .find(imageQuery)
-        .sort({ upvotes: -1 })
-        .limit(limit)
-        .toArray();
+      const imagesResult = await dbQuery(
+        `SELECT i.*
+         FROM images i
+         WHERE ${whereClauses.join(' AND ')}
+         ORDER BY i.upvotes DESC
+         LIMIT $${paramIndex}`,
+        [...queryParams, limit]
+      );
 
-      // Get all tag IDs from found images
-      const allTagIds = new Set<string>();
-      images.forEach((img) => {
-        (img.tags || []).forEach((tagId: ObjectId) => allTagIds.add(tagId.toString()));
-      });
+      const images = imagesResult.rows;
 
-      const tagDocs = await tagsCollection
-        .find({ _id: { $in: Array.from(allTagIds).map((id) => new ObjectId(id)) } })
-        .toArray();
-      const tagMap = new Map(tagDocs.map((t) => [t._id.toString(), t]));
+      if (images.length > 0) {
+        // Batch fetch tags
+        const imageIds = images.map(img => img.id);
+        const tagsResult = await dbQuery(
+          `SELECT it.image_id, t.name
+           FROM image_tags it
+           JOIN tags t ON t.id = it.tag_id
+           WHERE it.image_id = ANY($1)`,
+          [imageIds]
+        );
 
-      results.images = images.map((img) => ({
-        id: img._id.toString(),
-        dbid: img._id.toString(),
-        post_id: img.sequentialId,
-        url: img.url,
-        thumbnail_url: img.thumbnailUrl,
-        width: img.width,
-        height: img.height,
-        rating: img.rating,
-        tags: (img.tags || []).slice(0, 5).map((tagId: ObjectId) => {
-          const tag = tagMap.get(tagId.toString());
-          return tag?.name || 'unknown';
-        }),
-        stats: {
-          upvotes: img.upvotes || 0,
-          views: img.views || 0,
-        },
-      }));
+        const tagsByImage = new Map<number, string[]>();
+        for (const row of tagsResult.rows) {
+          const list = tagsByImage.get(row.image_id) || [];
+          list.push(row.name);
+          tagsByImage.set(row.image_id, list);
+        }
+
+        results.images = images.map((img) => ({
+          id: String(img.id),
+          dbid: String(img.id),
+          post_id: img.sequential_id,
+          url: img.url,
+          thumbnail_url: img.thumbnail_url,
+          width: img.width,
+          height: img.height,
+          rating: img.rating,
+          tags: (tagsByImage.get(img.id) || []).slice(0, 5),
+          stats: {
+            upvotes: img.upvotes || 0,
+            views: img.views || 0,
+          },
+        }));
+      } else {
+        results.images = [];
+      }
     }
 
     // Search tags
     if (type === 'all' || type === 'tags') {
-      const tags = await tagsCollection
-        .find({ name: { $regex: query, $options: 'i' } })
-        .sort({ count: -1 })
-        .limit(limit)
-        .toArray();
+      const tagsResult = await dbQuery(
+        `SELECT id, name, type, count FROM tags WHERE name ILIKE $1 ORDER BY count DESC LIMIT $2`,
+        [`%${query}%`, limit]
+      );
 
-      results.tags = tags.map((tag) => ({
-        id: tag._id.toString(),
+      results.tags = tagsResult.rows.map((tag) => ({
+        id: String(tag.id),
         name: tag.name,
         type: tag.type,
         count: tag.count || 0,
@@ -111,15 +135,15 @@ export async function GET(request: NextRequest) {
 
     // Search users
     if (type === 'all' || type === 'users') {
-      const users = await usersCollection
-        .find({ username: { $regex: query, $options: 'i' } })
-        .limit(limit)
-        .toArray();
+      const usersResult = await dbQuery(
+        `SELECT id, username, avatar_url, rank FROM users WHERE username ILIKE $1 LIMIT $2`,
+        [`%${query}%`, limit]
+      );
 
-      results.users = users.map((user) => ({
-        id: user._id.toString(),
+      results.users = usersResult.rows.map((user) => ({
+        id: user.id,
         username: user.username,
-        avatar_url: user.avatarUrl || null,
+        avatar_url: user.avatar_url || null,
         rank: user.rank,
       }));
     }

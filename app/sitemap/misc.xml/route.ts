@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCollection } from "@/lib/db";
+import { query } from "@/lib/db";
 import { BASE_URL, wrapInUrlset } from "@/lib/sitemap-utils";
 
 export async function GET() {
@@ -16,12 +16,12 @@ export async function GET() {
 
     // Fetch users
     try {
-      const usersCollection = await getCollection("users");
-      const users = await usersCollection.find({}, { projection: { username: 1, updatedAt: 1 } }).toArray();
+      const usersResult = await query("SELECT username, updated_at FROM users");
+      const users = usersResult.rows;
       users.forEach(user => {
         routes.push({
           url: `${BASE_URL}/user/${encodeURIComponent(user.username)}`,
-          lastModified: user.updatedAt || new Date(),
+          lastModified: user.updated_at || new Date(),
           changeFrequency: "weekly",
           priority: 0.5,
         });

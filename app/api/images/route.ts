@@ -1,35 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection, getCachedCount } from '@/lib/db';
-import { Document, Filter, ObjectId, Sort } from 'mongodb';
-import { publicImageMongoFilter, ratingMongoFilter } from '@/lib/contentFilters';
+import { query, getCachedCount, cacheGet, cacheSet } from '@/lib/db';
+import { publicImageFilter, ratingFilter } from '@/lib/contentFilters';
 
-type ImageDocument = Document & {
-  _id: ObjectId;
-  sequentialId?: number;
-  tags?: ObjectId[];
-};
-
-// Cache tag lookups to reduce DB queries
-const tagNameCache = new Map<string, ObjectId>();
-const tagIdCache = new Map<string, { name: string; type: string; count: number }>();
-const TAG_CACHE_TTL = 60000; // 1 minute
-let lastTagCacheClear = Date.now();
-
-function clearTagCacheIfNeeded() {
-  if (Date.now() - lastTagCacheClear > TAG_CACHE_TTL) {
-    tagNameCache.clear();
-    tagIdCache.clear();
-    lastTagCacheClear = Date.now();
-  }
-}
+// Cache tag lookups
+const TAG_CACHE_TTL = 60; // 1 minute (Redis seconds)
 
 export async function GET(request: NextRequest) {
   try {
-    clearTagCacheIfNeeded();
-    
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '24'), 100); // Cap at 100
+    const limit = Math.min(parseInt(searchParams.get('limit') || '24'), 100);
     const tagNames = searchParams.get('tags')?.split(',').filter(Boolean) || [];
     const ratings = searchParams.get('ratings')?.split(',').filter(Boolean) || [];
     const sort = searchParams.get('sort') || 'newest';
@@ -39,220 +19,166 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId');
     const username = searchParams.get('username');
 
-    const skip = (page - 1) * limit;
+    const offset = (page - 1) * limit;
 
-    const collection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
-    
-    // Build query
-    const query: Filter<Document> & Record<string, unknown> = publicImageMongoFilter();
-    
+    // Build dynamic WHERE clauses
+    const conditions: string[] = [publicImageFilter()];
+    const params: any[] = [];
+    let paramIndex = 1;
+
     if (username) {
-      // Filter by username
-      query.username = username;
+      conditions.push(`LOWER(i.username) = LOWER($${paramIndex})`);
+      params.push(username);
+      paramIndex++;
     } else if (userId) {
       if (userId === 'null') {
-        // Anonymous images
-        query.userId = null;
+        conditions.push(`i.user_id IS NULL`);
       } else {
-        query.userId = new ObjectId(userId);
+        conditions.push(`i.user_id = $${paramIndex}`);
+        params.push(userId);
+        paramIndex++;
       }
     }
-    
-    // Resolve tag names to ObjectIDs
+
+    // Resolve tag names to IDs
     if (tagNames.length > 0) {
-      const tagDocs = await tagsCollection
-        .find({ name: { $in: tagNames.map(t => t.toLowerCase()) } })
-        .toArray();
-      const tagIds = tagDocs.map(t => t._id);
-      if (tagIds.length > 0) {
-        query.tags = { $all: tagIds };
-      } else {
-        // No matching tags, return empty result
+      const tagPlaceholders = tagNames.map((_, i) => `$${i + 1}`);
+      const tagResult = await query(
+        `SELECT id FROM tags WHERE name = ANY(ARRAY[${tagPlaceholders.join(',')}])`,
+        tagNames.map(t => t.toLowerCase())
+      );
+
+      const tagIds = tagResult.rows.map(r => r.id);
+      if (tagIds.length === 0) {
         return NextResponse.json({
           success: true,
           images: [],
-          pagination: {
-            page,
-            limit,
-            total: 0,
-            pages: 0,
-          },
+          pagination: { page, limit, total: 0, pages: 0 },
         });
       }
+
+      // Images must have ALL specified tags
+      conditions.push(
+        `i.id IN (
+          SELECT image_id FROM image_tags
+          WHERE tag_id = ANY($${paramIndex}::int[])
+          GROUP BY image_id
+          HAVING COUNT(DISTINCT tag_id) = ${tagIds.length}
+        )`
+      );
+      params.push(tagIds);
+      paramIndex++;
     }
-    
-    const ratingFilter = ratingMongoFilter(ratings);
-    if (ratingFilter) {
-      query.rating = ratingFilter;
+
+    // Rating filter
+    const rf = ratingFilter(ratings, paramIndex);
+    if (rf) {
+      conditions.push(`i.${rf.clause}`);
+      params.push(...rf.params);
+      paramIndex += rf.params.length;
     }
-    
+
     if (aiOnly) {
-      query.isAIGenerated = true;
+      conditions.push(`i.is_ai_generated = TRUE`);
     }
-    
+
     if (hideAI) {
-      query.isAIGenerated = { $ne: true };
+      conditions.push(`i.is_ai_generated = FALSE`);
     }
-    
+
     if (search) {
       // Search in tag names, description, and username
-      const tagSearchResults = await tagsCollection
-        .find({ name: { $regex: search, $options: 'i' } })
-        .toArray();
-      const tagIds = tagSearchResults.map(t => t._id);
-      
-      query.$or = [
-        { tags: { $in: tagIds } },
-        { description: { $regex: search, $options: 'i' } },
-        { username: { $regex: search, $options: 'i' } },
-      ];
-    }
-
-    // Determine sort
-    let sortOption: Sort = { createdAt: -1 };
-    switch (sort) {
-      case 'popular':
-        sortOption = { upvotes: -1, views: -1 };
-        break;
-      case 'favorites':
-        sortOption = { favorites: -1 };
-        break;
-      case 'views':
-        sortOption = { views: -1 };
-        break;
-      case 'oldest':
-        sortOption = { createdAt: 1 };
-        break;
-      case 'filesize':
-        sortOption = { fileSize: -1 };
-        break;
-      case 'filesize-asc':
-        sortOption = { fileSize: 1 };
-        break;
-      case 'resolution':
-        // Sort by total pixels (width * height)
-        sortOption = { width: -1, height: -1 };
-        break;
-      case 'aspectratio':
-        // Sort by aspect ratio (wider first)
-        sortOption = { width: -1 };
-        break;
-      case 'alphabetical':
-        sortOption = { username: 1, createdAt: -1 };
-        break;
-      case 'alphabetical-reverse':
-        sortOption = { username: -1, createdAt: -1 };
-        break;
-      case 'random':
-        // Random sort is handled differently (sample aggregation)
-        // Note: Random sampling does not support traditional pagination - each page request
-        // will return a different random sample. This is by design for discovery features.
-        sortOption = { _id: 1 }; // placeholder, handled below
-        break;
-    }
-
-    // Use projection to only fetch needed fields (faster for large collections)
-    const projection = {
-      sequentialId: 1,
-      userId: 1,
-      username: 1,
-      url: 1,
-      thumbnailUrl: 1,
-      width: 1,
-      height: 1,
-      fileSize: 1,
-      tags: 1,
-      rating: 1,
-      isAIGenerated: 1,
-      upvotes: 1,
-      downvotes: 1,
-      favorites: 1,
-      views: 1,
-      createdAt: 1,
-    };
-
-    let images: ImageDocument[];
-    let total: number;
-
-    const usernameCollation = username ? { locale: 'en', strength: 2 } : undefined;
-
-    if (sort === 'random') {
-      const pipeline = [
-        { $match: query },
-        { $sample: { size: limit } },
-        { $project: projection },
-      ];
-
-      [images, total] = await Promise.all([
-        collection.aggregate<ImageDocument>(pipeline).toArray(),
-        getCachedCount('images', query),
-      ]);
-    } else {
-      const findCursor = collection
-        .find<ImageDocument>(query, { projection })
-        .sort(sortOption)
-        .skip(skip)
-        .limit(limit);
-      if (usernameCollation) findCursor.collation(usernameCollation);
-
-      const [rows, countResult] = await Promise.all([
-        findCursor.toArray(),
-        getCachedCount('images', query),
-      ]);
-      images = rows;
-      total = countResult;
-    }
-
-    // Populate tags for all images (batch lookup)
-    const allTagIds = new Set<string>();
-    images.forEach((img) => {
-      if (Array.isArray(img.tags)) {
-        img.tags.forEach((tagId) => {
-          const idStr = tagId.toString();
-          if (!tagIdCache.has(idStr)) {
-            allTagIds.add(idStr);
-          }
-        });
-      }
-    });
-
-    // Only fetch uncached tags
-    if (allTagIds.size > 0) {
-      const tagDocs = await tagsCollection
-        .find(
-          { _id: { $in: Array.from(allTagIds).map(id => new ObjectId(id)) } },
-          { projection: { name: 1, type: 1, count: 1 } }
+      const searchParam = `%${search}%`;
+      conditions.push(`(
+        i.description ILIKE $${paramIndex}
+        OR i.username ILIKE $${paramIndex}
+        OR i.id IN (
+          SELECT it.image_id FROM image_tags it
+          JOIN tags t ON t.id = it.tag_id
+          WHERE t.name ILIKE $${paramIndex}
         )
-        .toArray();
-      
-      tagDocs.forEach(t => {
-        tagIdCache.set(t._id.toString(), { name: t.name, type: t.type, count: t.count || 0 });
-      });
+      )`);
+      params.push(searchParam);
+      paramIndex++;
     }
 
-    // Map images with cached tag data
-    const populatedImages = images.map((img) => ({
-      ...img,
-      dbid: img._id.toString(),
-      post_id: img.sequentialId,
-      tags: (img.tags || []).map((tagId) => {
-        const idStr = tagId.toString();
-        const tag = tagIdCache.get(idStr);
-        return {
-          _id: tagId,
-          name: tag?.name || 'unknown',
-          type: tag?.type || 'general',
-          count: tag?.count || 0,
-        };
-      }),
-    }));
+    const whereClause = conditions.join(' AND ');
 
+    // Determine ORDER BY
+    let orderBy = 'i.created_at DESC';
+    switch (sort) {
+      case 'popular':    orderBy = 'i.upvotes DESC, i.views DESC'; break;
+      case 'favorites':  orderBy = 'i.favorites DESC'; break;
+      case 'views':      orderBy = 'i.views DESC'; break;
+      case 'oldest':     orderBy = 'i.created_at ASC'; break;
+      case 'filesize':   orderBy = 'i.file_size DESC'; break;
+      case 'filesize-asc': orderBy = 'i.file_size ASC'; break;
+      case 'resolution': orderBy = 'i.width DESC, i.height DESC'; break;
+      case 'aspectratio': orderBy = 'i.width DESC'; break;
+      case 'alphabetical': orderBy = 'i.username ASC, i.created_at DESC'; break;
+      case 'alphabetical-reverse': orderBy = 'i.username DESC, i.created_at DESC'; break;
+      case 'random':     orderBy = 'RANDOM()'; break;
+    }
+
+    // Execute queries in parallel
+    const [imagesResult, countResult] = await Promise.all([
+      query(
+        `SELECT i.id, i.sequential_id, i.user_id, i.username, i.url, i.thumbnail_url,
+                i.width, i.height, i.file_size, i.rating, i.is_ai_generated,
+                i.upvotes, i.downvotes, i.favorites, i.views, i.created_at
+         FROM images i
+         WHERE ${whereClause}
+         ORDER BY ${orderBy}
+         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+        [...params, limit, offset]
+      ),
+      getCachedCount('images', whereClause.replace(/i\./g, ''), params),
+    ]);
+
+    const images = imagesResult.rows;
+
+    // Batch-fetch tags for all images
+    if (images.length > 0) {
+      const imageIds = images.map(img => img.id);
+      const tagsResult = await query(
+        `SELECT it.image_id, t.id as tag_id, t.name, t.type, t.count
+         FROM image_tags it
+         JOIN tags t ON t.id = it.tag_id
+         WHERE it.image_id = ANY($1::int[])`,
+         [imageIds]
+      );
+
+      // Group tags by image_id
+      const tagsByImage = new Map<number, any[]>();
+      for (const row of tagsResult.rows) {
+        const list = tagsByImage.get(row.image_id) || [];
+        list.push({ _id: row.tag_id, id: row.tag_id, name: row.name, type: row.type, count: row.count });
+        tagsByImage.set(row.image_id, list);
+      }
+
+      // Populate images with tags and compatibility fields
+      for (const img of images) {
+        (img as any).tags = tagsByImage.get(img.id) || [];
+        (img as any).dbid = String(img.id);
+        (img as any).post_id = img.sequential_id;
+        (img as any)._id = String(img.id);
+        
+        // camelCase compatibility fields for React components
+        (img as any).sequentialId = img.sequential_id;
+        (img as any).userId = img.user_id;
+        (img as any).thumbnailUrl = img.thumbnail_url;
+        (img as any).isAIGenerated = img.is_ai_generated;
+        (img as any).fileSize = img.file_size;
+        (img as any).createdAt = img.created_at;
+      }
+    }
+
+    const total = countResult;
     const pages = Math.ceil(total / limit);
 
     return NextResponse.json({
       success: true,
-      images: populatedImages,
+      images,
       pagination: {
         page,
         limit,

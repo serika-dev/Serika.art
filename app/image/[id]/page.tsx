@@ -1,6 +1,6 @@
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import ImageDetailContent from '@/components/ImageDetailContent';
 
 interface PageProps {
@@ -8,47 +8,55 @@ interface PageProps {
 }
 
 async function getImageData(id: string) {
-  const collection = await getCollection('images');
-  const tagsCollection = await getCollection('tags');
-  
   const sequentialId = parseInt(id, 10);
   if (isNaN(sequentialId)) return null;
 
-  const image = await collection.findOne({ sequentialId });
-  if (!image) return null;
+  const imageResult = await query(
+    `SELECT i.*, u.username as u_username
+     FROM images i
+     LEFT JOIN users u ON u.id = i.user_id
+     WHERE i.sequential_id = $1`,
+    [sequentialId]
+  );
+  if (imageResult.rows.length === 0) return null;
+  const image = imageResult.rows[0];
 
-  // Populate tags
-  const tags = image.tags || [];
-  let populatedTags: any[] = [];
-  
-  if (Array.isArray(tags) && tags.length > 0) {
-    const tagDocs = await tagsCollection
-      .find({ _id: { $in: tags } })
-      .toArray();
-    
-    const tagMap = new Map(tagDocs.map(t => [t._id.toString(), t]));
-    
-    populatedTags = tags.map(tagId => {
-      const tag = tagMap.get(tagId.toString());
-      return {
-        _id: tagId.toString(),
-        name: tag?.name || 'unknown',
-        type: tag?.type || 'general',
-      };
-    });
-  }
+  // Fetch populated tags
+  const tagsResult = await query(
+    `SELECT t.id, t.name, t.type
+     FROM image_tags it
+     JOIN tags t ON t.id = it.tag_id
+     WHERE it.image_id = $1`,
+    [image.id]
+  );
 
-  // Increment views in background (non-blocking for initial render)
-  collection.updateOne({ sequentialId }, { $inc: { views: 1 } }).catch(console.error);
+  const populatedTags = tagsResult.rows.map(t => ({
+    _id: String(t.id),
+    name: t.name,
+    type: t.type,
+  }));
 
-  // Serialize for Client Component
-  return JSON.parse(JSON.stringify({
+  // Increment views in background
+  query(`UPDATE images SET views = views + 1 WHERE id = $1`, [image.id]).catch(console.error);
+
+  // Return compatible object structure
+  return {
     ...image,
-    _id: image._id.toString(),
-    userId: image.userId?.toString(),
+    _id: String(image.id),
+    id: image.id,
+    userId: image.user_id,
+    username: image.u_username || image.username || 'Anonymous',
+    sequentialId: image.sequential_id,
+    isAIGenerated: image.is_ai_generated,
+    thumbnailUrl: image.thumbnail_url,
+    originalFilename: image.original_filename,
+    fileSize: image.file_size,
+    contentType: image.content_type,
+    createdAt: image.created_at,
+    updatedAt: image.updated_at,
     tags: populatedTags,
     views: image.views + 1
-  }));
+  };
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {

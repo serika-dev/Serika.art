@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
-import { ObjectId } from 'mongodb';
-import { cookies } from 'next/headers';
+import { query, withTransaction } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
 // PATCH /api/dmca/[id] - Update DMCA request status (admin only)
@@ -11,10 +9,13 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    
+    const requestId = parseInt(id, 10);
+    if (isNaN(requestId)) {
+      return NextResponse.json({ success: false, error: 'Invalid request ID' }, { status: 400 });
+    }
+
     // Check auth
     const user = await getCurrentUser();
-    
     if (!user || !['admin', 'owner'].includes(user.rank || '')) {
       return NextResponse.json({ success: false, error: 'Forbidden - Admin only' }, { status: 403 });
     }
@@ -22,84 +23,96 @@ export async function PATCH(
     const body = await request.json();
     const { status, note, affectedImageIds } = body;
 
-    if (!ObjectId.isValid(id)) {
-      return NextResponse.json({ success: false, error: 'Invalid request ID' }, { status: 400 });
+    // Fetch existing request
+    const existing = await query(`SELECT * FROM dmca_requests WHERE id = $1`, [requestId]);
+    if (existing.rows.length === 0) {
+      return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
     }
+    const dmcaReq = existing.rows[0];
 
-    const collection = await getCollection('dmca_requests');
-    
-    const updateData: any = {
-      updatedAt: new Date(),
-    };
+    await withTransaction(async (client) => {
+      const setClauses: string[] = ['updated_at = NOW()'];
+      const params: any[] = [];
+      let pIdx = 1;
 
-    if (status) {
-      updateData.status = status;
-      updateData.reviewedBy = new ObjectId(user.id);
-      updateData.reviewedAt = new Date();
-    }
+      if (status) {
+        setClauses.push(`status = $${pIdx}`);
+        params.push(status);
+        pIdx++;
 
-    if (affectedImageIds) {
-      updateData.affectedImageIds = affectedImageIds.map((id: string) => new ObjectId(id));
-    }
+        setClauses.push(`reviewed_by = $${pIdx}`);
+        params.push(user.id);
+        pIdx++;
 
-    // Add note if provided
-    if (note) {
-      await collection.updateOne(
-        { _id: new ObjectId(id) },
-        { 
-          $set: updateData,
-          $push: { 
-            notes: {
-              text: note,
-              addedBy: new ObjectId(user.id),
-              addedByUsername: user.username,
-              addedAt: new Date()
-            }
-          } as any
-        }
-      );
-    } else {
-      await collection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: updateData }
-      );
-    }
+        setClauses.push(`reviewed_by_username = $${pIdx}`);
+        params.push(user.username);
+        pIdx++;
 
-    // If approved, handle the affected images
-    if (status === 'approved' && affectedImageIds?.length > 0) {
-      const imagesCollection = await getCollection('images');
-      const modLogCollection = await getCollection('moderation_logs');
+        setClauses.push(`reviewed_at = NOW()`);
+      }
 
-      for (const imageId of affectedImageIds) {
-        // Log the action
-        await modLogCollection.insertOne({
-          action: 'dmca_takedown',
-          targetType: 'image',
-          targetId: new ObjectId(imageId),
-          performedBy: new ObjectId(user.id),
-          performedByUsername: user.username,
-          reason: `DMCA Request #${id}`,
-          dmcaRequestId: new ObjectId(id),
-          previousState: null,
-          reversible: false, // DMCA takedowns are not reversible by mods
-          createdAt: new Date(),
-        });
+      if (affectedImageIds && Array.isArray(affectedImageIds)) {
+        setClauses.push(`affected_image_ids = $${pIdx}`);
+        params.push(JSON.stringify(affectedImageIds.map(Number)));
+        pIdx++;
+      }
 
-        // Soft delete the image
-        await imagesCollection.updateOne(
-          { _id: new ObjectId(imageId) },
-          { 
-            $set: { 
-              deleted: true,
-              deletedAt: new Date(),
-              deletedBy: new ObjectId(user.id),
-              deletionReason: 'DMCA Takedown',
-              dmcaRequestId: new ObjectId(id)
-            }
-          }
+      if (note) {
+        const currentNotes = dmcaReq.notes || [];
+        const newNote = {
+          text: note,
+          addedBy: user.id,
+          addedByUsername: user.username,
+          addedAt: new Date().toISOString()
+        };
+        const updatedNotes = [...currentNotes, newNote];
+
+        setClauses.push(`notes = $${pIdx}`);
+        params.push(JSON.stringify(updatedNotes));
+        pIdx++;
+      }
+
+      if (params.length > 0) {
+        await client.query(
+          `UPDATE dmca_requests SET ${setClauses.join(', ')} WHERE id = $${pIdx}`,
+          [...params, requestId]
         );
       }
-    }
+
+      // If approved, handle the affected images
+      if (status === 'approved' && affectedImageIds && Array.isArray(affectedImageIds) && affectedImageIds.length > 0) {
+        for (const rawImageId of affectedImageIds) {
+          const imgSeqId = parseInt(rawImageId, 10);
+          if (isNaN(imgSeqId)) continue;
+
+          // Find the image by sequential_id or db id
+          const imgResult = await client.query(
+            `SELECT id, sequential_id FROM images WHERE id = $1 OR sequential_id = $1`,
+            [imgSeqId]
+          );
+
+          if (imgResult.rows.length > 0) {
+            const dbImage = imgResult.rows[0];
+
+            // Log the action
+            await client.query(
+              `INSERT INTO moderation_logs (action, target_type, target_id, performed_by,
+               performed_by_username, reason, dmca_request_id, previous_state, reversible, created_at)
+               VALUES ('dmca_takedown', 'image', $1, $2, $3, $4, $5, NULL, FALSE, NOW())`,
+              [dbImage.id, user.id, user.username, `DMCA Request #${requestId}`, requestId]
+            );
+
+            // Soft delete the image
+            await client.query(
+              `UPDATE images SET deleted = TRUE, deleted_at = NOW(), deleted_by = $1,
+               deleted_by_username = $2, deletion_reason = 'DMCA Takedown', dmca_request_id = $3
+               WHERE id = $4`,
+              [user.id, user.username, requestId, dbImage.id]
+            );
+          }
+        }
+      }
+    });
 
     return NextResponse.json({ success: true, message: 'Request updated' });
   } catch (error) {
@@ -115,26 +128,38 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    
+    const requestId = parseInt(id, 10);
+    if (isNaN(requestId)) {
+      return NextResponse.json({ success: false, error: 'Invalid request ID' }, { status: 400 });
+    }
+
     // Check auth
     const user = await getCurrentUser();
-    
     if (!user || !['admin', 'owner', 'moderator'].includes(user.rank || '')) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
-    if (!ObjectId.isValid(id)) {
-      return NextResponse.json({ success: false, error: 'Invalid request ID' }, { status: 400 });
-    }
-
-    const collection = await getCollection('dmca_requests');
-    const dmcaRequest = await collection.findOne({ _id: new ObjectId(id) });
-
-    if (!dmcaRequest) {
+    const result = await query(`SELECT * FROM dmca_requests WHERE id = $1`, [requestId]);
+    if (result.rows.length === 0) {
       return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, request: dmcaRequest });
+    const dmcaRequest = result.rows[0];
+
+    // Format fields for response compatibility
+    const formattedRequest = {
+      ...dmcaRequest,
+      _id: String(dmcaRequest.id),
+      id: dmcaRequest.id,
+      affectedImageIds: dmcaRequest.affected_image_ids || [],
+      notes: dmcaRequest.notes || [],
+      reviewedBy: dmcaRequest.reviewed_by,
+      reviewedAt: dmcaRequest.reviewed_at,
+      createdAt: dmcaRequest.created_at,
+      updatedAt: dmcaRequest.updated_at,
+    };
+
+    return NextResponse.json({ success: true, request: formattedRequest });
   } catch (error) {
     console.error('DMCA fetch error:', error);
     return NextResponse.json({ success: false, error: 'Failed to fetch request' }, { status: 500 });

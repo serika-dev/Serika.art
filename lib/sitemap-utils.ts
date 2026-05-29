@@ -1,4 +1,4 @@
-import { getCollection } from "./db";
+import { query } from "./db";
 
 export const SITEMAP_SIZE = 5000;
 export const BASE_URL = "https://serika.art";
@@ -30,22 +30,20 @@ ${routes.map(r => `  <url>
 }
 
 export async function getImageRoutes(chunkId: number) {
-  const imagesCollection = await getCollection("images");
-  const images = await imagesCollection
-    .find(
-      { deleted: { $ne: true }, unlisted: { $ne: true } },
-      { projection: { sequentialId: 1, updatedAt: 1, createdAt: 1, url: 1 } }
-    )
-    .sort({ sequentialId: -1 })
-    .skip(chunkId * SITEMAP_SIZE)
-    .limit(SITEMAP_SIZE)
-    .toArray();
+  const offset = chunkId * SITEMAP_SIZE;
+  const result = await query(
+    `SELECT sequential_id, updated_at, created_at, url FROM images
+     WHERE deleted = FALSE AND unlisted = FALSE
+     ORDER BY sequential_id DESC
+     LIMIT $1 OFFSET $2`,
+    [SITEMAP_SIZE, offset]
+  );
 
-  return images
-    .filter((img: any) => img.sequentialId)
+  return result.rows
+    .filter((img: any) => img.sequential_id)
     .map((image: any) => ({
-      url: `${BASE_URL}/image/${image.sequentialId}`,
-      lastModified: image.updatedAt || image.createdAt || new Date(),
+      url: `${BASE_URL}/image/${image.sequential_id}`,
+      lastModified: image.updated_at || image.created_at || new Date(),
       changeFrequency: "weekly",
       priority: 0.6,
       images: [image.url],
@@ -53,17 +51,18 @@ export async function getImageRoutes(chunkId: number) {
 }
 
 export async function getArtistRoutes(chunkId: number) {
-  const tagsCollection = await getCollection("tags");
-  const artists = await tagsCollection
-    .find({ type: "artist" }, { projection: { name: 1, count: 1, updatedAt: 1 } })
-    .sort({ count: -1 })
-    .skip(chunkId * SITEMAP_SIZE)
-    .limit(SITEMAP_SIZE)
-    .toArray();
+  const offset = chunkId * SITEMAP_SIZE;
+  const result = await query(
+    `SELECT name, count, created_at FROM tags
+     WHERE type = 'artist'
+     ORDER BY count DESC
+     LIMIT $1 OFFSET $2`,
+    [SITEMAP_SIZE, offset]
+  );
 
-  return artists.map(artist => ({
+  return result.rows.map(artist => ({
     url: `${BASE_URL}/artist/${encodeURIComponent(artist.name.replace(/ /g, "_"))}`,
-    lastModified: artist.updatedAt || new Date(),
+    lastModified: artist.created_at || new Date(),
     changeFrequency: artist.count > 100 ? "daily" : "weekly",
     priority: Math.min(0.8, 0.5 + (artist.count / 1000)),
   }));

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { query } from '@/lib/db';
 import axios from 'axios';
 
 const ACCOUNTS_URL = process.env.ACCOUNTS_URL || 'https://accounts.serika.dev';
@@ -7,8 +8,8 @@ const ACCOUNTS_INTERNAL_KEY = process.env.ACCOUNTS_INTERNAL_KEY!;
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const username = searchParams.get('username')?.trim();
-    
+    const username = searchParams.get('username');
+
     if (!username) {
       return NextResponse.json(
         { success: false, error: 'Username parameter is required' },
@@ -16,43 +17,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Handle anonymous user special case
-    if (username.toLowerCase() === 'anonymous') {
-      return NextResponse.json({
-        success: true,
-        user: {
-          id: 'anonymous',
-          username: 'Anonymous',
-          rank: 'system',
-          createdAt: new Date('2020-01-01').toISOString(),
-        },
-      });
-    }
-
-    // Try local DB first - be lenient with trailing whitespace
-    const { getCollection } = await import('@/lib/db');
-    const usersCollection = await getCollection('users');
-    
-    // We try exact match first, then with regex to be lenient with trailing spaces
-    let localUser = await usersCollection.findOne(
-      { username: username },
-      { collation: { locale: 'en', strength: 2 } }
+    // Try local DB first (case-insensitive)
+    const localResult = await query(
+      `SELECT * FROM users WHERE LOWER(username) = LOWER($1)`,
+      [username]
     );
-    
-    if (!localUser) {
-      // If not found, try a more lenient regex match for cases with trailing spaces/hidden chars
-      localUser = await usersCollection.findOne(
-        { username: { $regex: `^${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, $options: 'i' } }
-      );
-    }
-    
-    if (localUser) {
-      // Try to get additional data from accounts API using user ID
-      let accountsData = null;
+
+    if (localResult.rows.length > 0) {
+      const localUser = localResult.rows[0];
+
+      // Also fetch from accounts API for fresh data
+      let accountsData: any = null;
       try {
         const userRes = await axios.post(
           `${ACCOUNTS_URL}/internal/get-user`,
-          { id: localUser._id.toString() },
+          { id: localUser.id },
           {
             headers: {
               'x-service-key': ACCOUNTS_INTERNAL_KEY,
@@ -61,23 +40,22 @@ export async function GET(request: NextRequest) {
             timeout: 5000,
           }
         );
-
         if (userRes.data.success && userRes.data.user) {
           accountsData = userRes.data.user;
         }
-      } catch (accountsError) {
+      } catch {
         // Silently fail if accounts API is unavailable
       }
 
       return NextResponse.json({
         success: true,
         user: {
-          id: localUser._id.toString(),
+          id: localUser.id,
           username: localUser.username,
-          avatarUrl: accountsData?.avatar || localUser.avatarUrl,
+          avatarUrl: accountsData?.avatar || localUser.avatar_url,
           bannerUrl: accountsData?.banner,
           rank: localUser.rank || 'user',
-          createdAt: localUser.createdAt,
+          createdAt: localUser.created_at,
           isPremium: accountsData?.isPremium || false,
           isVerified: accountsData?.isVerified || false,
         },

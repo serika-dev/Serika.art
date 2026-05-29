@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import axios from 'axios';
 import {
   fetchDanbooruPost,
@@ -10,13 +9,9 @@ import {
   isAIPost,
   DanbooruPost,
 } from '@/lib/danbooru';
-import { getCollection, getNextSequentialId } from '@/lib/db';
+import { query, getNextSequentialId, withTransaction } from '@/lib/db';
 import { uploadToB2 } from '@/lib/b2';
 import sharp from 'sharp';
-import { ObjectId } from 'mongodb';
-
-const ACCOUNTS_API = process.env.ACCOUNTS_URL || 'https://accounts.serika.dev';
-const ACCOUNTS_KEY = process.env.ACCOUNTS_INTERNAL_KEY || '';
 
 interface ImportResult {
   success: boolean;
@@ -98,12 +93,12 @@ async function downloadAndUploadImage(
 
 async function importDanbooruPost(post: DanbooruPost): Promise<ImportResult> {
   try {
-    const imagesCollection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
-
     // Check if already imported
-    const existing = await imagesCollection.findOne({ 'metadata.danbooruId': post.id });
-    if (existing) {
+    const existing = await query(
+      `SELECT id FROM images WHERE metadata->>'danbooruId' = $1`,
+      [String(post.id)]
+    );
+    if (existing.rows.length > 0) {
       return { success: false, error: 'Post already imported', postId: post.id, skipped: true };
     }
 
@@ -118,73 +113,91 @@ async function importDanbooruPost(post: DanbooruPost): Promise<ImportResult> {
       post.id
     );
 
-    // Extract and create tags, resolve to ObjectIDs
+    // Extract tags
     const tagData = extractDanbooruTags(post);
-    const tagIds: ObjectId[] = [];
 
-    for (const tagInfo of tagData) {
-      let tag = await tagsCollection.findOne({ name: tagInfo.name });
-      if (!tag) {
-        const result = await tagsCollection.insertOne({
-          name: tagInfo.name,
-          type: tagInfo.type,
-          count: 0,
-          createdAt: new Date(),
-        });
-        tagIds.push(result.insertedId);
-      } else {
-        tagIds.push(tag._id);
+    // Run insertion inside transaction
+    const finalImageId = await withTransaction(async (client) => {
+      const tagIds: number[] = [];
+
+      for (const tagInfo of tagData) {
+        let tagRes = await client.query(`SELECT id FROM tags WHERE name = $1`, [tagInfo.name]);
+        if (tagRes.rows.length === 0) {
+          tagRes = await client.query(
+            `INSERT INTO tags (name, type, count, created_at) VALUES ($1, $2, 0, NOW()) RETURNING id`,
+            [tagInfo.name, tagInfo.type]
+          );
+        }
+        tagIds.push(tagRes.rows[0].id);
       }
-    }
 
-    // Get the next sequential ID
-    const nextSequentialId = await getNextSequentialId();
+      // Get sequential ID
+      // Note: getNextSequentialId queries the counters table, let's execute inside transaction
+      const nextSeqResult = await client.query(
+        `INSERT INTO counters (name, value)
+         VALUES ('imageSequentialId', 1)
+         ON CONFLICT (name) DO UPDATE SET value = counters.value + 1
+         RETURNING value`
+      );
+      const nextSequentialId = nextSeqResult.rows[0].value;
 
-    // Check if this is an AI-generated post
-    const isAIGenerated = isAIPost(post);
+      // Check if this is an AI-generated post
+      const isAIGenerated = isAIPost(post);
 
-    // Create image document with full metadata
-    const imageDoc = {
-      sequentialId: nextSequentialId,
-      userId: null, // Anonymous upload
-      username: 'Anonymous',
-      url: mainUrl,
-      thumbnailUrl,
-      originalFilename: `danbooru-${post.id}.${post.file_ext}`,
-      fileSize: post.file_size || 0,
-      width,
-      height,
-      contentType: `image/${post.file_ext}`,
-      tags: tagIds,
-      rating: mapDanbooruRating(post.rating),
-      isAIGenerated,
-      source: post.source || `https://danbooru.donmai.us/posts/${post.id}`,
-      description: '',
-      upvotes: 0,
-      downvotes: 0,
-      favorites: 0,
-      views: 0,
-      metadata: {
+      const metadataJson = {
         danbooruId: post.id,
         md5: post.md5,
         source: post.source || `https://danbooru.donmai.us/posts/${post.id}`,
-        importedAt: new Date(),
-      },
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+        importedAt: new Date().toISOString(),
+      };
 
-    const result = await imagesCollection.insertOne(imageDoc);
-
-    // Update tag counts
-    for (const tagId of tagIds) {
-      await tagsCollection.updateOne(
-        { _id: tagId },
-        { $inc: { count: 1 } }
+      // Insert image
+      const imageInsertResult = await client.query(
+        `INSERT INTO images (
+          sequential_id, user_id, username, url, thumbnail_url,
+          original_filename, file_size, width, height, content_type,
+          rating, is_ai_generated, source, description,
+          upvotes, downvotes, favorites, views, metadata,
+          created_at, updated_at
+        ) VALUES ($1, null, 'Anonymous', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '', 0, 0, 0, 0, $12, NOW(), NOW())
+        RETURNING id`,
+        [
+          nextSequentialId,
+          mainUrl,
+          thumbnailUrl,
+          `danbooru-${post.id}.${post.file_ext}`,
+          post.file_size || 0,
+          width,
+          height,
+          `image/${post.file_ext}`,
+          mapDanbooruRating(post.rating),
+          isAIGenerated,
+          post.source || `https://danbooru.donmai.us/posts/${post.id}`,
+          JSON.stringify(metadataJson),
+        ]
       );
-    }
 
-    return { success: true, imageId: result.insertedId.toString(), postId: post.id };
+      const newImageId = imageInsertResult.rows[0].id;
+
+      // Insert image_tags relationships
+      if (tagIds.length > 0) {
+        const values = tagIds.map((_, idx) => `($1, $${idx + 2})`).join(', ');
+        await client.query(
+          `INSERT INTO image_tags (image_id, tag_id) VALUES ${values}`,
+          [newImageId, ...tagIds]
+        );
+
+        // Increment tag counts
+        await client.query(
+          `UPDATE tags SET count = count + 1 WHERE id = ANY($1::int[])`,
+          [tagIds]
+        );
+      }
+
+      return newImageId;
+    });
+
+    return { success: true, imageId: String(finalImageId), postId: post.id };
   } catch (error: any) {
     console.error('Error importing Danbooru post:', error);
     return { success: false, error: error.message, postId: post.id };

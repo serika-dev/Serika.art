@@ -138,7 +138,7 @@ function PostsPageContent() {
         try {
           const res = await axios.get(`/api/tags/${encodeURIComponent(selectedTags[0].name)}`);
           if (res.data.success && res.data.tag?.type === 'artist') {
-            setArtistTagInfo({ name: res.data.tag.name, tagId: res.data.tag._id });
+            setArtistTagInfo({ name: res.data.tag.name, tagId: res.data.tag.id || res.data.tag._id });
           } else {
             setArtistTagInfo(null);
           }
@@ -237,10 +237,10 @@ function PostsPageContent() {
     const tagMap: Record<string, { count: number; type: TagType; _id: string }> = {};
     
     pageImages.forEach(image => {
-      image.tags.forEach(tag => {
+      (image.tags || []).forEach(tag => {
         const tagName = typeof tag === 'string' ? tag : (tag && 'name' in tag) ? (tag as any).name : null;
         const tagType = typeof tag === 'object' && 'type' in tag ? (tag as any).type : 'general';
-        const tagId = (tag && typeof tag === 'object' && '_id' in tag) ? (tag as any)._id : null;
+        const tagId = (tag && typeof tag === 'object') ? ((tag as any).id || (tag as any)._id) : null;
         const tagCount = (tag && typeof tag === 'object' && 'count' in tag) ? (tag as any).count : 0;
         
         if (tagName && tagId && !tagMap[tagName]) {
@@ -662,9 +662,10 @@ function PostsPageContent() {
                 let adNum = 0;
 
                 return filteredImages.map((image, index) => (
-                  <Fragment key={image._id.toString()}>
+                  <Fragment key={(image.id || image._id)?.toString()}>
                     {adIndices.has(index) && (
                       <NativeAd
+                        key={`ad-${image.id || image._id}`}
                         id={`inline-${adNum++}`}
                         rating={adRating}
                       />

@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getCollection, getNextSequentialId } from '@/lib/db';
+import { NextRequest } from 'next/server';
+import { query, withTransaction } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
 import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
-import { ObjectId } from 'mongodb';
 import sharp from 'sharp';
 
 const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === 'true';
@@ -84,36 +83,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Resolve tags to ObjectIDs
-    const tagsCollection = await getCollection('tags');
-    const tagIds: ObjectId[] = [];
-
-    for (const tagInfo of tagsData) {
-      const normalizedName = tagInfo.name.toLowerCase().replace(/\s+/g, '_');
-      let tag = await tagsCollection.findOne({ name: normalizedName });
-
-      if (!tag) {
-        const validTypes = ['general', 'artist', 'character', 'copyright', 'meta'];
-        const tagType = validTypes.includes(tagInfo.type) ? tagInfo.type : 'general';
-
-        const result = await tagsCollection.insertOne({
-          name: normalizedName,
-          type: tagType,
-          count: 0,
-          createdAt: new Date(),
-        });
-        tagIds.push(result.insertedId);
-      } else {
-        tagIds.push(tag._id);
-      }
-    }
-
     // Process image
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
     // Get metadata
-    const metadata = await sharp(buffer).metadata();
+    const sharpMetadata = await sharp(buffer).metadata();
 
     // Create thumbnail
     const thumbnailBuffer = await sharp(buffer)
@@ -142,65 +117,100 @@ export async function POST(request: NextRequest) {
       return apiError('Failed to upload file', 500, 'UPLOAD_FAILED');
     }
 
-    // Create image document
-    const imagesCollection = await getCollection('images');
-    const usersCollection = await getCollection('users');
+    // Run db queries in a transaction
+    const uploadResult = await withTransaction(async (client) => {
+      // Resolve tag ObjectIDs to integer IDs
+      const tagIds: number[] = [];
+      for (const tagInfo of tagsData) {
+        const normalizedName = tagInfo.name.toLowerCase().replace(/\s+/g, '_');
+        let tagRes = await client.query(`SELECT id FROM tags WHERE name = $1`, [normalizedName]);
+        
+        if (tagRes.rows.length === 0) {
+          const validTypes = ['general', 'artist', 'character', 'copyright', 'meta'];
+          const tagType = validTypes.includes(tagInfo.type) ? tagInfo.type : 'general';
 
-    // Get user info
-    const user = await usersCollection.findOne({ _id: validation.apiKey!.userId });
+          tagRes = await client.query(
+            `INSERT INTO tags (name, type, count, created_at) VALUES ($1, $2, 0, NOW()) RETURNING id`,
+            [normalizedName, tagType]
+          );
+        }
+        tagIds.push(tagRes.rows[0].id);
+      }
 
-    // Get next sequential ID
-    const nextSequentialId = await getNextSequentialId();
-    
-    const imageDoc = {
-      sequentialId: nextSequentialId,
-      userId: validation.apiKey!.userId,
-      username: user?.username || validation.apiKey!.username,
-      url: imageUrl,
-      thumbnailUrl,
-      originalFilename: file.name,
-      fileSize: file.size,
-      width: metadata.width || 0,
-      height: metadata.height || 0,
-      contentType: file.type,
-      tags: tagIds,
-      rating,
-      isAIGenerated,
-      source,
-      description,
-      upvotes: 0,
-      downvotes: 0,
-      favorites: 0,
-      views: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+      // Get next sequential ID from counters
+      const seqResult = await client.query(
+        `INSERT INTO counters (name, value)
+         VALUES ('imageSequentialId', 1)
+         ON CONFLICT (name) DO UPDATE SET value = counters.value + 1
+         RETURNING value`
+      );
+      const nextSequentialId = seqResult.rows[0].value;
 
-    const result = await imagesCollection.insertOne(imageDoc);
+      // Insert image
+      const imageRes = await client.query(
+        `INSERT INTO images (
+          sequential_id, user_id, username, url, thumbnail_url,
+          original_filename, file_size, width, height, content_type,
+          rating, is_ai_generated, source, description,
+          upvotes, downvotes, favorites, views, deleted, unlisted,
+          created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0, 0, 0, 0, FALSE, FALSE, NOW(), NOW())
+        RETURNING id`,
+        [
+          nextSequentialId,
+          validation.apiKey!.user_id,
+          validation.apiKey!.username,
+          imageUrl,
+          thumbnailUrl,
+          file.name,
+          file.size,
+          sharpMetadata.width || 0,
+          sharpMetadata.height || 0,
+          file.type,
+          rating,
+          isAIGenerated,
+          source,
+          description,
+        ]
+      );
 
-    // Update tag counts
-    await tagsCollection.updateMany(
-      { _id: { $in: tagIds } },
-      { $inc: { count: 1 } }
-    );
+      const newImageId = imageRes.rows[0].id;
 
-    // Get tag names for response
-    const tagDocs = await tagsCollection.find({ _id: { $in: tagIds } }).toArray();
+      // Insert image_tags relations
+      if (tagIds.length > 0) {
+        const values = tagIds.map((_, idx) => `($1, $${idx + 2})`).join(', ');
+        await client.query(
+          `INSERT INTO image_tags (image_id, tag_id) VALUES ${values}`,
+          [newImageId, ...tagIds]
+        );
+
+        // Update tag counts
+        await client.query(
+          `UPDATE tags SET count = count + 1 WHERE id = ANY($1::int[])`,
+          [tagIds]
+        );
+      }
+
+      return { imageId: newImageId, nextSequentialId, tagIds };
+    });
+
+    // Get tag details for response
+    const tagDocsRes = await query(`SELECT name, type FROM tags WHERE id = ANY($1::int[])`, [uploadResult.tagIds]);
 
     return apiResponse({
-      id: result.insertedId.toString(),
-      dbid: result.insertedId.toString(),
-      post_id: nextSequentialId,
+      id: String(uploadResult.imageId),
+      dbid: String(uploadResult.imageId),
+      post_id: uploadResult.nextSequentialId,
       url: imageUrl,
       thumbnail_url: thumbnailUrl,
-      width: metadata.width || 0,
-      height: metadata.height || 0,
+      width: sharpMetadata.width || 0,
+      height: sharpMetadata.height || 0,
       file_size: file.size,
       content_type: file.type,
       rating,
       is_ai_generated: isAIGenerated,
-      tags: tagDocs.map((t) => ({ name: t.name, type: t.type })),
-      created_at: imageDoc.createdAt,
+      tags: tagDocsRes.rows.map((t) => ({ name: t.name, type: t.type })),
+      created_at: new Date(),
     }, {
       message: 'Image uploaded successfully',
     });

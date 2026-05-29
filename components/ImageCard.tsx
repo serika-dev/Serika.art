@@ -31,12 +31,12 @@ export default function ImageCard({ image }: ImageCardProps) {
         <div className="relative aspect-square overflow-hidden bg-muted">
           <NextImage
             src={image.thumbnailUrl || image.url}
-            alt={image.tags.map(t => {
+            alt={(image.tags || []).map(t => {
               if (typeof t === 'string') return t;
               if (t && typeof t === 'object' && 'name' in t) return (t as any).name;
               return 'image';
             }).join(', ')}
-            title={image.tags.map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
+            title={(image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
             width={400}
             height={400}
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 25vw"
@@ -81,8 +81,9 @@ export default function ImageCard({ image }: ImageCardProps) {
         <CardContent className="p-4">
           <div className="flex flex-wrap gap-1.5 mb-3">
             {(() => {
+              const currentTags = image.tags || [];
               // Sort tags: character first, then artist, then others
-              const sortedTags = [...image.tags].sort((a, b) => {
+              const sortedTags = [...currentTags].sort((a, b) => {
                 const typeA = (a && typeof a === 'object' && 'type' in a) ? (a as any).type : 'general';
                 const typeB = (b && typeof b === 'object' && 'type' in b) ? (b as any).type : 'general';
                 const priority: Record<string, number> = { character: 0, artist: 1, copyright: 2, general: 3, meta: 4 };
@@ -109,9 +110,9 @@ export default function ImageCard({ image }: ImageCardProps) {
                 );
               });
             })()}
-            {image.tags.length > 5 && (
+            {(image.tags || []).length > 5 && (
               <span className="text-muted-foreground/60 text-[10px] font-bold px-1 flex items-center">
-                +{image.tags.length - 5}
+                +{(image.tags || []).length - 5}
               </span>
             )}
           </div>

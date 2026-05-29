@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query as dbQuery } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { ObjectId } from 'mongodb';
 
 // GET /api/v1/tags - List all tags
 export async function GET(request: NextRequest) {
@@ -21,48 +20,58 @@ export async function GET(request: NextRequest) {
 
     const skip = (page - 1) * limit;
 
-    const collection = await getCollection('tags');
-
     // Build query
-    const query: any = {};
+    const whereClauses: string[] = [];
+    const queryParams: any[] = [];
+    let paramIndex = 1;
 
     if (search) {
-      query.name = { $regex: search, $options: 'i' };
+      whereClauses.push(`name ILIKE $${paramIndex}`);
+      queryParams.push(`%${search}%`);
+      paramIndex++;
     }
 
     if (type && ['general', 'artist', 'character', 'copyright', 'meta'].includes(type)) {
-      query.type = type;
+      whereClauses.push(`type = $${paramIndex}`);
+      queryParams.push(type);
+      paramIndex++;
     }
 
     if (minCount > 0) {
-      query.count = { $gte: minCount };
+      whereClauses.push(`count >= $${paramIndex}`);
+      queryParams.push(minCount);
+      paramIndex++;
     }
 
     // Determine sort
-    let sortOption: any = { count: -1 };
-    switch (sort) {
-      case 'name':
-        sortOption = { name: 1 };
-        break;
-      case 'newest':
-        sortOption = { createdAt: -1 };
-        break;
-      case 'oldest':
-        sortOption = { createdAt: 1 };
-        break;
+    let sortClause = 'count DESC';
+    if (sort === 'name') {
+      sortClause = 'name ASC';
+    } else if (sort === 'newest') {
+      sortClause = 'created_at DESC';
+    } else if (sort === 'oldest') {
+      sortClause = 'created_at ASC';
     }
 
-    const [tags, total] = await Promise.all([
-      collection.find(query).sort(sortOption).skip(skip).limit(limit).toArray(),
-      collection.countDocuments(query),
-    ]);
+    const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-    const formattedTags = tags.map((tag) => ({
-      id: tag._id.toString(),
+    const countResult = await dbQuery(
+      `SELECT COUNT(*) as count FROM tags ${whereString}`,
+      queryParams
+    );
+    const total = parseInt(countResult.rows[0].count, 10);
+
+    const tagsResult = await dbQuery(
+      `SELECT * FROM tags ${whereString} ORDER BY ${sortClause} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      [...queryParams, limit, skip]
+    );
+
+    const formattedTags = tagsResult.rows.map((tag) => ({
+      id: String(tag.id),
       name: tag.name,
       type: tag.type,
       count: tag.count || 0,
-      created_at: tag.createdAt,
+      created_at: tag.created_at,
     }));
 
     return apiResponse(formattedTags, {

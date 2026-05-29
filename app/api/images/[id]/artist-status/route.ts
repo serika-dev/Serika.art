@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
-import { ObjectId } from 'mongodb';
 
 // Check if user can comment as artist on this image
 export async function GET(
@@ -19,7 +18,6 @@ export async function GET(
     }
 
     const { id } = await params;
-    
     const sequentialId = parseInt(id, 10);
     if (isNaN(sequentialId)) {
       return NextResponse.json(
@@ -28,44 +26,30 @@ export async function GET(
       );
     }
 
-    // Get the image and its tags
-    const imagesCollection = await getCollection('images');
-    const image = await imagesCollection.findOne({ sequentialId });
-    
-    if (!image) {
+    const imgResult = await query(
+      `SELECT id FROM images WHERE sequential_id = $1`,
+      [sequentialId]
+    );
+    if (imgResult.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Image not found' },
         { status: 404 }
       );
     }
+    const imageDbId = imgResult.rows[0].id;
 
-    // Get user's claimed and verified artist pages
-    const artistsCollection = await getCollection('artists');
-    const userArtists = await artistsCollection.find({
-      claimedByUserId: new ObjectId(user.id),
-      verified: true,
-    }).toArray();
-
-    if (userArtists.length === 0) {
-      return NextResponse.json({
-        success: true,
-        canCommentAsArtist: false,
-        artistTags: [],
-      });
-    }
-
-    // Get the tag IDs from the image
-    const imageTagIds = image.tags.map((t: any) => {
-      if (typeof t === 'object' && t._id) return t._id.toString();
-      return t.toString();
-    });
-
-    // Find which of the user's artist tags are on this image
-    const matchingArtists = userArtists.filter(artist => 
-      imageTagIds.includes(artist.tagId.toString())
+    // Get user's verified artist pages that match image tags
+    const matchResult = await query(
+      `SELECT a.tag_id, a.tag_name
+       FROM artists a
+       JOIN image_tags it ON it.tag_id = a.tag_id
+       WHERE a.claimed_by_user_id = $1
+         AND a.verified = TRUE
+         AND it.image_id = $2`,
+      [user.id, imageDbId]
     );
 
-    if (matchingArtists.length === 0) {
+    if (matchResult.rows.length === 0) {
       return NextResponse.json({
         success: true,
         canCommentAsArtist: false,
@@ -76,9 +60,9 @@ export async function GET(
     return NextResponse.json({
       success: true,
       canCommentAsArtist: true,
-      artistTags: matchingArtists.map(artist => ({
-        tagId: artist.tagId.toString(),
-        tagName: artist.tagName,
+      artistTags: matchResult.rows.map(r => ({
+        tagId: String(r.tag_id),
+        tagName: r.tag_name,
       })),
     });
   } catch (error: any) {

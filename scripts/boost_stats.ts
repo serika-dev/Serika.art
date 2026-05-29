@@ -100,6 +100,49 @@ async function main() {
 
   const fakeUserIds = fakeUsers.map(u => u._id);
   console.log(`Generated and inserted ${NUM_FAKE_USERS} fake users.`);
+
+  // --- Assign anonymous images to 40% of users ---
+  const usersWithUploads = fakeUsers.sort(() => 0.5 - Math.random()).slice(0, Math.floor(NUM_FAKE_USERS * 0.4));
+  console.log(`Assigning anonymous images to ${usersWithUploads.length} users...`);
+  
+  const totalToAssign = usersWithUploads.length * 5; // Up to 5 per user
+  // Use $sample to grab a completely random selection of anonymous images from anywhere in the DB
+  const anonImagesToReassign = await imagesCollection
+    .aggregate([
+      { $match: { username: 'Anonymous' } },
+      { $sample: { size: totalToAssign } },
+      { $project: { _id: 1 } }
+    ])
+    .toArray();
+    
+  if (anonImagesToReassign.length > 0) {
+    let imgIdx = 0;
+    const bulkOps = [];
+    for (const user of usersWithUploads) {
+      // Assign 1 to 5 images to this user
+      const numToAssign = Math.floor(Math.random() * 5) + 1;
+      for (let i = 0; i < numToAssign; i++) {
+        if (imgIdx >= anonImagesToReassign.length) break;
+        const img = anonImagesToReassign[imgIdx++];
+        bulkOps.push({
+          updateOne: {
+            filter: { _id: img._id },
+            update: { $set: { userId: user._id, username: user.username } }
+          }
+        });
+      }
+    }
+    
+    if (bulkOps.length > 0) {
+      console.log(`Executing ${bulkOps.length} image reassignments...`);
+      // Use bulkWrite in batches of 1000 to be safe
+      for (let i = 0; i < bulkOps.length; i += 1000) {
+        const batch = bulkOps.slice(i, i + 1000);
+        await imagesCollection.bulkWrite(batch);
+      }
+    }
+  }
+
   console.log('Fetching all images...');
 
   // Using projection to only fetch _id to save memory

@@ -1,19 +1,17 @@
 import { NextResponse } from "next/server";
-import { getCollection } from "@/lib/db";
+import { query } from "@/lib/db";
 import { BASE_URL, wrapInUrlset } from "@/lib/sitemap-utils";
 
 export async function GET() {
   try {
-    const tagsCollection = await getCollection("tags");
-    const topTags = await tagsCollection
-      .find({ count: { $gt: 50 }, type: { $ne: "artist" } }, { projection: { name: 1, updatedAt: 1 } })
-      .sort({ count: -1 })
-      .limit(1000)
-      .toArray();
+    const tagsResult = await query(
+      `SELECT name, created_at FROM tags WHERE count > 50 AND type != 'artist' ORDER BY count DESC LIMIT 1000`
+    );
+    const topTags = tagsResult.rows;
 
     const routes = topTags.map(tag => ({
       url: `${BASE_URL}/posts?tags=${encodeURIComponent(tag.name)}`,
-      lastModified: tag.updatedAt || new Date(),
+      lastModified: tag.created_at || new Date(),
       changeFrequency: "daily",
       priority: 0.7,
     }));

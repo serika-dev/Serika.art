@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { query } from '@/lib/db';
 import axios from 'axios';
 
 const ACCOUNTS_URL = process.env.ACCOUNTS_URL || 'https://accounts.serika.dev';
@@ -10,33 +11,31 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    
-    // Try local DB first for better performance
-    const { getCollection } = await import('@/lib/db');
-    const { ObjectId } = await import('mongodb');
-    const usersCollection = await getCollection('users');
-    
-    const localUser = await usersCollection.findOne({ _id: new ObjectId(id) });
-    
-    if (localUser) {
+
+    // Try local DB first
+    const localResult = await query(
+      `SELECT * FROM users WHERE id = $1`,
+      [id]
+    );
+
+    if (localResult.rows.length > 0) {
+      const localUser = localResult.rows[0];
       return NextResponse.json({
         success: true,
         user: {
-          id: localUser._id.toString(),
+          id: localUser.id,
           username: localUser.username,
-          avatarUrl: localUser.avatarUrl,
+          avatarUrl: localUser.avatar_url,
           rank: localUser.rank || 'user',
-          createdAt: localUser.createdAt,
+          createdAt: localUser.created_at,
         },
       });
     }
 
-    // Fallback: Fetch user from Serika Accounts if not in local DB
+    // Fallback: Fetch from Serika Accounts
     const userRes = await axios.post(
       `${ACCOUNTS_URL}/internal/get-user`,
-      {
-        id,
-      },
+      { id },
       {
         headers: {
           'X-Service-Key': ACCOUNTS_INTERNAL_KEY,
@@ -53,28 +52,20 @@ export async function GET(
     }
 
     const user = userRes.data.user;
-    
-    // Determine rank
+
     let rank: 'user' | 'moderator' | 'admin' | 'owner' = 'user';
     if (user.id === '692ad0df032c62f79b57a08d') {
       rank = 'owner';
     }
-    
+
     // Store in local DB for future requests
-    await usersCollection.updateOne(
-      { _id: new ObjectId(user.id) },
-      {
-        $set: {
-          username: user.username,
-          avatarUrl: user.avatar || '',
-          updatedAt: new Date(),
-        },
-        $setOnInsert: {
-          createdAt: user.createdAt ? new Date(user.createdAt) : new Date(),
-          rank,
-        },
-      },
-      { upsert: true }
+    await query(
+      `INSERT INTO users (id, username, email, avatar_url, rank, created_at, updated_at)
+       VALUES ($1, $2, '', $3, $4, $5, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         username = $2, avatar_url = $3, updated_at = NOW()`,
+      [user.id, user.username, user.avatar || '', rank,
+       user.createdAt ? new Date(user.createdAt) : new Date()]
     );
 
     return NextResponse.json({

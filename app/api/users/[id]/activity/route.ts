@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
-import { ObjectId } from 'mongodb';
+import { query } from '@/lib/db';
 
 export async function GET(
   request: NextRequest,
@@ -9,109 +8,92 @@ export async function GET(
   try {
     const { id } = await params;
     const searchParams = request.nextUrl.searchParams;
-    const type = searchParams.get('type') || 'all'; // 'likes', 'comments', or 'all'
+    const type = searchParams.get('type') || 'all';
 
-    const usersCollection = await getCollection('users');
-    const votesCollection = await getCollection('votes');
-    const commentsCollection = await getCollection('comments');
-    const imagesCollection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
-
-    // Try to find user by ID or username - use case-insensitive exact match for username
-    let user;
-    if (ObjectId.isValid(id)) {
-      user = await usersCollection.findOne({ _id: new ObjectId(id) });
-    }
-    if (!user) {
-      // Use collation for case-insensitive search (faster than regex)
-      user = await usersCollection.findOne(
-        { username: id },
-        { collation: { locale: 'en', strength: 2 } }
+    // Find user by ID or username
+    let userResult = await query(`SELECT * FROM users WHERE id = $1`, [id]);
+    if (userResult.rows.length === 0) {
+      userResult = await query(
+        `SELECT * FROM users WHERE LOWER(username) = LOWER($1)`,
+        [id]
       );
     }
 
-    if (!user) {
+    if (userResult.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'User not found' },
         { status: 404 }
       );
     }
 
-    const userId = user._id;
+    const userId = userResult.rows[0].id;
     const result: any = { success: true };
 
-    // Get liked posts (upvotes only, public)
+    // Get liked posts
     if (type === 'likes' || type === 'all') {
-      const likes = await votesCollection
-        .find({ userId, type: 'upvote' })
-        .sort({ createdAt: -1 })
-        .limit(50)
-        .toArray();
+      const likesResult = await query(
+        `SELECT i.*
+         FROM votes v
+         JOIN images i ON i.id = v.image_id
+         WHERE v.user_id = $1 AND v.type = 'upvote'
+         ORDER BY v.created_at DESC
+         LIMIT 50`,
+        [userId]
+      );
 
-      const likedImageIds = likes.map(l => l.imageId);
-      const likedImages = await imagesCollection
-        .find({ _id: { $in: likedImageIds } })
-        .toArray();
+      const likedImages = likesResult.rows;
 
       // Populate tags
-      const allTagIds = new Set<string>();
-      likedImages.forEach(img => {
-        if (Array.isArray(img.tags)) {
-          img.tags.forEach((tagId: any) => allTagIds.add(tagId.toString()));
-        }
-      });
+      if (likedImages.length > 0) {
+        const imageIds = likedImages.map(img => img.id);
+        const tagsResult = await query(
+          `SELECT it.image_id, t.id as tag_id, t.name, t.type, t.count
+           FROM image_tags it JOIN tags t ON t.id = it.tag_id
+           WHERE it.image_id = ANY($1::int[])`,
+          [imageIds]
+        );
 
-      let tagMap = new Map();
-      if (allTagIds.size > 0) {
-        const tagDocs = await tagsCollection
-          .find({ _id: { $in: Array.from(allTagIds).map(tid => new ObjectId(tid)) } })
-          .toArray();
-        tagMap = new Map(tagDocs.map(t => [t._id.toString(), t]));
+        const tagsByImage = new Map<number, any[]>();
+        for (const row of tagsResult.rows) {
+          const list = tagsByImage.get(row.image_id) || [];
+          list.push({ _id: row.tag_id, name: row.name, type: row.type, count: row.count });
+          tagsByImage.set(row.image_id, list);
+        }
+
+        for (const img of likedImages) {
+          (img as any).tags = tagsByImage.get(img.id) || [];
+          (img as any).dbid = String(img.id);
+          (img as any)._id = String(img.id);
+          (img as any).sequentialId = img.sequential_id;
+          (img as any).thumbnailUrl = img.thumbnail_url;
+        }
       }
 
-      const populatedLikedImages = likedImages.map((img: any) => ({
-        ...img,
-        tags: (img.tags || []).map((tagId: any) => {
-          const tag = tagMap.get(tagId.toString());
-          return {
-            _id: tagId,
-            name: tag?.name || 'unknown',
-            type: tag?.type || 'general',
-            count: tag?.count || 0,
-          };
-        }),
-      }));
-
-      result.likes = populatedLikedImages;
+      result.likes = likedImages;
     }
 
-    // Get comments (public)
+    // Get comments
     if (type === 'comments' || type === 'all') {
-      const comments = await commentsCollection
-        .find({ userId })
-        .sort({ createdAt: -1 })
-        .limit(50)
-        .toArray();
+      const commentsResult = await query(
+        `SELECT c.id, c.content, c.created_at, c.image_id,
+                i.sequential_id, i.thumbnail_url, i.url
+         FROM comments c
+         LEFT JOIN images i ON i.id = c.image_id
+         WHERE c.user_id = $1
+         ORDER BY c.created_at DESC
+         LIMIT 50`,
+        [userId]
+      );
 
-      // Get image info for each comment
-      const commentImageIds = [...new Set(comments.map(c => c.imageId.toString()))];
-      const commentImages = await imagesCollection
-        .find({ _id: { $in: commentImageIds.map(id => new ObjectId(id)) } })
-        .toArray();
-      const imageMap = new Map(commentImages.map(img => [img._id.toString(), img]));
-
-      result.comments = comments.map(c => {
-        const image = imageMap.get(c.imageId.toString());
-        return {
-          _id: c._id.toString(),
-          content: c.content,
-          createdAt: c.createdAt,
-          image: image ? {
-            sequentialId: image.sequentialId,
-            thumbnailUrl: image.thumbnailUrl || image.url,
-          } : null,
-        };
-      });
+      result.comments = commentsResult.rows.map(c => ({
+        _id: String(c.id),
+        content: c.content,
+        createdAt: c.created_at,
+        image: c.sequential_id ? {
+          sequentialId: c.sequential_id,
+          thumbnailUrl: c.thumbnail_url || c.url,
+        } : null,
+      }));
     }
 
     return NextResponse.json(result);

@@ -1,23 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
-import { ObjectId } from 'mongodb';
+import { query, cacheGet, cacheSet } from '@/lib/db';
 import crypto from 'crypto';
 
 export interface ApiKey {
-  _id: ObjectId;
-  userId: ObjectId;
+  id: number;
+  user_id: string;
   username: string;
   name: string;
-  key: string;
-  keyHash: string;
+  key_hash: string;
   permissions: ApiPermission[];
-  rateLimit: number; // requests per minute
-  usageCount: number;
-  lastUsedAt?: Date;
-  expiresAt?: Date;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  rate_limit: number;
+  usage_count: number;
+  last_used_at?: Date;
+  expires_at?: Date;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export type ApiPermission = 
@@ -60,8 +58,28 @@ export function hashApiKey(key: string): string {
   return crypto.createHash('sha256').update(key).digest('hex');
 }
 
-// Rate limiting storage (in-memory for simplicity, use Redis in production)
-const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+// Rate limiting via Redis/memory cache
+async function checkRateLimit(keyHash: string, limit: number): Promise<{ allowed: boolean; retryAfter?: number }> {
+  const cacheKey = `ratelimit:${keyHash}`;
+  const now = Date.now();
+  const cached = await cacheGet(cacheKey);
+  
+  if (cached) {
+    const data = JSON.parse(cached);
+    if (now < data.resetAt) {
+      if (data.count >= limit) {
+        return { allowed: false, retryAfter: Math.ceil((data.resetAt - now) / 1000) };
+      }
+      data.count++;
+      await cacheSet(cacheKey, JSON.stringify(data), 60);
+      return { allowed: true };
+    }
+  }
+  
+  // New window
+  await cacheSet(cacheKey, JSON.stringify({ count: 1, resetAt: now + 60000 }), 60);
+  return { allowed: true };
+}
 
 // Validate API key and check permissions
 export async function validateApiKey(
@@ -98,11 +116,13 @@ export async function validateApiKey(
   }
   
   const keyHash = hashApiKey(keyValue);
-  const collection = await getCollection('api_keys');
   
-  const apiKey = await collection.findOne({ keyHash, isActive: true }) as ApiKey | null;
+  const result = await query(
+    `SELECT * FROM api_keys WHERE key_hash = $1 AND is_active = TRUE`,
+    [keyHash]
+  );
   
-  if (!apiKey) {
+  if (result.rows.length === 0) {
     return {
       valid: false,
       error: 'Invalid or inactive API key',
@@ -110,8 +130,10 @@ export async function validateApiKey(
     };
   }
   
+  const apiKey = result.rows[0] as ApiKey;
+  
   // Check expiration
-  if (apiKey.expiresAt && new Date() > apiKey.expiresAt) {
+  if (apiKey.expires_at && new Date() > new Date(apiKey.expires_at)) {
     return {
       valid: false,
       error: 'API key has expired',
@@ -120,26 +142,13 @@ export async function validateApiKey(
   }
   
   // Check rate limit
-  const now = Date.now();
-  const rateLimitKey = keyHash;
-  const rateLimit = rateLimitStore.get(rateLimitKey);
-  
-  if (rateLimit) {
-    if (now < rateLimit.resetAt) {
-      if (rateLimit.count >= apiKey.rateLimit) {
-        const retryAfter = Math.ceil((rateLimit.resetAt - now) / 1000);
-        return {
-          valid: false,
-          error: `Rate limit exceeded. Try again in ${retryAfter} seconds`,
-          statusCode: 429,
-        };
-      }
-      rateLimit.count++;
-    } else {
-      rateLimitStore.set(rateLimitKey, { count: 1, resetAt: now + 60000 });
-    }
-  } else {
-    rateLimitStore.set(rateLimitKey, { count: 1, resetAt: now + 60000 });
+  const rl = await checkRateLimit(keyHash, apiKey.rate_limit);
+  if (!rl.allowed) {
+    return {
+      valid: false,
+      error: `Rate limit exceeded. Try again in ${rl.retryAfter} seconds`,
+      statusCode: 429,
+    };
   }
   
   // Check permissions
@@ -153,14 +162,11 @@ export async function validateApiKey(
     }
   }
   
-  // Update usage stats
-  await collection.updateOne(
-    { _id: apiKey._id },
-    {
-      $inc: { usageCount: 1 },
-      $set: { lastUsedAt: new Date() },
-    }
-  );
+  // Update usage stats (fire-and-forget)
+  query(
+    `UPDATE api_keys SET usage_count = usage_count + 1, last_used_at = NOW() WHERE id = $1`,
+    [apiKey.id]
+  ).catch(() => {});
   
   return { valid: true, apiKey };
 }

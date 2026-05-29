@@ -1,133 +1,83 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
-import { ObjectId } from 'mongodb';
-import { cookies } from 'next/headers';
+import { query } from '@/lib/db';
 import { sendEmail, emailTemplates } from '@/lib/email';
-import { getCurrentUser } from '@/lib/auth';
 
-// POST /api/dmca - Submit a DMCA request
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { 
-      claimantName,
-      email,
-      address,
-      phone,
-      copyrightedWork,
-      infringingUrls,
-      goodFaithStatement,
-      perjuryStatement,
-      electronicSignature,
-      additionalInfo
-    } = body;
+    const { imageId, reporterName, reporterEmail, reporterRelationship, description, originalUrl } = body;
 
-    // Validate required fields
-    if (!claimantName || !email || !copyrightedWork || !infringingUrls || !goodFaithStatement || !perjuryStatement || !electronicSignature) {
+    if (!reporterName || !reporterEmail || !description) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json({ success: false, error: 'Invalid email format' }, { status: 400 });
+    const sequentialId = parseInt(imageId, 10);
+    let imageDbId: number | null = null;
+
+    if (!isNaN(sequentialId)) {
+      const imgResult = await query(`SELECT id FROM images WHERE sequential_id = $1`, [sequentialId]);
+      if (imgResult.rows.length > 0) imageDbId = imgResult.rows[0].id;
     }
 
-    const collection = await getCollection('dmca_requests');
+    const result = await query(
+      `INSERT INTO dmca_requests (image_id, image_sequential_id, reporter_name, reporter_email,
+       reporter_relationship, description, original_url, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW(), NOW()) RETURNING id`,
+      [imageDbId, isNaN(sequentialId) ? null : sequentialId, reporterName, reporterEmail,
+       reporterRelationship || null, description, originalUrl || null]
+    );
 
-    const dmcaRequest = {
-      claimantName,
-      email,
-      address: address || null,
-      phone: phone || null,
-      copyrightedWork,
-      infringingUrls,
-      goodFaithStatement,
-      perjuryStatement,
-      electronicSignature,
-      additionalInfo: additionalInfo || null,
-      status: 'pending',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      reviewedBy: null,
-      reviewedAt: null,
-      notes: [],
-      affectedImageIds: [],
-    };
-
-    const result = await collection.insertOne(dmcaRequest);
-
-    // Send confirmation email
-    const template = emailTemplates.dmcaConfirmation(claimantName);
-    await sendEmail({
-      to: email,
-      subject: template.subject,
-      text: template.text,
-      from: 'Serika Legal <no-reply@serika.email>',
-    });
-
-    // Notify legal team
-    await sendEmail({
-      to: 'legal@serika.dev',
-      subject: `[DMCA] New Takedown Request from ${claimantName}`,
-      text: `New DMCA takedown request has been submitted.\n\nFrom: ${claimantName} (${email})\nRequest ID: ${result.insertedId.toString()}\n\nPlease review in the admin panel.`,
-      from: 'Serika Legal <no-reply@serika.email>',
-      replyTo: email,
-    });
-
-    return NextResponse.json({ 
-      success: true, 
-      message: 'DMCA request submitted successfully',
-      requestId: result.insertedId.toString()
-    });
-  } catch (error) {
-    console.error('DMCA submission error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to submit request' }, { status: 500 });
-  }
-}
-
-// GET /api/dmca - Get DMCA requests (admin only)
-export async function GET(request: NextRequest) {
-  try {
-    // Check auth
-    const user = await getCurrentUser();
-    
-    if (!user || !['admin', 'owner', 'moderator'].includes(user.rank || '')) {
-      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    // Send notification email
+    try {
+      await sendEmail({
+        to: 'pikachu@serika.dev',
+        subject: `DMCA Takedown Request #${result.rows[0].id}`,
+        text: `New DMCA request from ${reporterName} (${reporterEmail})\nImage: ${imageId}\nDescription: ${description}`,
+        from: 'Serika DMCA <no-reply@serika.email>',
+      });
+    } catch (e) {
+      console.error('Failed to send DMCA notification email:', e);
     }
-
-    const searchParams = request.nextUrl.searchParams;
-    const status = searchParams.get('status');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = Math.min(50, parseInt(searchParams.get('limit') || '20'));
-
-    const collection = await getCollection('dmca_requests');
-    
-    const query: any = {};
-    if (status) {
-      query.status = status;
-    }
-
-    const total = await collection.countDocuments(query);
-    const requests = await collection
-      .find(query)
-      .sort({ submittedAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .toArray();
 
     return NextResponse.json({
       success: true,
-      requests,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
+      requestId: String(result.rows[0].id),
+      message: 'DMCA request submitted',
     });
   } catch (error) {
-    console.error('DMCA fetch error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to fetch requests' }, { status: 500 });
+    console.error('Error creating DMCA request:', error);
+    return NextResponse.json({ success: false, error: 'Failed' }, { status: 500 });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { getCurrentUser } = await import('@/lib/auth');
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+
+    const userResult = await query(`SELECT rank FROM users WHERE id = $1`, [user.id]);
+    if (!['admin', 'owner'].includes(userResult.rows[0]?.rank || '')) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
+    const result = await query(`SELECT * FROM dmca_requests ORDER BY created_at DESC LIMIT 100`);
+
+    return NextResponse.json({
+      success: true,
+      requests: result.rows.map(r => ({
+        _id: String(r.id),
+        imageId: r.image_id,
+        imageSequentialId: r.image_sequential_id,
+        reporterName: r.reporter_name,
+        reporterEmail: r.reporter_email,
+        description: r.description,
+        status: r.status,
+        createdAt: r.created_at,
+      })),
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    return NextResponse.json({ success: false, error: 'Failed' }, { status: 500 });
   }
 }

@@ -17,19 +17,32 @@ export function normalizeRatings(
   return validRatings.length > 0 ? validRatings : fallback;
 }
 
-export function ratingMongoFilter(ratings: string[]) {
+/**
+ * Build a SQL WHERE fragment for rating filtering.
+ * Returns { clause: string; params: any[] } or null if no filter needed.
+ */
+export function ratingFilter(
+  ratings: string[],
+  paramOffset: number = 1
+): { clause: string; params: any[] } | null {
   const normalizedRatings = normalizeRatings(ratings);
 
   if (normalizedRatings.length === VALID_RATINGS.length) {
-    return undefined;
+    return null; // no filter needed
   }
 
-  return { $in: normalizedRatings };
+  const placeholders = normalizedRatings.map(
+    (_, i) => `$${paramOffset + i}`
+  );
+  return {
+    clause: `rating = ANY(ARRAY[${placeholders.join(',')}])`,
+    params: normalizedRatings,
+  };
 }
 
-export function publicImageMongoFilter() {
-  return {
-    deleted: { $ne: true },
-    unlisted: { $ne: true },
-  };
+/**
+ * SQL WHERE fragment for public (non-deleted, non-unlisted) images.
+ */
+export function publicImageFilter(): string {
+  return `deleted = FALSE AND unlisted = FALSE`;
 }

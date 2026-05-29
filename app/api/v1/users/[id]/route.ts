@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { ObjectId } from 'mongodb';
 
 // GET /api/v1/users/[id] - Get user public profile (by ID or username)
 export async function GET(
@@ -16,67 +15,44 @@ export async function GET(
 
     const { id } = await params;
 
-    const usersCollection = await getCollection('users');
-    const imagesCollection = await getCollection('images');
-
-    // Try to find by ObjectId first, then by username
-    let user;
-    let userId: ObjectId | undefined;
-    
-    // Check if it's a valid 24-character hex string (MongoDB ObjectId format)
-    const isValidObjectId = /^[a-fA-F0-9]{24}$/.test(id);
-    
-    if (isValidObjectId) {
-      try {
-        user = await usersCollection.findOne({ _id: new ObjectId(id) });
-        if (user) {
-          userId = new ObjectId(id);
-        }
-      } catch {
-        // Not a valid ObjectId, will try username
-      }
-    }
-    
-    // If not found by ID, try username (case-insensitive)
-    if (!user) {
-      // Escape special regex characters in username
-      const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      user = await usersCollection.findOne({ 
-        username: { $regex: new RegExp(`^${escapedId}$`, 'i') }
-      });
-      if (user) {
-        userId = user._id;
-      }
+    // Find in local Postgres users table
+    let userResult = await query(`SELECT * FROM users WHERE id = $1`, [id]);
+    if (userResult.rows.length === 0) {
+      userResult = await query(
+        `SELECT * FROM users WHERE LOWER(username) = LOWER($1)`,
+        [id]
+      );
     }
 
-    if (!user || !userId) {
+    if (userResult.rows.length === 0) {
       return apiError('User not found', 404, 'NOT_FOUND');
     }
 
-    // Get user stats
-    const [imageCount, totalUpvotes, totalViews] = await Promise.all([
-      imagesCollection.countDocuments({ userId: userId! }),
-      imagesCollection.aggregate([
-        { $match: { userId: userId! } },
-        { $group: { _id: null, total: { $sum: '$upvotes' } } },
-      ]).toArray(),
-      imagesCollection.aggregate([
-        { $match: { userId: userId! } },
-        { $group: { _id: null, total: { $sum: '$views' } } },
-      ]).toArray(),
-    ]);
+    const user = userResult.rows[0];
+
+    // Get user stats in a single SQL query
+    const statsResult = await query(
+      `SELECT COUNT(*) as image_count,
+              COALESCE(SUM(upvotes), 0) as total_upvotes,
+              COALESCE(SUM(views), 0) as total_views
+       FROM images
+       WHERE user_id = $1`,
+      [user.id]
+    );
+
+    const stats = statsResult.rows[0];
 
     const formattedUser = {
-      id: user._id.toString(),
+      id: user.id,
       username: user.username,
-      avatar_url: user.avatarUrl || null,
+      avatar_url: user.avatar_url || null,
       rank: user.rank,
       stats: {
-        images: imageCount,
-        total_upvotes: totalUpvotes[0]?.total || 0,
-        total_views: totalViews[0]?.total || 0,
+        images: parseInt(stats.image_count, 10),
+        total_upvotes: parseInt(stats.total_upvotes, 10),
+        total_views: parseInt(stats.total_views, 10),
       },
-      created_at: user.createdAt,
+      created_at: user.created_at,
     };
 
     return apiResponse(formattedUser);

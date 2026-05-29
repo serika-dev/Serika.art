@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import HomePageClient from '@/components/HomePageClient';
 
 export const metadata: Metadata = {
@@ -24,11 +24,11 @@ export const metadata: Metadata = {
 
 async function getStats() {
   try {
-    const imagesCollection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
+    const imagesCountRes = await query(`SELECT COUNT(*) FROM images WHERE deleted = FALSE`);
+    const tagsCountRes = await query(`SELECT COUNT(*) FROM tags`);
     
-    const imageCount = await imagesCollection.countDocuments({ deleted: { $ne: true } });
-    const tagCount = await tagsCollection.countDocuments();
+    const imageCount = parseInt(imagesCountRes.rows[0].count, 10);
+    const tagCount = parseInt(tagsCountRes.rows[0].count, 10);
     
     return { imageCount, tagCount };
   } catch (error) {

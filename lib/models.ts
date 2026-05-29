@@ -1,106 +1,137 @@
-import { ObjectId } from 'mongodb';
-
 export type UserRank = 'user' | 'moderator' | 'admin' | 'owner';
 
 export interface User {
-  _id: ObjectId;
+  _id?: any;
+  id: string;
   username: string;
   email: string;
+  avatar_url?: string;
   avatarUrl?: string;
   rank: UserRank;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  createdAt?: Date;
+  updated_at: Date;
+  updatedAt?: Date;
 }
 
 export interface Tag {
-  _id: ObjectId;
+  _id?: any;
+  id: number;
   name: string;
   type: 'general' | 'artist' | 'character' | 'copyright' | 'meta';
   count: number;
-  createdAt: Date;
+  created_at: Date;
+  createdAt?: Date;
 }
 
 export interface Image {
-  _id: ObjectId;
-  sequentialId: number;
-  userId: ObjectId;
+  _id?: any;
+  id: number;
+  sequential_id: number;
+  sequentialId?: number;
+  user_id: string | null;
+  userId?: string | null;
   username: string;
   url: string;
+  thumbnail_url?: string;
   thumbnailUrl?: string;
-  originalFilename: string;
-  fileSize: number;
+  original_filename: string;
+  originalFilename?: string;
+  file_size: number;
+  fileSize?: number;
   width: number;
   height: number;
-  contentType: string;
-  tags: ObjectId[];
+  content_type: string;
+  contentType?: string;
   rating: 'safe' | 'questionable' | 'explicit';
-  isAIGenerated: boolean;
+  is_ai_generated: boolean;
+  isAIGenerated?: boolean;
   source?: string;
   description?: string;
   upvotes: number;
   downvotes: number;
   favorites: number;
   views: number;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  createdAt?: Date;
+  updated_at: Date;
+  updatedAt?: Date;
   // Moderation fields
   deleted?: boolean;
-  deletedAt?: Date;
-  deletedBy?: ObjectId;
-  deletedByUsername?: string;
-  deletionReason?: string;
-  deletionReversibleUntil?: Date;
+  deleted_at?: Date;
+  deleted_by?: string;
+  deleted_by_username?: string;
+  deletion_reason?: string;
+  deletion_reversible_until?: Date;
   unlisted?: boolean;
-  unlistedAt?: Date;
-  unlistedBy?: ObjectId;
-  unlistedByUsername?: string;
-  unlistReason?: string;
-  unlistReversibleUntil?: Date;
-  restoredAt?: Date;
-  restoredBy?: ObjectId;
-  restoredByUsername?: string;
-  dmcaRequestId?: ObjectId;
+  unlisted_at?: Date;
+  unlisted_by?: string;
+  unlisted_by_username?: string;
+  unlist_reason?: string;
+  unlist_reversible_until?: Date;
+  restored_at?: Date;
+  restored_by?: string;
+  restored_by_username?: string;
+  dmca_request_id?: number;
+  // Populated fields (from joins)
+  tags?: PopulatedTag[];
+}
+
+export interface PopulatedTag {
+  _id?: any;
+  id: number;
+  name: string;
+  type: string;
+  count?: number;
 }
 
 export interface Vote {
-  _id: ObjectId;
-  userId: ObjectId;
-  imageId: ObjectId;
+  id: number;
+  user_id: string;
+  image_id: number;
   type: 'upvote' | 'downvote';
-  createdAt: Date;
+  created_at: Date;
 }
 
 export interface Favorite {
-  _id: ObjectId;
-  userId: ObjectId;
-  imageId: ObjectId;
-  createdAt: Date;
+  id: number;
+  user_id: string;
+  image_id: number;
+  created_at: Date;
 }
 
 export interface Comment {
-  _id: ObjectId;
-  imageId: ObjectId;
-  userId: ObjectId;
+  _id?: any;
+  id: number;
+  image_id: number;
+  user_id: string;
+  userId?: string;
   username: string;
+  avatar_url?: string;
   avatarUrl?: string;
   rank?: UserRank;
   content: string;
-  parentId?: ObjectId;
-  asArtist?: boolean; // If user is commenting as verified artist
-  artistTagId?: ObjectId; // Which artist tag they're commenting as
-  createdAt: Date;
-  updatedAt: Date;
+  parent_id?: number;
+  parentId?: any;
+  as_artist?: boolean;
+  asArtist?: boolean;
+  artist_tag_id?: number;
+  artistTagId?: number;
+  created_at: Date;
+  createdAt?: any;
+  updated_at: Date;
+  updatedAt?: any;
 }
 
 export interface Artist {
-  _id: ObjectId;
-  tagId: ObjectId; // Reference to the artist tag
-  tagName: string; // Cached tag name for display
-  claimedByUserId?: ObjectId; // User who claimed this artist page
-  claimedByUsername?: string; // Cached username
+  id: number;
+  tag_id: number;
+  tag_name: string;
+  claimed_by_user_id?: string;
+  claimed_by_username?: string;
   verified: boolean;
-  avatarUrl?: string;
-  bannerUrl?: string;
+  avatar_url?: string;
+  banner_url?: string;
   bio?: string;
   socials: {
     twitter?: string;
@@ -114,55 +145,54 @@ export interface Artist {
     carrd?: string;
     website?: string;
   };
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export type ArtistClaimStatus = 'pending' | 'approved' | 'rejected';
 
 export interface ArtistClaim {
-  _id: ObjectId;
-  artistTagId: ObjectId;
-  artistTagName: string;
-  userId: ObjectId;
+  id: number;
+  artist_tag_id: number;
+  artist_tag_name: string;
+  user_id: string;
   username: string;
-  userEmail: string;
-  verificationWords: string[]; // 4 random words for verification
-  verificationMethod: 'social' | 'website' | 'dm'; // How they plan to verify
-  additionalInfo?: string;
+  user_email: string;
+  verification_words: string[];
+  verification_method: 'social' | 'website' | 'dm';
+  additional_info?: string;
+  proof_file_url?: string;
   status: ArtistClaimStatus;
-  reviewedBy?: ObjectId;
-  reviewedByUsername?: string;
-  reviewNotes?: string;
-  reviewedAt?: Date;
-  createdAt: Date;
-  updatedAt: Date;
+  reviewed_by?: string;
+  reviewed_by_username?: string;
+  review_notes?: string;
+  reviewed_at?: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
-// Artist Reviews
 export interface ArtistReview {
-  _id: ObjectId;
-  artistTagId: ObjectId;
-  artistTagName: string;
-  userId: ObjectId;
+  id: number;
+  artist_tag_id: number;
+  artist_tag_name: string;
+  user_id: string;
   username: string;
   ratings: {
-    trust: number; // 1-5
-    quality: number; // 1-5
-    communication: number; // 1-5
-    pricing?: number; // 1-5, optional for commission artists
+    trust: number;
+    quality: number;
+    communication: number;
+    pricing?: number;
   };
   comment?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
-// Artist Wiki
 export interface ArtistWiki {
-  _id: ObjectId;
-  artistTagId: ObjectId;
-  artistTagName: string;
-  content: string; // Markdown content
+  id: number;
+  artist_tag_id: number;
+  artist_tag_name: string;
+  content: string;
   infobox?: {
     status?: string;
     specialties?: string[];
@@ -172,15 +202,52 @@ export interface ArtistWiki {
     languages?: string[];
     customFields?: { label: string; value: string }[];
   };
-  lastEditedBy: ObjectId;
-  lastEditedByUsername: string;
-  editHistory: {
-    userId: ObjectId;
+  last_edited_by: string;
+  last_edited_by_username: string;
+  edit_history: {
+    userId: string;
     username: string;
     content: string;
     editedAt: Date;
   }[];
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
+export interface ApiKey {
+  id: number;
+  user_id: string;
+  username: string;
+  name: string;
+  key_hash: string;
+  permissions: string[];
+  rate_limit: number;
+  usage_count: number;
+  last_used_at?: Date;
+  expires_at?: Date;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ImportJob {
+  id: number;
+  type: 'artist' | 'tags' | 'single';
+  query: string;
+  limit: number;
+  status: 'pending' | 'running' | 'paused' | 'completed' | 'failed';
+  progress: {
+    current: number;
+    total: number;
+    successful: number;
+    failed: number;
+    skipped: number;
+  };
+  post_ids?: number[];
+  current_post_index?: number;
+  error?: string;
+  created_by?: string;
+  started_at?: Date;
+  completed_at?: Date;
+  created_at: Date;
+}

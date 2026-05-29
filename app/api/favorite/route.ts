@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import { requireAuth, getCurrentUser } from '@/lib/auth';
-import { ObjectId } from 'mongodb';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,69 +15,59 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '24', 10);
-
-    const favoritesCollection = await getCollection('favorites');
-    const imagesCollection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
-    const userObjectId = new ObjectId(user.id);
+    const offset = (page - 1) * limit;
 
     // Count total favorites
-    const total = await favoritesCollection.countDocuments({ userId: userObjectId });
+    const countResult = await query(
+      `SELECT COUNT(*) as count FROM favorites WHERE user_id = $1`,
+      [user.id]
+    );
+    const total = parseInt(countResult.rows[0].count, 10);
 
-    // Get user's favorited image IDs with pagination
-    const favorites = await favoritesCollection
-      .find({ userId: userObjectId })
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .toArray();
+    // Get favorited images with tags
+    const favResult = await query(
+      `SELECT i.*, f.created_at as favorited_at
+       FROM favorites f
+       JOIN images i ON i.id = f.image_id
+       WHERE f.user_id = $1
+       ORDER BY f.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [user.id, limit, offset]
+    );
 
-    const imageIds = favorites.map(f => f.imageId);
+    const images = favResult.rows;
 
-    // Fetch the actual images
-    const images = await imagesCollection
-      .find({ _id: { $in: imageIds } })
-      .toArray();
+    // Batch-fetch tags
+    if (images.length > 0) {
+      const imageIds = images.map(img => img.id);
+      const tagsResult = await query(
+        `SELECT it.image_id, t.id as tag_id, t.name, t.type, t.count
+         FROM image_tags it
+         JOIN tags t ON t.id = it.tag_id
+         WHERE it.image_id = ANY($1::int[])`,
+        [imageIds]
+      );
 
-    // Sort images to match favorites order
-    const imageMap = new Map(images.map(img => [img._id.toString(), img]));
-    const sortedImages = imageIds
-      .map(id => imageMap.get(id.toString()))
-      .filter(Boolean);
-
-    // Populate tags for all images
-    const allTagIds = new Set<string>();
-    sortedImages.forEach((img: any) => {
-      if (Array.isArray(img.tags)) {
-        img.tags.forEach((tagId: any) => allTagIds.add(tagId.toString()));
+      const tagsByImage = new Map<number, any[]>();
+      for (const row of tagsResult.rows) {
+        const list = tagsByImage.get(row.image_id) || [];
+        list.push({ _id: row.tag_id, id: row.tag_id, name: row.name, type: row.type, count: row.count });
+        tagsByImage.set(row.image_id, list);
       }
-    });
 
-    let tagMap = new Map();
-    if (allTagIds.size > 0) {
-      const tagDocs = await tagsCollection
-        .find({ _id: { $in: Array.from(allTagIds).map(id => new ObjectId(id)) } })
-        .toArray();
-      tagMap = new Map(tagDocs.map(t => [t._id.toString(), t]));
+      for (const img of images) {
+        (img as any).tags = tagsByImage.get(img.id) || [];
+        (img as any).dbid = String(img.id);
+        (img as any)._id = String(img.id);
+        (img as any).post_id = img.sequential_id;
+        (img as any).sequentialId = img.sequential_id;
+        (img as any).thumbnailUrl = img.thumbnail_url;
+      }
     }
-
-    // Map images to replace tag IDs with populated tag data
-    const populatedImages = sortedImages.map((img: any) => ({
-      ...img,
-      tags: (img.tags || []).map((tagId: any) => {
-        const tag = tagMap.get(tagId.toString());
-        return {
-          _id: tagId,
-          name: tag?.name || 'unknown',
-          type: tag?.type || 'general',
-          count: tag?.count || 0,
-        };
-      }),
-    }));
 
     return NextResponse.json({
       success: true,
-      images: populatedImages,
+      images,
       pagination: {
         page,
         limit,
@@ -108,62 +97,62 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const favoritesCollection = await getCollection('favorites');
-    const imagesCollection = await getCollection('images');
-
-    // Get the image by sequential ID
-    const image = await imagesCollection.findOne({ sequentialId });
-    if (!image) {
+    // Get image
+    const imgResult = await query(
+      `SELECT id FROM images WHERE sequential_id = $1`,
+      [sequentialId]
+    );
+    if (imgResult.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Image not found' },
         { status: 404 }
       );
     }
 
-    const imageObjectId = image._id;
-    const userObjectId = new ObjectId(user.id);
+    const imageDbId = imgResult.rows[0].id;
 
     // Check if already favorited
-    const existingFavorite = await favoritesCollection.findOne({
-      userId: userObjectId,
-      imageId: imageObjectId,
-    });
+    const existing = await query(
+      `SELECT id FROM favorites WHERE user_id = $1 AND image_id = $2`,
+      [user.id, imageDbId]
+    );
 
     let isFavorited = false;
 
-    if (existingFavorite) {
+    if (existing.rows.length > 0) {
       // Remove favorite
-      await favoritesCollection.deleteOne({ _id: existingFavorite._id });
-      await imagesCollection.updateOne(
-        { _id: imageObjectId },
-        { $inc: { favorites: -1 } }
+      await query(`DELETE FROM favorites WHERE id = $1`, [existing.rows[0].id]);
+      await query(
+        `UPDATE images SET favorites = GREATEST(favorites - 1, 0) WHERE id = $1`,
+        [imageDbId]
       );
       isFavorited = false;
     } else {
       // Add favorite
-      await favoritesCollection.insertOne({
-        userId: userObjectId,
-        imageId: imageObjectId,
-        createdAt: new Date(),
-      });
-      await imagesCollection.updateOne(
-        { _id: imageObjectId },
-        { $inc: { favorites: 1 } }
+      await query(
+        `INSERT INTO favorites (user_id, image_id, created_at) VALUES ($1, $2, NOW())`,
+        [user.id, imageDbId]
+      );
+      await query(
+        `UPDATE images SET favorites = favorites + 1 WHERE id = $1`,
+        [imageDbId]
       );
       isFavorited = true;
     }
 
-    // Get updated image count
-    const updatedImage = await imagesCollection.findOne({ _id: imageObjectId });
+    const updated = await query(
+      `SELECT favorites FROM images WHERE id = $1`,
+      [imageDbId]
+    );
 
     return NextResponse.json({
       success: true,
       isFavorited,
-      favorites: updatedImage?.favorites || 0,
+      favorites: updated.rows[0]?.favorites || 0,
     });
   } catch (error: any) {
     console.error('Error toggling favorite:', error);
-    
+
     if (error.message === 'Unauthorized') {
       return NextResponse.json(
         { success: false, error: 'You must be logged in to favorite images' },

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
-import { ObjectId } from 'mongodb';
+import { query, withTransaction } from '@/lib/db';
 
 export async function GET(
   request: NextRequest,
@@ -8,9 +7,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const collection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
-    
+
     const sequentialId = parseInt(id, 10);
     if (isNaN(sequentialId)) {
       return NextResponse.json(
@@ -19,66 +16,69 @@ export async function GET(
       );
     }
 
-    const image = await collection.findOne({ sequentialId });
-
-    if (!image) {
-      return NextResponse.json(
-        { success: false, error: 'Image not found' },
-        { status: 404 }
-      );
-    }
-
-    if (image.deleted) {
-      return NextResponse.json(
-        { success: false, error: 'Image not found' },
-        { status: 404 }
-      );
-    }
-
-    if (image.unlisted) {
-      return NextResponse.json(
-        { success: false, error: 'Image not found' },
-        { status: 404 }
-      );
-    }
-
-    // Fetch tag data for display
-    const tags = image.tags || [];
-    let populatedTags: any[] = [];
-    
-    if (Array.isArray(tags) && tags.length > 0) {
-      const tagDocs = await tagsCollection
-        .find({ _id: { $in: tags } })
-        .toArray();
-      
-      // Create a map for quick lookup
-      const tagMap = new Map(tagDocs.map(t => [t._id.toString(), t]));
-      
-      // Populate tags in order
-      populatedTags = tags.map(tagId => {
-        const tag = tagMap.get(tagId.toString());
-        return {
-          _id: tagId,
-          name: tag?.name || 'unknown',
-          type: tag?.type || 'general',
-        };
-      });
-    }
-
-    // Increment view count
-    await collection.updateOne(
-      { sequentialId },
-      { $inc: { views: 1 } }
+    const result = await query(
+      `SELECT * FROM images WHERE sequential_id = $1`,
+      [sequentialId]
     );
+
+    if (result.rows.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Image not found' },
+        { status: 404 }
+      );
+    }
+
+    const image = result.rows[0];
+
+    if (image.deleted || image.unlisted) {
+      return NextResponse.json(
+        { success: false, error: 'Image not found' },
+        { status: 404 }
+      );
+    }
+
+    // Fetch tags
+    const tagsResult = await query(
+      `SELECT t.id, t.name, t.type, t.count
+       FROM image_tags it
+       JOIN tags t ON t.id = it.tag_id
+       WHERE it.image_id = $1`,
+      [image.id]
+    );
+
+    const populatedTags = tagsResult.rows.map(t => ({
+      _id: t.id,
+      id: t.id,
+      name: t.name,
+      type: t.type,
+      count: t.count,
+    }));
+
+    // Increment view count (fire-and-forget)
+    query(
+      `UPDATE images SET views = views + 1 WHERE sequential_id = $1`,
+      [sequentialId]
+    ).catch(() => {});
 
     return NextResponse.json({
       success: true,
-      image: { 
-        ...image, 
-        dbid: image._id.toString(),
-        post_id: image.sequentialId,
-        tags: populatedTags, 
-        views: image.views + 1 
+      image: {
+        ...image,
+        dbid: String(image.id),
+        _id: String(image.id),
+        post_id: image.sequential_id,
+        sequentialId: image.sequential_id,
+        tags: populatedTags,
+        views: image.views + 1,
+        // Compatibility aliases
+        thumbnailUrl: image.thumbnail_url,
+        userId: image.user_id,
+        fileSize: image.file_size,
+        contentType: image.content_type,
+        isAIGenerated: image.is_ai_generated,
+        originalFilename: image.original_filename,
+        createdAt: image.created_at,
+        updatedAt: image.updated_at,
       },
     });
   } catch (error: any) {
@@ -99,9 +99,6 @@ export async function PATCH(
     const body = await request.json();
     const { userId, userRank, tags: newTags, description, source, rating, isAIGenerated } = body;
 
-    const collection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
-    
     const sequentialId = parseInt(id, 10);
     if (isNaN(sequentialId)) {
       return NextResponse.json(
@@ -110,19 +107,24 @@ export async function PATCH(
       );
     }
 
-    const image = await collection.findOne({ sequentialId });
+    const imgResult = await query(
+      `SELECT * FROM images WHERE sequential_id = $1`,
+      [sequentialId]
+    );
 
-    if (!image) {
+    if (imgResult.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Image not found' },
         { status: 404 }
       );
     }
 
-    // Check authorization: poster or moderator+
-    const isPoster = image.userId && userId && image.userId.toString() === userId;
+    const image = imgResult.rows[0];
+
+    // Check authorization
+    const isPoster = image.user_id && userId && image.user_id === userId;
     const isModerator = userRank && ['moderator', 'admin', 'owner'].includes(userRank);
-    
+
     if (!isPoster && !isModerator) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
@@ -130,75 +132,103 @@ export async function PATCH(
       );
     }
 
-    // Prepare update object
-    const updateFields: any = {
-      updatedAt: new Date(),
-    };
+    await withTransaction(async (client) => {
+      // Handle tags update
+      if (newTags && Array.isArray(newTags)) {
+        // Get current tag IDs
+        const currentTagsResult = await client.query(
+          `SELECT tag_id FROM image_tags WHERE image_id = $1`,
+          [image.id]
+        );
+        const oldTagIds = new Set(currentTagsResult.rows.map(r => r.tag_id));
 
-    // Handle tags update if provided
-    if (newTags && Array.isArray(newTags)) {
-      // Resolve tag names to ObjectIDs
-      const tagIds: ObjectId[] = [];
-      
-      for (const tagInfo of newTags) {
-        let tag = await tagsCollection.findOne({ name: tagInfo.name.toLowerCase() });
-        if (!tag) {
-          const result = await tagsCollection.insertOne({
-            name: tagInfo.name.toLowerCase(),
-            type: tagInfo.type || 'general',
-            count: 0,
-            createdAt: new Date(),
-          });
-          tagIds.push(result.insertedId);
-        } else {
-          tagIds.push(tag._id);
+        // Resolve new tag names to IDs (create if needed)
+        const newTagIds: number[] = [];
+        for (const tagInfo of newTags) {
+          const tagName = tagInfo.name.toLowerCase();
+          let tagResult = await client.query(
+            `SELECT id FROM tags WHERE name = $1`,
+            [tagName]
+          );
+
+          if (tagResult.rows.length === 0) {
+            tagResult = await client.query(
+              `INSERT INTO tags (name, type, count, created_at) VALUES ($1, $2, 0, NOW()) RETURNING id`,
+              [tagName, tagInfo.type || 'general']
+            );
+          }
+          newTagIds.push(tagResult.rows[0].id);
         }
-      }
 
-      // Update tag counts
-      const oldTags = image.tags || [];
-      
-      // Decrement counts for removed tags
-      for (const tagId of oldTags) {
-        if (!tagIds.some(newId => newId.toString() === tagId.toString())) {
-          await tagsCollection.updateOne(
-            { _id: tagId },
-            { $inc: { count: -1 } }
+        // Delete old associations
+        await client.query(`DELETE FROM image_tags WHERE image_id = $1`, [image.id]);
+
+        // Insert new associations
+        if (newTagIds.length > 0) {
+          const values = newTagIds.map((tid, i) => `($1, $${i + 2})`).join(',');
+          await client.query(
+            `INSERT INTO image_tags (image_id, tag_id) VALUES ${values}`,
+            [image.id, ...newTagIds]
           );
         }
-      }
-      
-      // Increment counts for added tags
-      for (const tagId of tagIds) {
-        if (!oldTags.some((oldId: ObjectId) => oldId.toString() === tagId.toString())) {
-          await tagsCollection.updateOne(
-            { _id: tagId },
-            { $inc: { count: 1 } }
-          );
+
+        // Update tag counts
+        const newTagIdSet = new Set(newTagIds);
+
+        // Decrement removed tags
+        for (const oldId of oldTagIds) {
+          if (!newTagIdSet.has(oldId)) {
+            await client.query(
+              `UPDATE tags SET count = GREATEST(count - 1, 0) WHERE id = $1`,
+              [oldId]
+            );
+          }
+        }
+
+        // Increment added tags
+        for (const newId of newTagIds) {
+          if (!oldTagIds.has(newId)) {
+            await client.query(
+              `UPDATE tags SET count = count + 1 WHERE id = $1`,
+              [newId]
+            );
+          }
         }
       }
 
-      updateFields.tags = tagIds;
-    }
+      // Build SET clauses for other fields
+      const setClauses: string[] = ['updated_at = NOW()'];
+      const updateParams: any[] = [];
+      let pIdx = 1;
 
-    // Update other fields if provided
-    if (description !== undefined) {
-      updateFields.description = description;
-    }
-    if (source !== undefined) {
-      updateFields.source = source;
-    }
-    if (rating !== undefined && ['safe', 'questionable', 'explicit'].includes(rating)) {
-      updateFields.rating = rating;
-    }
-    if (isAIGenerated !== undefined) {
-      updateFields.isAIGenerated = isAIGenerated;
-    }
+      if (description !== undefined) {
+        setClauses.push(`description = $${pIdx}`);
+        updateParams.push(description);
+        pIdx++;
+      }
+      if (source !== undefined) {
+        setClauses.push(`source = $${pIdx}`);
+        updateParams.push(source);
+        pIdx++;
+      }
+      if (rating !== undefined && ['safe', 'questionable', 'explicit'].includes(rating)) {
+        setClauses.push(`rating = $${pIdx}`);
+        updateParams.push(rating);
+        pIdx++;
+      }
+      if (isAIGenerated !== undefined) {
+        setClauses.push(`is_ai_generated = $${pIdx}`);
+        updateParams.push(isAIGenerated);
+        pIdx++;
+      }
 
-    await collection.updateOne(
-      { sequentialId },
-      { $set: updateFields }
-    );
+      if (updateParams.length > 0 || setClauses.length > 1) {
+        await client.query(
+          `UPDATE images SET ${setClauses.join(', ')} WHERE sequential_id = $${pIdx}`,
+          [...updateParams, sequentialId]
+        );
+      }
+    });
 
     return NextResponse.json({
       success: true,
@@ -221,9 +251,6 @@ export async function DELETE(
     const { id } = await params;
     const { userId } = await request.json();
 
-    const collection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
-    
     const sequentialId = parseInt(id, 10);
     if (isNaN(sequentialId)) {
       return NextResponse.json(
@@ -232,33 +259,46 @@ export async function DELETE(
       );
     }
 
-    const image = await collection.findOne({ sequentialId });
+    const imgResult = await query(
+      `SELECT * FROM images WHERE sequential_id = $1`,
+      [sequentialId]
+    );
 
-    if (!image) {
+    if (imgResult.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Image not found' },
         { status: 404 }
       );
     }
 
+    const image = imgResult.rows[0];
+
     // Check ownership
-    if (image.userId && userId && image.userId.toString() !== userId) {
+    if (image.user_id && userId && image.user_id !== userId) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 403 }
       );
     }
 
-    await collection.deleteOne({ sequentialId });
-
-    // Update tag counts
-    const tags = image.tags || [];
-    for (const tagId of tags) {
-      await tagsCollection.updateOne(
-        { _id: tagId },
-        { $inc: { count: -1 } }
+    await withTransaction(async (client) => {
+      // Get tag IDs before deleting
+      const tagsResult = await client.query(
+        `SELECT tag_id FROM image_tags WHERE image_id = $1`,
+        [image.id]
       );
-    }
+
+      // Delete the image (cascades to image_tags, votes, favorites, comments)
+      await client.query(`DELETE FROM images WHERE id = $1`, [image.id]);
+
+      // Decrement tag counts
+      for (const row of tagsResult.rows) {
+        await client.query(
+          `UPDATE tags SET count = GREATEST(count - 1, 0) WHERE id = $1`,
+          [row.tag_id]
+        );
+      }
+    });
 
     return NextResponse.json({
       success: true,

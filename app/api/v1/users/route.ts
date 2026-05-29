@@ -1,132 +1,80 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const limit = Math.min(Math.max(1, parseInt(searchParams.get('limit') || '50')), 100);
     const sort = searchParams.get('sort') || 'newest';
     const search = searchParams.get('q') || '';
 
     const skip = (page - 1) * limit;
 
-    const usersCollection = await getCollection('users');
-    const imagesCollection = await getCollection('images');
+    const whereClauses: string[] = [];
+    const queryParams: any[] = [];
+    let paramIdx = 1;
 
-    // Build query
-    const query: any = {};
-    
     if (search) {
-      query.username = { $regex: search, $options: 'i' };
+      whereClauses.push(`u.username ILIKE $${paramIdx}`);
+      queryParams.push(`%${search}%`);
+      paramIdx++;
     }
+
+    const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
     // Determine sort
-    let sortOption: any = { createdAt: -1 };
-    let useAggregation = false;
-    
+    let sortClause = 'u.created_at DESC, u.id DESC';
     switch (sort) {
       case 'oldest':
-        sortOption = { createdAt: 1, _id: 1 };
+        sortClause = 'u.created_at ASC, u.id ASC';
         break;
       case 'alphabetical':
-        sortOption = { username: 1, _id: 1 };
+        sortClause = 'u.username ASC, u.id ASC';
         break;
       case 'alphabetical-reverse':
-        sortOption = { username: -1, _id: -1 };
+        sortClause = 'u.username DESC, u.id DESC';
         break;
       case 'uploads':
+        sortClause = 'upload_count DESC, u.id DESC';
+        break;
       case 'uploads-asc':
-        // Use aggregation for upload count sorting
-        useAggregation = true;
-        break;
-      case 'newest':
-      default:
-        sortOption = { createdAt: -1, _id: -1 };
+        sortClause = 'upload_count ASC, u.id ASC';
         break;
     }
 
-    let users: any[];
-    let total: number;
+    // Get count and data in parallel
+    const countResult = await query(
+      `SELECT COUNT(*) FROM users u ${whereString}`,
+      queryParams
+    );
+    const total = parseInt(countResult.rows[0].count, 10);
 
-    if (useAggregation) {
-      // Use aggregation pipeline for upload count sorting
-      const pipeline: any[] = [
-        ...(search ? [{ $match: { username: { $regex: search, $options: 'i' } } }] : []),
-        {
-          $lookup: {
-            from: 'images',
-            localField: '_id',
-            foreignField: 'userId',
-            as: 'uploads',
-          },
-        },
-        {
-          $addFields: {
-            uploadCount: { $size: '$uploads' },
-          },
-        },
-        {
-          $project: {
-            username: 1,
-            avatarUrl: 1,
-            rank: 1,
-            createdAt: 1,
-            uploadCount: 1,
-          },
-        },
-        {
-          $sort: { uploadCount: sort === 'uploads' ? -1 : 1, _id: -1 },
-        },
-      ];
+    const usersResult = await query(
+      `SELECT u.id, u.username, u.avatar_url, u.rank, u.created_at,
+              COUNT(i.id) as upload_count
+       FROM users u
+       LEFT JOIN images i ON i.user_id = u.id AND i.deleted = FALSE AND i.unlisted = FALSE
+       ${whereString}
+       GROUP BY u.id, u.username, u.avatar_url, u.rank, u.created_at
+       ORDER BY ${sortClause}
+       LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+      [...queryParams, limit, skip]
+    );
 
-      [users, total] = await Promise.all([
-        usersCollection.aggregate([...pipeline, { $skip: skip }, { $limit: limit }]).toArray(),
-        usersCollection.aggregate([
-          ...(search ? [{ $match: { username: { $regex: search, $options: 'i' } } }] : []),
-          { $count: 'total' }
-        ]).toArray().then(result => result[0]?.total || 0),
-      ]);
-    } else {
-      // Execute query and count in parallel
-      [users, total] = await Promise.all([
-        usersCollection
-          .find(query, {
-            projection: {
-              username: 1,
-              avatarUrl: 1,
-              rank: 1,
-              createdAt: 1,
-            },
-          })
-          .sort(sortOption)
-          .skip(skip)
-          .limit(limit)
-          .toArray(),
-        usersCollection.countDocuments(query),
-      ]);
-
-      // Get upload counts for each user
-      const userIds = users.map(u => u._id);
-      const uploadCounts = await imagesCollection
-        .aggregate([
-          { $match: { userId: { $in: userIds } } },
-          { $group: { _id: '$userId', count: { $sum: 1 } } },
-        ])
-        .toArray();
-
-      const uploadCountMap = new Map(uploadCounts.map(uc => [uc._id.toString(), uc.count]));
-
-      // Enrich users with upload counts
-      users = users.map((user: any) => ({
-        ...user,
-        uploadCount: uploadCountMap.get(user._id.toString()) || 0,
-      }));
-    }
+    const formattedUsers = usersResult.rows.map(user => ({
+      _id: user.id,
+      id: user.id,
+      username: user.username,
+      avatarUrl: user.avatar_url,
+      rank: user.rank,
+      createdAt: user.created_at,
+      uploadCount: parseInt(user.upload_count, 10),
+    }));
 
     return NextResponse.json({
       success: true,
-      users: users,
+      users: formattedUsers,
       pagination: {
         page,
         limit,

@@ -1,30 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const query = searchParams.get('q') || '';
+    const q = searchParams.get('q') || '';
     const limit = parseInt(searchParams.get('limit') || '50');
-    const type = searchParams.get('type'); // filter by tag type
+    const type = searchParams.get('type');
 
-    const collection = await getCollection('tags');
-    
-    const filter: any = {
-      name: { $regex: query, $options: 'i' },
-    };
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (q) {
+      conditions.push(`name ILIKE $${paramIndex}`);
+      params.push(`%${q}%`);
+      paramIndex++;
+    }
 
     if (type && ['general', 'artist', 'character', 'copyright', 'meta'].includes(type)) {
-      filter.type = type;
+      conditions.push(`type = $${paramIndex}`);
+      params.push(type);
+      paramIndex++;
     }
-    
-    const tags = await collection
-      .find(filter)
-      .sort({ count: -1 })
-      .limit(limit)
-      .toArray();
 
-    // Group by type for better organization
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const result = await query(
+      `SELECT * FROM tags ${whereClause} ORDER BY count DESC LIMIT $${paramIndex}`,
+      [...params, limit]
+    );
+
+    const tags = result.rows;
+
+    // Group by type
     const grouped = tags.reduce((acc: any, tag: any) => {
       const tagType = tag.type || 'general';
       if (!acc[tagType]) acc[tagType] = [];
@@ -46,69 +55,50 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Endpoint for tag autocomplete
+// Tag autocomplete
 export async function POST(request: NextRequest) {
   try {
-    const { query, limit = 10 } = await request.json();
+    const { query: searchQuery, limit = 10 } = await request.json();
 
-    if (!query || typeof query !== 'string') {
-      return NextResponse.json({
-        success: true,
-        suggestions: [],
-      });
+    if (!searchQuery || typeof searchQuery !== 'string') {
+      return NextResponse.json({ success: true, suggestions: [] });
     }
 
-    const normalizedQuery = query.trim().toLowerCase();
-    
-    // Escape special regex characters
-    const escapedQuery = normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const normalizedQuery = searchQuery.trim().toLowerCase();
 
-    const collection = await getCollection('tags');
-    
-    // Fetch potential matches
-    const allMatches = await collection
-      .find({
-        name: { $regex: escapedQuery, $options: 'i' },
-      })
-      .sort({ count: -1 })
-      .limit(limit * 3) // Get more to filter
-      .toArray();
+    const result = await query(
+      `SELECT * FROM tags WHERE name ILIKE $1 ORDER BY count DESC LIMIT $2`,
+      [`%${normalizedQuery}%`, limit * 3]
+    );
 
     // Score and sort suggestions
-    const scoredSuggestions = allMatches.map((tag: any) => {
+    const scoredSuggestions = result.rows.map((tag: any) => {
       const tagName = tag.name.toLowerCase();
       let score = 0;
-      
-      // Exact match - highest priority
+
       if (tagName === normalizedQuery) {
         score = 1000000 + tag.count;
-      }
-      // Starts with query - high priority
-      else if (tagName.startsWith(normalizedQuery)) {
+      } else if (tagName.startsWith(normalizedQuery)) {
         score = 100000 + tag.count;
-      }
-      // Word boundary match (e.g., "blue" matches "blue eyes" but not "blueberry")
-      else if (tagName.startsWith(normalizedQuery + ' ') || tagName.includes(' ' + normalizedQuery + ' ') || tagName.endsWith(' ' + normalizedQuery)) {
+      } else if (
+        tagName.startsWith(normalizedQuery + ' ') ||
+        tagName.includes(' ' + normalizedQuery + ' ') ||
+        tagName.endsWith(' ' + normalizedQuery)
+      ) {
         score = 10000 + tag.count;
-      }
-      // Contains query - lowest priority
-      else {
+      } else {
         score = tag.count;
       }
-      
+
       return { ...tag, score };
     });
 
-    // Sort by score descending
     const suggestions = scoredSuggestions
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map(({ score, ...tag }) => tag); // Remove score from response
+      .map(({ score, ...tag }) => tag);
 
-    return NextResponse.json({
-      success: true,
-      suggestions,
-    });
+    return NextResponse.json({ success: true, suggestions });
   } catch (error: any) {
     console.error('Error fetching tag suggestions:', error);
     return NextResponse.json(

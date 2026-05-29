@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { getCollection } from "@/lib/db";
+import { query } from "@/lib/db";
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -10,37 +10,19 @@ const OG_CACHE_CONTROL = "public, max-age=300, s-maxage=600, stale-while-revalid
 
 export async function GET() {
   try {
-    const imagesCollection = await getCollection("images");
-
     let backgroundImage: string | null = null;
 
-    // Get a random safe 16:9 image (ensure width/height exist and are valid)
-    const images = await imagesCollection
-      .aggregate([
-        {
-          $match: {
-            rating: "safe",
-            deleted: { $ne: true },
-            width: { $exists: true, $gt: 0 },
-            height: { $exists: true, $gt: 0 },
-          },
-        },
-        {
-          $match: {
-            $expr: {
-              $and: [
-                { $gte: [{ $divide: ["$width", "$height"] }, 1.7] },
-                { $lte: [{ $divide: ["$width", "$height"] }, 1.85] },
-              ],
-            },
-          },
-        },
-        { $sample: { size: 1 } },
-      ])
-      .toArray();
+    // Get a random safe 16:9 image
+    const imagesResult = await query(
+      `SELECT url FROM images
+       WHERE rating = 'safe' AND deleted = FALSE AND width > 0 AND height > 0
+         AND (width::float / height::float) >= 1.7 AND (width::float / height::float) <= 1.85
+       ORDER BY RANDOM()
+       LIMIT 1`
+    );
 
-    if (images.length > 0) {
-      backgroundImage = images[0].url;
+    if (imagesResult.rows.length > 0) {
+      backgroundImage = imagesResult.rows[0].url;
     }
 
     return new ImageResponse(

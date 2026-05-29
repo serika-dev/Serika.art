@@ -127,7 +127,7 @@ export default function TagsPage() {
       ) : (
         <div className="flex flex-wrap gap-2">
           {tags.map((tag) => (
-            <div key={tag._id.toString()} className="group relative">
+            <div key={(tag.id || tag._id)?.toString()} className="group relative">
               <Link
                 href={`/posts?tags=${encodeURIComponent(tag.name)}`}
                 className={cn(

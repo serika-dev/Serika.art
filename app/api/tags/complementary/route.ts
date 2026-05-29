@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,11 +47,11 @@ export async function POST(request: NextRequest) {
 
     // If we have predefined relationships, fetch those tags from DB
     if (complementaryTagNames.length > 0) {
-      const tagsCollection = await getCollection('tags');
-      const complementaryTags = await tagsCollection
-        .find({ name: { $in: complementaryTagNames } })
-        .limit(3)
-        .toArray();
+      const complementaryTagsResult = await query(
+        `SELECT * FROM tags WHERE name = ANY($1)`,
+        [complementaryTagNames]
+      );
+      const complementaryTags = complementaryTagsResult.rows;
 
       // Return existing tags, or create placeholder entries
       const suggestions = complementaryTagNames.slice(0, 3).map(tagName => {
@@ -76,65 +76,39 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Fallback: Find commonly co-occurring tags
-    const imagesCollection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
-    
+    // Fallback: Find commonly co-occurring tags via SQL join
     // First, find the tag ID for the input tag
-    const targetTag = await tagsCollection.findOne({ name: normalizedTag });
-    if (!targetTag) {
+    const targetTagResult = await query(`SELECT id FROM tags WHERE name = $1`, [normalizedTag]);
+    if (targetTagResult.rows.length === 0) {
       return NextResponse.json({
         success: true,
         suggestions: [],
       });
     }
+    const targetTagId = targetTagResult.rows[0].id;
 
-    const coOccurringImages = await imagesCollection
-      .find({
-        tags: targetTag._id,
-      })
-      .limit(50)
-      .toArray();
+    // Fetch top 3 co-occurring tags
+    const coOccurringResult = await query(
+      `SELECT t.name, t.type, t.count, COUNT(it2.image_id) as co_occurrence
+       FROM image_tags it1
+       JOIN image_tags it2 ON it2.image_id = it1.image_id
+       JOIN tags t ON t.id = it2.tag_id
+       WHERE it1.tag_id = $1 AND it2.tag_id != $1
+       GROUP BY t.id, t.name, t.type, t.count
+       ORDER BY co_occurrence DESC, t.count DESC
+       LIMIT 3`,
+      [targetTagId]
+    );
 
-    // Count tag co-occurrences
-    const tagCounts: Record<string, number> = {};
-    coOccurringImages.forEach(image => {
-      if (Array.isArray(image.tags)) {
-        image.tags.forEach((tagId: any) => {
-          const idString = tagId.toString();
-          if (idString !== targetTag._id.toString()) {
-            tagCounts[idString] = (tagCounts[idString] || 0) + 1;
-          }
-        });
-      }
-    });
-
-    // Get top 3 co-occurring tag IDs
-    const topTagIds = Object.entries(tagCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([id]) => id);
-
-    if (topTagIds.length === 0) {
-      return NextResponse.json({
-        success: true,
-        suggestions: [],
-      });
-    }
-
-    // Fetch tag details
-    const { ObjectId } = await import('mongodb');
-    const suggestions = await tagsCollection
-      .find({ _id: { $in: topTagIds.map(id => new ObjectId(id)) } })
-      .toArray();
+    const suggestions = coOccurringResult.rows.map(t => ({
+      name: t.name,
+      type: t.type,
+      count: t.count,
+    }));
 
     return NextResponse.json({
       success: true,
-      suggestions: suggestions.map(t => ({
-        name: t.name,
-        type: t.type,
-        count: t.count,
-      })),
+      suggestions,
     });
   } catch (error: any) {
     console.error('Error fetching complementary tags:', error);

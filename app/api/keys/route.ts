@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
-import { ObjectId } from 'mongodb';
 import {
   generateApiKey,
   hashApiKey,
@@ -21,15 +20,30 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const collection = await getCollection('api_keys');
-    const keys = await collection
-      .find({ userId: new ObjectId(user.id) })
-      .project({
-        key: 0, // Never return the actual key
-        keyHash: 0,
-      })
-      .sort({ createdAt: -1 })
-      .toArray();
+    const result = await query(
+      `SELECT id, user_id, username, name, permissions, rate_limit, usage_count,
+              last_used_at, expires_at, is_active, created_at, updated_at
+       FROM api_keys
+       WHERE user_id = $1
+       ORDER BY created_at DESC`,
+      [user.id]
+    );
+
+    const keys = result.rows.map(k => ({
+      _id: String(k.id),
+      id: k.id,
+      userId: k.user_id,
+      username: k.username,
+      name: k.name,
+      permissions: k.permissions,
+      rateLimit: k.rate_limit,
+      usageCount: k.usage_count,
+      lastUsedAt: k.last_used_at,
+      expiresAt: k.expires_at,
+      isActive: k.is_active,
+      createdAt: k.created_at,
+      updatedAt: k.updated_at,
+    }));
 
     return NextResponse.json({
       success: true,
@@ -76,15 +90,15 @@ export async function POST(request: NextRequest) {
       ALL_PERMISSIONS.includes(p as ApiPermission)
     );
 
-    // Check user rank for certain permissions
-    const usersCollection = await getCollection('users');
-    const localUser = await usersCollection.findOne({
-      _id: new ObjectId(user.id),
-    });
-    
+    // Get user details
+    const localUserResult = await query(
+      `SELECT rank FROM users WHERE id = $1`,
+      [user.id]
+    );
+    const localUser = localUserResult.rows[0];
     const userRank = localUser?.rank || 'user';
-    const isPremium = localUser?.isPremium || false;
-    
+    const isPremium = false; // Add premium logic if there is any
+
     // Only moderators+ can get upload permission via API
     if (validPermissions.includes('upload') && !['moderator', 'admin', 'owner'].includes(userRank)) {
       return NextResponse.json(
@@ -102,10 +116,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Limit number of API keys per user
-    const collection = await getCollection('api_keys');
-    const existingCount = await collection.countDocuments({
-      userId: new ObjectId(user.id),
-    });
+    const existingCountResult = await query(
+      `SELECT COUNT(*) as count FROM api_keys WHERE user_id = $1`,
+      [user.id]
+    );
+    const existingCount = parseInt(existingCountResult.rows[0].count, 10);
 
     const maxKeys = userRank === 'owner' ? 50 : userRank === 'admin' ? 20 : 5;
     if (existingCount >= maxKeys) {
@@ -120,7 +135,7 @@ export async function POST(request: NextRequest) {
     const keyHash = hashApiKey(apiKey);
 
     // Calculate expiration
-    let expiresAt: Date | undefined;
+    let expiresAt: Date | null = null;
     if (expiresIn && typeof expiresIn === 'number' && expiresIn > 0) {
       expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + expiresIn);
@@ -130,32 +145,27 @@ export async function POST(request: NextRequest) {
     const maxRateLimit = userRank === 'owner' ? 10000 : userRank === 'admin' ? 1000 : (userRank === 'moderator' || isPremium) ? 120 : 60;
     const finalRateLimit = Math.min(Math.max(10, rateLimit), maxRateLimit);
 
-    const keyDoc = {
-      userId: new ObjectId(user.id),
-      username: user.username,
-      name,
-      keyHash,
-      permissions: validPermissions,
-      rateLimit: finalRateLimit,
-      usageCount: 0,
-      expiresAt,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    const keyResult = await query(
+      `INSERT INTO api_keys (user_id, username, name, key_hash, permissions, rate_limit,
+                            usage_count, expires_at, is_active, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 0, $7, TRUE, NOW(), NOW())
+       RETURNING *`,
+      [user.id, user.username, name, keyHash, validPermissions, finalRateLimit, expiresAt]
+    );
 
-    const result = await collection.insertOne(keyDoc);
+    const keyDoc = keyResult.rows[0];
 
     return NextResponse.json({
       success: true,
       key: {
-        _id: result.insertedId,
-        name,
+        _id: String(keyDoc.id),
+        id: keyDoc.id,
+        name: keyDoc.name,
         apiKey, // Only returned once at creation!
-        permissions: validPermissions,
-        rateLimit: finalRateLimit,
-        expiresAt,
-        createdAt: keyDoc.createdAt,
+        permissions: keyDoc.permissions,
+        rateLimit: keyDoc.rate_limit,
+        expiresAt: keyDoc.expires_at,
+        createdAt: keyDoc.created_at,
       },
       message: 'Save this API key securely - it will not be shown again!',
     });
@@ -182,42 +192,41 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const keyId = searchParams.get('id');
 
-    if (!keyId || !ObjectId.isValid(keyId)) {
+    if (!keyId || isNaN(parseInt(keyId, 10))) {
       return NextResponse.json(
         { success: false, error: 'Invalid key ID' },
         { status: 400 }
       );
     }
 
-    const collection = await getCollection('api_keys');
-    
-    // Check ownership
-    const key = await collection.findOne({
-      _id: new ObjectId(keyId),
-    });
+    const parsedKeyId = parseInt(keyId, 10);
 
-    if (!key) {
+    // Check ownership & rank
+    const keyResult = await query(`SELECT * FROM api_keys WHERE id = $1`, [parsedKeyId]);
+
+    if (keyResult.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'API key not found' },
         { status: 404 }
       );
     }
 
-    // Allow deletion if owner of key OR admin+
-    const usersCollection = await getCollection('users');
-    const localUser = await usersCollection.findOne({
-      _id: new ObjectId(user.id),
-    });
-    const userRank = localUser?.rank || 'user';
+    const key = keyResult.rows[0];
 
-    if (key.userId.toString() !== user.id && !['admin', 'owner'].includes(userRank)) {
+    const localUserResult = await query(
+      `SELECT rank FROM users WHERE id = $1`,
+      [user.id]
+    );
+    const userRank = localUserResult.rows[0]?.rank || 'user';
+
+    if (key.user_id !== user.id && !['admin', 'owner'].includes(userRank)) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized to delete this key' },
         { status: 403 }
       );
     }
 
-    await collection.deleteOne({ _id: new ObjectId(keyId) });
+    await query(`DELETE FROM api_keys WHERE id = $1`, [parsedKeyId]);
 
     return NextResponse.json({
       success: true,

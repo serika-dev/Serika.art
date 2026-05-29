@@ -1,1003 +1,370 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
+import { ChevronLeft, ChevronRight, Copy, Check, Menu, Lock, Globe, BookOpen, Code, Zap, AlertTriangle, ArrowRight } from 'lucide-react';
+import { endpoints, type Endpoint, type Param } from './endpoints';
 
-export default function ApiDocsPage() {
-  const [activeSection, setActiveSection] = useState('overview');
+const methodColors: Record<string, string> = {
+  GET: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+  POST: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  PUT: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  PATCH: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  DELETE: 'bg-red-500/15 text-red-400 border-red-500/30',
+};
 
-  const sections = [
-    { id: 'overview', name: 'Overview' },
-    { id: 'authentication', name: 'Authentication' },
-    { id: 'rate-limits', name: 'Rate Limits' },
-    { id: 'images', name: 'Images' },
-    { id: 'similar', name: 'Similar Images' },
-    { id: 'trending', name: 'Trending' },
-    { id: 'batch', name: 'Batch Operations' },
-    { id: 'search', name: 'Search' },
-    { id: 'random', name: 'Random' },
-    { id: 'tags', name: 'Tags' },
-    { id: 'users', name: 'Users' },
-    { id: 'upload', name: 'Upload' },
-    { id: 'stats', name: 'Stats' },
-    { id: 'errors', name: 'Error Codes' },
-  ];
-
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex gap-8">
-          {/* Sidebar */}
-          <nav className="w-64 flex-shrink-0 sticky top-8 h-fit">
-            <h1 className="text-2xl font-bold mb-6 text-indigo-400">Serika API</h1>
-            <ul className="space-y-1">
-              {sections.map((section) => (
-                <li key={section.id}>
-                  <button
-                    onClick={() => setActiveSection(section.id)}
-                    className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                      activeSection === section.id
-                        ? 'bg-indigo-600 text-white'
-                        : 'text-gray-400 hover:text-white hover:bg-white/5'
-                    }`}
-                  >
-                    {section.name}
-                  </button>
+    <button
+      onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+      className="absolute top-3 right-3 p-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
+function ParamTable({ title, params }: { title: string; params: Param[] }) {
+  return (
+    <div>
+      <h4 className="text-sm font-semibold text-zinc-300 mb-3">{title}</h4>
+      <div className="border border-border rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-zinc-800/50">
+              <th className="text-left px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400">Name</th>
+              <th className="text-left px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400">Type</th>
+              <th className="text-left px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400 hidden sm:table-cell">Default</th>
+              <th className="text-left px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400">Description</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {params.map((p) => (
+              <tr key={p.name} className="hover:bg-zinc-900/50">
+                <td className="px-4 py-3 font-mono text-sm text-primary">
+                  {p.name}{p.required && <span className="text-red-400 ml-0.5">*</span>}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs text-emerald-400/70">{p.type}</td>
+                <td className="px-4 py-3 text-xs text-zinc-500 hidden sm:table-cell">{p.default || '—'}</td>
+                <td className="px-4 py-3 text-zinc-400 text-sm">{p.description}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function EndpointDetail({ endpoint }: { endpoint: Endpoint }) {
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div>
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <Badge variant="outline" className={`${methodColors[endpoint.method]} font-mono font-bold text-xs px-2.5 py-1 tracking-widest`}>
+            {endpoint.method}
+          </Badge>
+          <code className="text-base sm:text-lg font-mono text-zinc-200 break-all">{endpoint.path}</code>
+        </div>
+        <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3">{endpoint.title}</h2>
+        <p className="text-zinc-400 text-base leading-relaxed max-w-3xl">{endpoint.description}</p>
+      </div>
+
+      {/* Auth & Permission */}
+      <div className="flex flex-wrap gap-3">
+        {endpoint.auth ? (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium">
+            <Lock className="h-3.5 w-3.5" /> Authentication Required
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
+            <Globe className="h-3.5 w-3.5" /> Public — No Auth Required
+          </div>
+        )}
+        {endpoint.permission && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-zinc-800 border border-border text-zinc-300 text-xs font-mono">
+            Permission: {endpoint.permission}
+          </div>
+        )}
+      </div>
+
+      <Separator />
+
+      {/* Long Description */}
+      {endpoint.longDescription && (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-zinc-300 text-sm leading-relaxed">{endpoint.longDescription}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Parameters */}
+      {endpoint.params && endpoint.params.length > 0 && (
+        <ParamTable title={endpoint.method === 'GET' ? 'Query Parameters' : 'Path Parameters'} params={endpoint.params} />
+      )}
+
+      {/* Request Body */}
+      {endpoint.body && endpoint.body.length > 0 && <ParamTable title="Request Body" params={endpoint.body} />}
+
+      {/* Response Headers */}
+      {endpoint.headers && endpoint.headers.length > 0 && <ParamTable title="Response Headers" params={endpoint.headers} />}
+
+      {/* Response Example */}
+      <div>
+        <h4 className="text-sm font-semibold text-zinc-300 mb-3">Response Example</h4>
+        <div className="relative rounded-lg border border-border bg-zinc-900 overflow-hidden">
+          <CopyButton text={endpoint.responseExample} />
+          <pre className="p-4 pr-12 text-sm font-mono text-zinc-300 overflow-x-auto">
+            <code>{endpoint.responseExample}</code>
+          </pre>
+        </div>
+      </div>
+
+      {/* cURL Example */}
+      {endpoint.curlExample && (
+        <div>
+          <h4 className="text-sm font-semibold text-zinc-300 mb-3">Example Request</h4>
+          <div className="relative rounded-lg border border-border bg-zinc-900 overflow-hidden">
+            <CopyButton text={endpoint.curlExample} />
+            <pre className="p-4 pr-12 text-sm font-mono text-zinc-300 overflow-x-auto">
+              <code>{endpoint.curlExample}</code>
+            </pre>
+          </div>
+        </div>
+      )}
+
+      {/* Notes */}
+      {endpoint.notes && endpoint.notes.length > 0 && (
+        <Card className="border-zinc-700/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2 text-zinc-300">
+              <BookOpen className="h-4 w-4" /> Notes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2">
+              {endpoint.notes.map((n, i) => (
+                <li key={i} className="text-sm text-zinc-400 flex gap-2">
+                  <span className="text-zinc-600 mt-0.5">•</span>
+                  <span>{n}</span>
                 </li>
               ))}
             </ul>
-          </nav>
+          </CardContent>
+        </Card>
+      )}
 
-          {/* Content */}
-          <main className="flex-1 min-w-0">
-            {/* Overview */}
-            <section id="overview" className={activeSection === 'overview' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">API Overview</h2>
-              <p className="text-gray-300 mb-4">
-                Welcome to the Serika API! This API allows you to access and interact with the Serika
-                image platform programmatically.
-              </p>
-              <div className="bg-[#111] rounded-lg p-6 mb-6">
-                <h3 className="text-lg font-semibold mb-2">Base URL</h3>
-                <code className="text-indigo-400">https://serika.art/api/v1</code>
+      {/* Error Codes */}
+      {endpoint.errorCodes && endpoint.errorCodes.length > 0 && (
+        <div>
+          <h4 className="text-sm font-semibold text-zinc-300 mb-3">Specific Error Codes</h4>
+          <div className="space-y-2">
+            {endpoint.errorCodes.map((e, i) => (
+              <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-lg bg-red-500/5 border border-red-500/10">
+                <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/20 font-mono text-xs">{e.code}</Badge>
+                <span className="text-sm text-zinc-400">{e.meaning}</span>
               </div>
-              <div className="bg-[#111] rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">Quick Start</h3>
-                <ol className="list-decimal list-inside space-y-2 text-gray-300">
-                  <li>Create an account on Serika</li>
-                  <li>Generate an API key from your account settings</li>
-                  <li>Include your API key in requests</li>
-                  <li>Start making API calls!</li>
-                </ol>
-              </div>
-            </section>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-            {/* Authentication */}
-            <section id="authentication" className={activeSection === 'authentication' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Authentication</h2>
-              <p className="text-gray-300 mb-4">
-                All API endpoints (except stats) require authentication using an API key.
-              </p>
-              <div className="bg-[#111] rounded-lg p-6 mb-6">
-                <h3 className="text-lg font-semibold mb-4">Methods</h3>
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-medium text-indigo-400">Authorization Header (Recommended)</h4>
-                    <pre className="bg-black/50 rounded p-3 mt-2 overflow-x-auto">
-                      <code>Authorization: Bearer sk_serika_YOUR_API_KEY</code>
-                    </pre>
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-indigo-400">X-API-Key Header</h4>
-                    <pre className="bg-black/50 rounded p-3 mt-2 overflow-x-auto">
-                      <code>X-API-Key: sk_serika_YOUR_API_KEY</code>
-                    </pre>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-[#111] rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">Permissions</h3>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/10">
-                      <th className="text-left py-2">Permission</th>
-                      <th className="text-left py-2">Description</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>images:read</code></td>
-                      <td>View images and their metadata</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>images:write</code></td>
-                      <td>Modify image metadata</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>images:delete</code></td>
-                      <td>Delete images (admin only)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>tags:read</code></td>
-                      <td>View tags</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>tags:write</code></td>
-                      <td>Create/modify tags</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>users:read</code></td>
-                      <td>View user profiles</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>random:read</code></td>
-                      <td>Access random image endpoints</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2"><code>upload</code></td>
-                      <td>Upload images (moderator+ only)</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
+function OverviewPage() {
+  return (
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-3xl font-bold text-white mb-3">Serika API Reference</h2>
+        <p className="text-zinc-400 text-base leading-relaxed max-w-3xl">
+          Complete reference documentation for the Serika image platform REST API. All endpoints are versioned under <code className="px-1.5 py-0.5 bg-zinc-800 rounded text-xs font-mono">/api/v1</code>.
+        </p>
+      </div>
 
-            {/* Rate Limits */}
-            <section id="rate-limits" className={activeSection === 'rate-limits' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Rate Limits</h2>
-              <p className="text-gray-300 mb-4">
-                Rate limits are applied per API key to ensure fair usage.
-              </p>
-              <div className="bg-[#111] rounded-lg p-6 mb-6">
-                <h3 className="text-lg font-semibold mb-4">Default Limits</h3>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/10">
-                      <th className="text-left py-2">User Rank</th>
-                      <th className="text-left py-2">Requests/Minute</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">User</td>
-                      <td>60</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">Premium User</td>
-                      <td>120</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">Moderator</td>
-                      <td>120</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">Admin</td>
-                      <td>1000</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">Owner</td>
-                      <td>10000</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div className="bg-[#111] rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-2">Rate Limit Response</h3>
-                <pre className="bg-black/50 rounded p-3 mt-2 overflow-x-auto text-sm">
-{`{
-  "success": false,
-  "error": "Rate limit exceeded. Try again in X seconds",
-  "code": "RATE_LIMITED"
-}`}
-                </pre>
-              </div>
-            </section>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Zap className="h-4 w-4 text-amber-400" /> Base URL</CardTitle></CardHeader>
+          <CardContent><code className="text-sm font-mono text-primary">https://serika.art/api/v1</code></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Code className="h-4 w-4 text-blue-400" /> Response Format</CardTitle></CardHeader>
+          <CardContent><code className="text-sm font-mono text-primary">application/json</code></CardContent>
+        </Card>
+      </div>
 
-            {/* Images */}
-            <section id="images" className={activeSection === 'images' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Images</h2>
-              
-              {/* List Images */}
-              <div className="bg-[#111] rounded-lg p-6 mb-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/images</code>
-                </div>
-                <p className="text-gray-300 mb-4">List images with pagination and filters.</p>
-                
-                <h4 className="font-semibold mb-2">Query Parameters</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>page</code></td>
-                      <td>Page number (default: 1)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>limit</code></td>
-                      <td>Items per page (1-100, default: 20)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>tags</code></td>
-                      <td>Comma-separated tag names</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>ratings</code></td>
-                      <td>safe, questionable, explicit (default: safe)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>sort</code></td>
-                      <td>newest, oldest, popular, favorites, views, random</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>ai</code></td>
-                      <td>true to show only AI images</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>q</code></td>
-                      <td>Search query</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>min_width</code></td>
-                      <td>Minimum image width</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2"><code>min_height</code></td>
-                      <td>Minimum image height</td>
-                    </tr>
-                  </tbody>
-                </table>
+      <Separator />
 
-                <h4 className="font-semibold mb-2">Example Response</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
-{`{
-  "success": true,
-  "data": [
-    {
-      "id": "507f1f77bcf86cd799439011",
-      "dbid": "507f1f77bcf86cd799439011",
-      "post_id": 1234,
-      "url": "https://cdn.serika.art/uploads/image.png",
-      "thumbnail_url": "https://cdn.serika.art/thumbnails/thumb-image.jpg",
-      "width": 1920,
-      "height": 1080,
-      "file_size": 1234567,
-      "content_type": "image/png",
-      "rating": "safe",
-      "is_ai_generated": false,
-      "source": "https://example.com",
-      "description": "A beautiful image",
-      "tags": [
-        { "name": "landscape", "type": "general" },
-        { "name": "nature", "type": "general" }
-      ],
-      "stats": {
-        "upvotes": 42,
-        "downvotes": 2,
-        "favorites": 15,
-        "views": 1337
-      },
-      "user": {
-        "id": "507f1f77bcf86cd799439012",
-        "username": "artist"
-      },
-      "created_at": "2024-01-15T12:00:00.000Z"
-    }
-  ],
-  "meta": {
-    "timestamp": "2024-01-15T12:00:00.000Z",
-    "pagination": {
-      "page": 1,
-      "limit": 20,
-      "total": 100,
-      "pages": 5,
-      "has_next": true,
-      "has_prev": false
-    }
-  }
-}`}
-                </pre>
-              </div>
+      <div>
+        <h3 className="text-xl font-bold text-white mb-4">Authentication</h3>
+        <p className="text-zinc-400 text-sm mb-4">
+          Generate an API key from your <a href="/settings" className="text-primary hover:underline">account settings</a>. Include it in every request via one of these methods:
+        </p>
+        <div className="space-y-3">
+          <div className="relative rounded-lg border border-border bg-zinc-900 p-4">
+            <code className="text-sm font-mono text-zinc-300">Authorization: Bearer sk_serika_YOUR_API_KEY</code>
+            <Badge variant="outline" className="absolute top-3 right-3 text-[10px] text-emerald-400 border-emerald-500/30">Recommended</Badge>
+          </div>
+          <div className="rounded-lg border border-border bg-zinc-900 p-4">
+            <code className="text-sm font-mono text-zinc-300">X-API-Key: sk_serika_YOUR_API_KEY</code>
+          </div>
+        </div>
+      </div>
 
-              {/* Get Image */}
-              <div className="bg-[#111] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/images/:id</code>
-                </div>
-                <p className="text-gray-300 mb-4">Get detailed information about a specific image.</p>
-                
-                <h4 className="font-semibold mb-2">Path Parameters</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr>
-                      <td className="py-2"><code>id</code></td>
-                      <td>Image ID (MongoDB ObjectId)</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
+      <Separator />
 
-            {/* Similar Images */}
-            <section id="similar" className={activeSection === 'similar' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Similar Images</h2>
-              
-              <div className="bg-[#111] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/images/:id/similar</code>
-                </div>
-                <p className="text-gray-300 mb-4">Get images similar to the specified image based on shared tags.</p>
-                
-                <h4 className="font-semibold mb-2">Path Parameters</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr>
-                      <td className="py-2"><code>id</code></td>
-                      <td>Source image ID</td>
-                    </tr>
-                  </tbody>
-                </table>
+      <div>
+        <h3 className="text-xl font-bold text-white mb-4">Rate Limits</h3>
+        <div className="border border-border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead><tr className="bg-zinc-800/50">
+              <th className="text-left px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400">Rank</th>
+              <th className="text-left px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400">Requests / Minute</th>
+            </tr></thead>
+            <tbody className="divide-y divide-border text-zinc-300">
+              <tr><td className="px-4 py-3">User</td><td className="px-4 py-3 font-mono">60</td></tr>
+              <tr><td className="px-4 py-3">Premium / Moderator</td><td className="px-4 py-3 font-mono">120</td></tr>
+              <tr><td className="px-4 py-3">Admin</td><td className="px-4 py-3 font-mono">1,000</td></tr>
+              <tr><td className="px-4 py-3">Owner</td><td className="px-4 py-3 font-mono">10,000</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-zinc-500 text-xs mt-3">Exceeding the limit returns <code className="px-1 py-0.5 bg-zinc-800 rounded text-xs font-mono">429 RATE_LIMITED</code>.</p>
+      </div>
 
-                <h4 className="font-semibold mb-2">Query Parameters</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr>
-                      <td className="py-2"><code>limit</code></td>
-                      <td>Number of results (1-50, default: 10)</td>
-                    </tr>
-                  </tbody>
-                </table>
+      <Separator />
 
-                <h4 className="font-semibold mb-2">Example Response</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
-{`{
-  "success": true,
-  "data": {
-    "source_id": "507f1f77bcf86cd799439011",
-    "similar": [
-      {
-        "id": "507f1f77bcf86cd799439012",
-        "dbid": "507f1f77bcf86cd799439012",
-        "post_id": 42,
-        "sequential_id": 42,
-        "url": "https://cdn.serika.art/...",
-        "thumbnail_url": "https://cdn.serika.art/...",
-        "shared_tags": 5,
-        "tags": [{"name": "landscape", "type": "general"}],
-        "stats": {"upvotes": 15, "favorites": 8}
-      }
-    ],
-    "count": 10
-  }
-}`}
-                </pre>
-              </div>
-            </section>
+      <div>
+        <h3 className="text-xl font-bold text-white mb-4">Permissions</h3>
+        <div className="border border-border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead><tr className="bg-zinc-800/50">
+              <th className="text-left px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400">Scope</th>
+              <th className="text-left px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400">Description</th>
+            </tr></thead>
+            <tbody className="divide-y divide-border text-zinc-300">
+              <tr><td className="px-4 py-3 font-mono text-xs text-primary">images:read</td><td className="px-4 py-3">View images and metadata</td></tr>
+              <tr><td className="px-4 py-3 font-mono text-xs text-primary">images:write</td><td className="px-4 py-3">Modify image metadata</td></tr>
+              <tr><td className="px-4 py-3 font-mono text-xs text-primary">images:delete</td><td className="px-4 py-3">Delete images (admin only)</td></tr>
+              <tr><td className="px-4 py-3 font-mono text-xs text-primary">tags:read</td><td className="px-4 py-3">View and search tags</td></tr>
+              <tr><td className="px-4 py-3 font-mono text-xs text-primary">tags:write</td><td className="px-4 py-3">Create or modify tags</td></tr>
+              <tr><td className="px-4 py-3 font-mono text-xs text-primary">users:read</td><td className="px-4 py-3">View user profiles</td></tr>
+              <tr><td className="px-4 py-3 font-mono text-xs text-primary">random:read</td><td className="px-4 py-3">Access random image endpoints</td></tr>
+              <tr><td className="px-4 py-3 font-mono text-xs text-primary">upload</td><td className="px-4 py-3">Upload images (moderator+ only)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-            {/* Trending */}
-            <section id="trending" className={activeSection === 'trending' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Trending</h2>
-              
-              <div className="bg-[#111] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/trending</code>
-                </div>
-                <p className="text-gray-300 mb-4">Get trending images and tags based on recent engagement.</p>
-                
-                <h4 className="font-semibold mb-2">Query Parameters</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>period</code></td>
-                      <td>Time period: day, week, month (default: day)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>limit</code></td>
-                      <td>Number of images (1-50, default: 20)</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2"><code>ratings</code></td>
-                      <td>Filter by rating (default: safe)</td>
-                    </tr>
-                  </tbody>
-                </table>
+      <Separator />
 
-                <h4 className="font-semibold mb-2">Example Response</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
-{`{
-  "success": true,
-  "data": {
-    "period": "day",
-    "images": [
-      {
-        "id": "507f1f77bcf86cd799439011",
-        "trend_score": 250,
-        "tags": ["landscape", "nature"],
-        "stats": {"upvotes": 42, "favorites": 15, "views": 1337}
-      }
-    ],
-    "tags": [
-      {"name": "landscape", "type": "general", "trending_count": 15}
-    ]
-  }
-}`}
-                </pre>
-              </div>
-            </section>
-
-            {/* Batch Operations */}
-            <section id="batch" className={activeSection === 'batch' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Batch Operations</h2>
-              
-              <div className="bg-[#111] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-blue-600 px-2 py-1 rounded text-xs font-bold">POST</span>
-                  <code className="text-indigo-400">/batch/images</code>
-                </div>
-                <p className="text-gray-300 mb-4">Fetch multiple images by ID in a single request. More efficient than multiple individual requests.</p>
-                
-                <h4 className="font-semibold mb-2">Request Body</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm mb-4">
-{`{
-  "ids": [
-    "507f1f77bcf86cd799439011",
-    "507f1f77bcf86cd799439012",
-    "507f1f77bcf86cd799439013"
-  ]
-}`}
-                </pre>
-
-                <div className="bg-yellow-900/20 border border-yellow-600/30 rounded p-3 mb-4">
-                  <p className="text-yellow-400 text-sm">
-                    <strong>Limit:</strong> Maximum 100 IDs per request
-                  </p>
-                </div>
-
-                <h4 className="font-semibold mb-2">Example Response</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
-{`{
-  "success": true,
-  "data": {
-    "images": [...],
-    "found": 3,
-    "requested": 3
-  }
-}`}
-                </pre>
-              </div>
-            </section>
-
-            {/* Search */}
-            <section id="search" className={activeSection === 'search' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Search</h2>
-              
-              <div className="bg-[#111] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/search</code>
-                </div>
-                <p className="text-gray-300 mb-4">Search across images, tags, and users with a single query.</p>
-                
-                <h4 className="font-semibold mb-2">Query Parameters</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>q</code> <span className="text-red-400">*</span></td>
-                      <td>Search query (min 2 characters)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>type</code></td>
-                      <td>all, images, tags, users (default: all)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>limit</code></td>
-                      <td>Results per type (1-50, default: 10)</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2"><code>ratings</code></td>
-                      <td>Filter image results by rating (default: safe)</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <h4 className="font-semibold mb-2">Example Response</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
-{`{
-  "success": true,
-  "data": {
-    "images": [...],
-    "tags": [
-      {"name": "landscape", "type": "general", "count": 1234}
-    ],
-    "users": [
-      {"username": "artist", "avatar_url": "..."}
-    ]
-  }
-}`}
-                </pre>
-              </div>
-            </section>
-
-            {/* Random */}
-            <section id="random" className={activeSection === 'random' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Random Images</h2>
-              
-              {/* Random API */}
-              <div className="bg-[#111] rounded-lg p-6 mb-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/random</code>
-                </div>
-                <p className="text-gray-300 mb-4">Get random image(s) with metadata (JSON response).</p>
-                
-                <h4 className="font-semibold mb-2">Query Parameters</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>count</code></td>
-                      <td>Number of images (1-50, default: 1)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>ratings</code></td>
-                      <td>Comma-separated ratings (default: safe)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>tags</code></td>
-                      <td>Required tags (comma-separated)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>exclude_tags</code></td>
-                      <td>Tags to exclude</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>min_width</code></td>
-                      <td>Minimum width</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>min_height</code></td>
-                      <td>Minimum height</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>max_width</code></td>
-                      <td>Maximum width</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>max_height</code></td>
-                      <td>Maximum height</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>ai</code></td>
-                      <td>true for AI-only images</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2"><code>no_ai</code></td>
-                      <td>true to exclude AI images</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Random Image Direct */}
-              <div className="bg-[#111] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/random/:width/:height/image.png</code>
-                </div>
-                <p className="text-gray-300 mb-4">
-                  Get a random image resized to specific dimensions. Returns the actual image file.
-                  <span className="text-yellow-400 ml-2">(No API key required)</span>
-                </p>
-                
-                <h4 className="font-semibold mb-2">Path Parameters</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>width</code></td>
-                      <td>Output width (16-8000)</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2"><code>height</code></td>
-                      <td>Output height (16-8000)</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <h4 className="font-semibold mb-2">Query Parameters</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>ratings</code></td>
-                      <td>Filter by rating (default: safe)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>tags</code></td>
-                      <td>Filter by tags (comma-separated)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>exclude_tags</code></td>
-                      <td>Tags to exclude (comma-separated)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>fit</code></td>
-                      <td>cover, contain, fill, inside, outside (default: cover)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>format</code></td>
-                      <td>png, jpeg, webp (default: png)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>quality</code></td>
-                      <td>Output quality 1-100 (default: 85)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>blur</code></td>
-                      <td>true to apply blur effect</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>grayscale</code></td>
-                      <td>true for grayscale output</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>ai</code></td>
-                      <td>true for AI-only images</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>no_ai</code></td>
-                      <td>true to exclude AI images</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>match_size</code></td>
-                      <td>true to enable dimension/aspect matching (default: false)</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2"><code>aspect_tolerance</code></td>
-                      <td>Aspect ratio tolerance 0-1 (default: 0.2)</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <h4 className="font-semibold mb-2">Response Headers</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>X-Image-Id</code></td>
-                      <td>Original image ID (legacy)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>X-DBID</code></td>
-                      <td>Original image Database ID</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>X-Post-Id</code></td>
-                      <td>Original image Sequential ID</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>X-Original-Width</code></td>
-                      <td>Original image width</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>X-Original-Height</code></td>
-                      <td>Original image height</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2"><code>X-Rating</code></td>
-                      <td>Image rating</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <h4 className="font-semibold mb-2">Example Usage</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
-{`<!-- HTML -->
-<img src="https://serika.art/api/v1/random/400/400/image.png" alt="Random">
-
-<!-- With filters -->
-<img src="https://serika.art/api/v1/random/800/600/image.png?format=webp&tags=nature" alt="Random Nature">
-
-<!-- Placeholder -->
-<img src="https://serika.art/api/v1/random/1920/1080/image.png?fit=cover" alt="Background">`}
-                </pre>
-              </div>
-            </section>
-
-            {/* Tags */}
-            <section id="tags" className={activeSection === 'tags' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Tags</h2>
-              
-              <div className="bg-[#111] rounded-lg p-6 mb-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/tags</code>
-                </div>
-                <p className="text-gray-300 mb-4">List all tags with pagination.</p>
-                
-                <h4 className="font-semibold mb-2">Query Parameters</h4>
-                <table className="w-full text-sm">
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>page</code></td>
-                      <td>Page number</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>limit</code></td>
-                      <td>Items per page (max 500)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>q</code></td>
-                      <td>Search query</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>type</code></td>
-                      <td>general, artist, character, copyright, meta</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>sort</code></td>
-                      <td>count, name, newest, oldest</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2"><code>min_count</code></td>
-                      <td>Minimum usage count</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="bg-[#111] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/tags/:name</code>
-                </div>
-                <p className="text-gray-300 mb-4">Get detailed information about a specific tag.</p>
-              </div>
-            </section>
-
-            {/* Users */}
-            <section id="users" className={activeSection === 'users' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Users</h2>
-              
-              <div className="bg-[#111] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/users/:identifier</code>
-                </div>
-                <p className="text-gray-300 mb-4">Get a user's public profile and statistics by ID or username.</p>
-                
-                <h4 className="font-semibold mb-2">Path Parameters</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr>
-                      <td className="py-2"><code>identifier</code></td>
-                      <td>User ID (MongoDB ObjectId) or username (case-insensitive)</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <h4 className="font-semibold mb-2">Example Requests</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm mb-4">
-{`GET /api/v1/users/507f1f77bcf86cd799439012  # By ID
-GET /api/v1/users/artist                     # By username`}
-                </pre>
-                
-                <h4 className="font-semibold mb-2">Example Response</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
-{`{
-  "success": true,
-  "data": {
-    "id": "507f1f77bcf86cd799439012",
-    "username": "artist",
-    "avatar_url": "https://cdn.serika.art/avatars/user.jpg",
-    "rank": "user",
-    "stats": {
-      "images": 42,
-      "total_upvotes": 1337,
-      "total_views": 50000
-    },
-    "created_at": "2024-01-01T00:00:00.000Z"
-  },
-  "meta": {
-    "timestamp": "2024-01-15T12:00:00.000Z"
-  }
-}`}
-                </pre>
-              </div>
-            </section>
-
-            {/* Upload */}
-            <section id="upload" className={activeSection === 'upload' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Upload</h2>
-              
-              <div className="bg-[#111] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-blue-600 px-2 py-1 rounded text-xs font-bold">POST</span>
-                  <code className="text-indigo-400">/upload</code>
-                </div>
-                <p className="text-gray-300 mb-4">
-                  Upload an image. Requires <code>upload</code> permission (moderator+ only).
-                </p>
-                
-                <h4 className="font-semibold mb-2">Request Body (multipart/form-data)</h4>
-                <table className="w-full text-sm mb-4">
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>file</code> <span className="text-red-400">*</span></td>
-                      <td>Image file (JPEG, PNG, GIF, WebP, max 50MB)</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>tags</code> <span className="text-red-400">*</span></td>
-                      <td>JSON array of tags or comma-separated string</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>rating</code> <span className="text-red-400">*</span></td>
-                      <td>safe, questionable, or explicit</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>is_ai_generated</code></td>
-                      <td>true/false</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2"><code>source</code></td>
-                      <td>Source URL</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2"><code>description</code></td>
-                      <td>Image description</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <h4 className="font-semibold mb-2">Tags Format</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
-{`// Simple comma-separated
-"nature, landscape, mountains"
-
-// JSON with types
-[
-  { "name": "artist_name", "type": "artist" },
-  { "name": "character_name", "type": "character" },
-  { "name": "landscape", "type": "general" }
-]`}
-                </pre>
-
-                <h4 className="font-semibold mb-2 mt-4">Example (cURL)</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
-{`curl -X POST https://serika.art/api/v1/upload \\
-  -H "Authorization: Bearer sk_serika_YOUR_API_KEY" \\
-  -F "file=@image.png" \\
-  -F 'tags=[{"name":"nature","type":"general"}]' \\
-  -F "rating=safe" \\
-  -F "is_ai_generated=false"`}
-                </pre>
-              </div>
-            </section>
-
-            {/* Stats */}
-            <section id="stats" className={activeSection === 'stats' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Statistics</h2>
-              
-              <div className="bg-[#111] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="bg-green-600 px-2 py-1 rounded text-xs font-bold">GET</span>
-                  <code className="text-indigo-400">/stats</code>
-                </div>
-                <p className="text-gray-300 mb-4">
-                  Get platform statistics. <span className="text-yellow-400">(No API key required)</span>
-                </p>
-                
-                <h4 className="font-semibold mb-2">Example Response</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
-{`{
-  "success": true,
-  "data": {
-    "totals": {
-      "images": 10000,
-      "tags": 5000,
-      "users": 1000
-    },
-    "images_by_rating": {
-      "safe": 7000,
-      "questionable": 2000,
-      "explicit": 1000
-    },
-    "images_by_type": {
-      "ai_generated": 3000,
-      "non_ai": 7000
-    },
-    "activity": {
-      "uploads_last_24h": 150
-    }
-  },
-  "meta": {
-    "timestamp": "2024-01-15T12:00:00.000Z"
-  }
-}`}
-                </pre>
-              </div>
-            </section>
-
-            {/* Errors */}
-            <section id="errors" className={activeSection === 'errors' ? '' : 'hidden'}>
-              <h2 className="text-3xl font-bold mb-6">Error Codes</h2>
-              
-              <div className="bg-[#111] rounded-lg p-6">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/10">
-                      <th className="text-left py-2">HTTP Status</th>
-                      <th className="text-left py-2">Code</th>
-                      <th className="text-left py-2">Description</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-gray-300">
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">400</td>
-                      <td><code>INVALID_ID</code></td>
-                      <td>Invalid resource ID format</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">400</td>
-                      <td><code>MISSING_FILE</code></td>
-                      <td>No file provided for upload</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">400</td>
-                      <td><code>INVALID_FILE_TYPE</code></td>
-                      <td>Unsupported file format</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">400</td>
-                      <td><code>FILE_TOO_LARGE</code></td>
-                      <td>File exceeds size limit</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">400</td>
-                      <td><code>MISSING_TAGS</code></td>
-                      <td>Tags are required</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">400</td>
-                      <td><code>INVALID_RATING</code></td>
-                      <td>Invalid rating value</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">401</td>
-                      <td><code>UNAUTHORIZED</code></td>
-                      <td>Invalid or missing API key</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">403</td>
-                      <td><code>FORBIDDEN</code></td>
-                      <td>Insufficient permissions</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">404</td>
-                      <td><code>NOT_FOUND</code></td>
-                      <td>Resource not found</td>
-                    </tr>
-                    <tr className="border-b border-white/5">
-                      <td className="py-2">429</td>
-                      <td><code>RATE_LIMITED</code></td>
-                      <td>Too many requests</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">500</td>
-                      <td><code>INTERNAL_ERROR</code></td>
-                      <td>Server error</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <h4 className="font-semibold mb-2 mt-6">Error Response Format</h4>
-                <pre className="bg-black/50 rounded p-3 overflow-x-auto text-sm">
-{`{
+      <div>
+        <h3 className="text-xl font-bold text-white mb-4">Error Response Format</h3>
+        <div className="relative rounded-lg border border-border bg-zinc-900 overflow-hidden">
+          <pre className="p-4 text-sm font-mono text-zinc-300 overflow-x-auto"><code>{`{
   "success": false,
   "error": "Human-readable error message",
   "code": "ERROR_CODE"
-}`}
-                </pre>
-              </div>
-            </section>
+}`}</code></pre>
+        </div>
+        <div className="mt-4 border border-border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead><tr className="bg-zinc-800/50">
+              <th className="text-left px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400">Status</th>
+              <th className="text-left px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400">Code</th>
+              <th className="text-left px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400">Meaning</th>
+            </tr></thead>
+            <tbody className="divide-y divide-border text-zinc-300">
+              <tr><td className="px-4 py-2.5 font-mono text-red-400">400</td><td className="px-4 py-2.5 font-mono text-xs">INVALID_ID</td><td className="px-4 py-2.5">Invalid resource ID format</td></tr>
+              <tr><td className="px-4 py-2.5 font-mono text-red-400">400</td><td className="px-4 py-2.5 font-mono text-xs">MISSING_FILE</td><td className="px-4 py-2.5">No file provided for upload</td></tr>
+              <tr><td className="px-4 py-2.5 font-mono text-red-400">400</td><td className="px-4 py-2.5 font-mono text-xs">INVALID_FILE_TYPE</td><td className="px-4 py-2.5">Unsupported file format</td></tr>
+              <tr><td className="px-4 py-2.5 font-mono text-red-400">400</td><td className="px-4 py-2.5 font-mono text-xs">FILE_TOO_LARGE</td><td className="px-4 py-2.5">File exceeds 50MB limit</td></tr>
+              <tr><td className="px-4 py-2.5 font-mono text-red-400">400</td><td className="px-4 py-2.5 font-mono text-xs">MISSING_TAGS</td><td className="px-4 py-2.5">At least one tag required</td></tr>
+              <tr><td className="px-4 py-2.5 font-mono text-red-400">400</td><td className="px-4 py-2.5 font-mono text-xs">INVALID_RATING</td><td className="px-4 py-2.5">Invalid rating value</td></tr>
+              <tr><td className="px-4 py-2.5 font-mono text-amber-400">401</td><td className="px-4 py-2.5 font-mono text-xs">UNAUTHORIZED</td><td className="px-4 py-2.5">Invalid or missing API key</td></tr>
+              <tr><td className="px-4 py-2.5 font-mono text-amber-400">403</td><td className="px-4 py-2.5 font-mono text-xs">FORBIDDEN</td><td className="px-4 py-2.5">Insufficient permissions</td></tr>
+              <tr><td className="px-4 py-2.5 font-mono text-amber-400">404</td><td className="px-4 py-2.5 font-mono text-xs">NOT_FOUND</td><td className="px-4 py-2.5">Resource not found</td></tr>
+              <tr><td className="px-4 py-2.5 font-mono text-amber-400">429</td><td className="px-4 py-2.5 font-mono text-xs">RATE_LIMITED</td><td className="px-4 py-2.5">Too many requests</td></tr>
+              <tr><td className="px-4 py-2.5 font-mono text-red-500">500</td><td className="px-4 py-2.5 font-mono text-xs">INTERNAL_ERROR</td><td className="px-4 py-2.5">Server error</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NavItem({ endpoint, active, onClick }: { endpoint: Endpoint; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center gap-2.5 ${active ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
+      <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border leading-none ${methodColors[endpoint.method]}`}>{endpoint.method}</span>
+      <span className="truncate">{endpoint.title}</span>
+    </button>
+  );
+}
+
+export default function ApiDocsPage() {
+  const [activeId, setActiveId] = useState<string>('overview');
+
+  const sidebar = (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-foreground mb-1">API Reference</h1>
+        <p className="text-xs text-muted-foreground">v1.0.0</p>
+      </div>
+      <div>
+        <button onClick={() => setActiveId('overview')} className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center gap-2 ${activeId === 'overview' ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
+          <BookOpen className="h-3.5 w-3.5" /> Overview
+        </button>
+      </div>
+      <Separator />
+      <div className="space-y-1">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-3 mb-2">Endpoints</p>
+        {endpoints.map((ep) => (
+          <NavItem key={ep.id} endpoint={ep} active={activeId === ep.id} onClick={() => setActiveId(ep.id)} />
+        ))}
+      </div>
+    </div>
+  );
+
+  const activeEndpoint = endpoints.find((e) => e.id === activeId);
+
+  return (
+    <div className="bg-background text-foreground lg:h-screen lg:overflow-hidden">
+      <div className="max-w-7xl mx-auto lg:h-full">
+        <div className="flex lg:h-full">
+          {/* Desktop sidebar — fixed, scrolls independently */}
+          <aside className="hidden lg:block w-72 flex-shrink-0 border-r border-border h-full overflow-y-auto p-6">
+            {sidebar}
+          </aside>
+
+          {/* Mobile header */}
+          <div className="lg:hidden fixed top-16 left-0 right-0 z-30 bg-background/80 backdrop-blur-lg border-b border-border px-4 py-3">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2">
+                  <Menu className="h-4 w-4" />
+                  {activeId === 'overview' ? 'Overview' : activeEndpoint?.title || 'Menu'}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-72 p-6">
+                <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
+                {sidebar}
+              </SheetContent>
+            </Sheet>
+          </div>
+
+          {/* Main content — scrolls independently on desktop */}
+          <main className="flex-1 min-w-0 p-6 sm:p-8 lg:p-12 pt-24 lg:pt-12 lg:overflow-y-auto lg:h-full">
+            {activeId === 'overview' ? <OverviewPage /> : activeEndpoint ? <EndpointDetail endpoint={activeEndpoint} /> : null}
           </main>
         </div>
       </div>

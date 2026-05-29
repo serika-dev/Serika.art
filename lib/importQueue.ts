@@ -1,5 +1,4 @@
-import { getCollection, getNextSequentialId } from '@/lib/db';
-import { ObjectId } from 'mongodb';
+import { query, getNextSequentialId, withTransaction } from '@/lib/db';
 import {
   fetchDanbooruPost,
   fetchDanbooruPostsByArtist,
@@ -17,10 +16,10 @@ import sharp from 'sharp';
 export type ImportJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'paused';
 
 export interface ImportJob {
-  _id?: ObjectId;
+  id: number;
   type: 'artist' | 'tags' | 'single';
   query: string;
-  limit: number;
+  limit_val: number;
   status: ImportJobStatus;
   progress: {
     current: number;
@@ -30,12 +29,12 @@ export interface ImportJob {
     skipped: number;
   };
   posts?: number[];
-  currentPostIndex?: number;
-  createdAt: Date;
-  startedAt?: Date;
-  completedAt?: Date;
+  current_post_index?: number;
+  created_at: Date;
+  started_at?: Date;
+  completed_at?: Date;
   error?: string;
-  createdBy: string;
+  created_by?: string;
 }
 
 // ============================================
@@ -100,102 +99,43 @@ let workerPromise: Promise<void> | null = null;
 let activeJobCount = 0;
 
 // Tag cache to reduce DB lookups
-const tagCache = new Map<string, ObjectId>();
-
-// Atomic counter for sequential IDs - prevents race conditions
-
-
-// Initialize counter if needed (run once on startup)
-async function initializeCounter(): Promise<void> {
-  const countersCollection = await getCollection('counters');
-  const imagesCollection = await getCollection('images');
-  
-  const existing = await countersCollection.findOne({ name: 'imageSequentialId' });
-  if (!existing) {
-    // Find the highest existing sequentialId
-    const lastImage = await imagesCollection.findOne(
-      {},
-      { sort: { sequentialId: -1 }, projection: { sequentialId: 1 } }
-    );
-    const maxId = lastImage?.sequentialId || 0;
-    
-    await countersCollection.insertOne({
-      name: 'imageSequentialId',
-      value: maxId
-    });
-    console.log(`[IMPORT] Initialized sequential ID counter at ${maxId}`);
-  }
-}
-
-// Initialize on module load
-let counterInitialized = false;
-let indexesEnsured = false;
-
-async function ensureCounterInitialized(): Promise<void> {
-  if (!counterInitialized) {
-    await initializeCounter();
-    counterInitialized = true;
-  }
-}
-
-// Ensure indexes exist for fast duplicate checking
-async function ensureIndexes(): Promise<void> {
-  if (indexesEnsured) return;
-  
-  try {
-    const imagesCollection = await getCollection('images');
-    // Create index on metadata.danbooruId for fast duplicate lookups
-    await imagesCollection.createIndex(
-      { 'metadata.danbooruId': 1 },
-      { sparse: true, background: true }
-    );
-    console.log('[IMPORT] Ensured index on metadata.danbooruId');
-    indexesEnsured = true;
-  } catch (error) {
-    // Index might already exist, that's fine
-    indexesEnsured = true;
-  }
-}
+const tagCache = new Map<string, number>();
 
 // Batch check for existing posts - much faster than checking one by one
-async function filterAlreadyImported(
-  postIds: number[],
-  imagesCollection: any
-): Promise<Set<number>> {
-  const existing = await imagesCollection
-    .find(
-      { 'metadata.danbooruId': { $in: postIds } },
-      { projection: { 'metadata.danbooruId': 1 } }
-    )
-    .toArray();
-  
-  return new Set(existing.map((doc: any) => doc.metadata?.danbooruId).filter(Boolean));
+async function filterAlreadyImported(postIds: number[]): Promise<Set<number>> {
+  if (postIds.length === 0) return new Set();
+  const existing = await query(
+    `SELECT metadata->>'danbooruId' as danbooru_id FROM images WHERE metadata->>'danbooruId' = ANY($1)`,
+    [postIds.map(String)]
+  );
+  return new Set(existing.rows.map((row: any) => parseInt(row.danbooru_id, 10)).filter(Boolean));
 }
 
 async function getOrCreateTagsBulk(
-  tagsCollection: any,
   tagData: Array<{ name: string; type: string }>
-): Promise<ObjectId[]> {
-  const tagIds: ObjectId[] = [];
+): Promise<number[]> {
+  const tagIds: number[] = [];
   const uncachedTags: Array<{ name: string; type: string }> = [];
 
   // Check cache first
   for (const t of tagData) {
-    const cached = tagCache.get(t.name);
+    const normalizedName = t.name.toLowerCase().replace(/\s+/g, '_');
+    const cached = tagCache.get(normalizedName);
     if (cached) {
       tagIds.push(cached);
     } else {
-      uncachedTags.push(t);
+      uncachedTags.push({ name: normalizedName, type: t.type });
     }
   }
 
   if (uncachedTags.length > 0) {
     // Bulk find existing tags
-    const existingTags = await tagsCollection
-      .find({ name: { $in: uncachedTags.map(t => t.name) } })
-      .toArray();
+    const existingTags = await query(
+      `SELECT id, name FROM tags WHERE name = ANY($1)`,
+      [uncachedTags.map(t => t.name)]
+    );
 
-    const existingMap = new Map<string, ObjectId>(existingTags.map((t: any) => [t.name, t._id as ObjectId]));
+    const existingMap = new Map<string, number>(existingTags.rows.map((t: any) => [t.name, t.id]));
 
     // Process uncached tags
     for (const t of uncachedTags) {
@@ -205,14 +145,26 @@ async function getOrCreateTagsBulk(
         tagIds.push(id);
       } else {
         // Create new tag
-        const result = await tagsCollection.insertOne({
-          name: t.name,
-          type: t.type,
-          count: 0,
-          createdAt: new Date(),
-        });
-        tagCache.set(t.name, result.insertedId);
-        tagIds.push(result.insertedId);
+        try {
+          const result = await query(
+            `INSERT INTO tags (name, type, count, created_at)
+             VALUES ($1, $2, 0, NOW())
+             ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+             RETURNING id`,
+            [t.name, t.type]
+          );
+          const id = result.rows[0].id;
+          tagCache.set(t.name, id);
+          tagIds.push(id);
+        } catch (err) {
+          // Handle unique constraint races by re-querying
+          const refetch = await query(`SELECT id FROM tags WHERE name = $1`, [t.name]);
+          if (refetch.rows.length > 0) {
+            const id = refetch.rows[0].id;
+            tagCache.set(t.name, id);
+            tagIds.push(id);
+          }
+        }
       }
     }
   }
@@ -274,18 +226,14 @@ interface ImportResult {
   skipped?: boolean;
 }
 
-async function importSinglePost(
-  post: DanbooruPost,
-  imagesCollection: any,
-  tagsCollection: any
-): Promise<ImportResult> {
+async function importSinglePost(post: DanbooruPost): Promise<ImportResult> {
   try {
     // Quick check if already imported
-    const existing = await imagesCollection.findOne(
-      { 'metadata.danbooruId': post.id },
-      { projection: { _id: 1 } }
+    const existing = await query(
+      `SELECT id FROM images WHERE metadata->>'danbooruId' = $1`,
+      [String(post.id)]
     );
-    if (existing) {
+    if (existing.rows.length > 0) {
       return { success: false, postId: post.id, skipped: true };
     }
 
@@ -298,51 +246,62 @@ async function importSinglePost(
 
     // Get/create tags using bulk operation
     const tagData = extractDanbooruTags(post);
-    const tagIds = await getOrCreateTagsBulk(tagsCollection, tagData);
+    const tagIds = await getOrCreateTagsBulk(tagData);
 
-    // Get next sequential ID using ATOMIC counter (no race conditions!)
-    await ensureCounterInitialized();
+    // Get next sequential ID using ATOMIC counter
     const nextSequentialId = await getNextSequentialId();
 
-    const imageDoc = {
-      sequentialId: nextSequentialId,
-      userId: null,
-      username: 'Anonymous',
-      url: mainUrl,
-      thumbnailUrl,
-      originalFilename: `danbooru-${post.id}.${post.file_ext}`,
-      fileSize: post.file_size || 0,
-      width,
-      height,
-      contentType: `image/${post.file_ext}`,
-      tags: tagIds,
-      rating: mapDanbooruRating(post.rating),
-      isAIGenerated: isAIPost(post),
+    const metadataJson = {
+      danbooruId: post.id,
+      md5: post.md5,
       source: post.source || `https://danbooru.donmai.us/posts/${post.id}`,
-      description: '',
-      upvotes: 0,
-      downvotes: 0,
-      favorites: 0,
-      views: 0,
-      metadata: {
-        danbooruId: post.id,
-        md5: post.md5,
-        source: post.source || `https://danbooru.donmai.us/posts/${post.id}`,
-        importedAt: new Date(),
-      },
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      importedAt: new Date().toISOString(),
     };
 
-    await imagesCollection.insertOne(imageDoc);
-
-    // Bulk increment tag counts
-    if (tagIds.length > 0) {
-      await tagsCollection.updateMany(
-        { _id: { $in: tagIds } },
-        { $inc: { count: 1 } }
+    // Run transaction for image creation
+    await withTransaction(async (client) => {
+      const imgRes = await client.query(
+        `INSERT INTO images (
+          sequential_id, user_id, username, url, thumbnail_url,
+          original_filename, file_size, width, height, content_type,
+          rating, is_ai_generated, source, description,
+          upvotes, downvotes, favorites, views, metadata,
+          created_at, updated_at
+        ) VALUES ($1, null, 'Anonymous', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '', 0, 0, 0, 0, $12, NOW(), NOW())
+        RETURNING id`,
+        [
+          nextSequentialId,
+          mainUrl,
+          thumbnailUrl,
+          `danbooru-${post.id}.${post.file_ext}`,
+          post.file_size || 0,
+          width,
+          height,
+          `image/${post.file_ext}`,
+          mapDanbooruRating(post.rating),
+          isAIPost(post),
+          post.source || `https://danbooru.donmai.us/posts/${post.id}`,
+          JSON.stringify(metadataJson),
+        ]
       );
-    }
+
+      const newImageId = imgRes.rows[0].id;
+
+      // Insert image_tags relationships
+      if (tagIds.length > 0) {
+        const values = tagIds.map((_, idx) => `($1, $${idx + 2})`).join(', ');
+        await client.query(
+          `INSERT INTO image_tags (image_id, tag_id) VALUES ${values}`,
+          [newImageId, ...tagIds]
+        );
+
+        // Increment tag counts
+        await client.query(
+          `UPDATE tags SET count = count + 1 WHERE id = ANY($1::int[])`,
+          [tagIds]
+        );
+      }
+    });
 
     return { success: true, postId: post.id };
   } catch (error: any) {
@@ -351,11 +310,9 @@ async function importSinglePost(
 }
 
 // Prefetch posts in batches for speed
-// Now properly rate limited by danbooru.ts request queue
 async function prefetchPosts(postIds: number[]): Promise<Map<number, DanbooruPost>> {
   const results = new Map<number, DanbooruPost>();
   
-  // Fetch all in parallel - the danbooru module handles rate limiting internally
   const posts = await Promise.all(
     postIds.map(async (id) => {
       try {
@@ -374,83 +331,76 @@ async function prefetchPosts(postIds: number[]): Promise<Map<number, DanbooruPos
 }
 
 // Check if a job was externally paused or cancelled
-async function isJobStillRunning(jobId: ObjectId): Promise<boolean> {
-  const jobsCollection = await getCollection('import_jobs');
-  const job = await jobsCollection.findOne(
-    { _id: jobId },
-    { projection: { status: 1 } }
-  );
-  return job?.status === 'running';
+async function isJobStillRunning(jobId: number): Promise<boolean> {
+  const result = await query(`SELECT status FROM import_jobs WHERE id = $1`, [jobId]);
+  return result.rows[0]?.status === 'running';
 }
 
 // Process a single job with maximum speed
 async function processJob(job: ImportJob): Promise<void> {
-  const jobsCollection = await getCollection('import_jobs');
-  const imagesCollection = await getCollection('images');
-  const tagsCollection = await getCollection('tags');
-
-  // Ensure indexes exist for fast duplicate checking
-  await ensureIndexes();
-
-  console.log(`[JOB ${job._id}] Starting: ${job.type} - "${job.query}" (limit: ${job.limit === 0 ? 'UNLIMITED' : job.limit})`);
+  console.log(`[JOB ${job.id}] Starting: ${job.type} - "${job.query}" (limit: ${job.limit_val === 0 ? 'UNLIMITED' : job.limit_val})`);
 
   try {
     let postIds: number[] = job.posts || [];
 
     // Fetch post list if needed
     if (postIds.length === 0) {
-      console.log(`[JOB ${job._id}] Fetching post list...`);
+      console.log(`[JOB ${job.id}] Fetching post list...`);
       
       let posts: DanbooruPost[] = [];
       if (job.type === 'artist') {
-        posts = await fetchDanbooruPostsByArtist(job.query, job.limit);
+        posts = await fetchDanbooruPostsByArtist(job.query, job.limit_val);
       } else if (job.type === 'tags') {
-        posts = await fetchDanbooruPostsByTags(job.query, job.limit);
+        posts = await fetchDanbooruPostsByTags(job.query, job.limit_val);
       } else if (job.type === 'single') {
-        const post = await fetchDanbooruPost(parseInt(job.query));
+        const post = await fetchDanbooruPost(parseInt(job.query, 10));
         if (post) posts = [post];
       }
 
       postIds = posts.map(p => p.id);
       
       // Pre-filter already imported posts before saving
-      const alreadyImported = await filterAlreadyImported(postIds, imagesCollection);
+      const alreadyImported = await filterAlreadyImported(postIds);
       const newPostIds = postIds.filter(id => !alreadyImported.has(id));
       
-      console.log(`[JOB ${job._id}] Found ${postIds.length} posts, ${alreadyImported.size} already imported, ${newPostIds.length} new`);
+      console.log(`[JOB ${job.id}] Found ${postIds.length} posts, ${alreadyImported.size} already imported, ${newPostIds.length} new`);
       
-      await jobsCollection.updateOne(
-        { _id: job._id },
-        { 
-          $set: { 
-            posts: newPostIds, 
-            'progress.total': newPostIds.length,
-            'progress.skipped': alreadyImported.size,
-            currentPostIndex: 0 
-          } 
-        }
+      const newProgress = {
+        current: 0,
+        total: newPostIds.length,
+        successful: 0,
+        failed: 0,
+        skipped: alreadyImported.size,
+      };
+
+      await query(
+        `UPDATE import_jobs
+         SET posts = $1, progress = $2, current_post_index = 0
+         WHERE id = $3`,
+        [JSON.stringify(newPostIds), JSON.stringify(newProgress), job.id]
       );
       
       postIds = newPostIds;
+      job.progress = newProgress;
     }
 
     if (postIds.length === 0) {
-      await jobsCollection.updateOne(
-        { _id: job._id },
-        { $set: { status: 'completed', completedAt: new Date() } }
+      await query(
+        `UPDATE import_jobs SET status = 'completed', completed_at = NOW() WHERE id = $1`,
+        [job.id]
       );
-      console.log(`[JOB ${job._id}] All posts already imported, marking complete`);
+      console.log(`[JOB ${job.id}] All posts already imported, marking complete`);
       return;
     }
 
     // Resume from where we left off
-    const startIndex = job.currentPostIndex || 0;
+    const startIndex = job.current_post_index || 0;
     const remainingPostIds = postIds.slice(startIndex);
 
-    console.log(`[JOB ${job._id}] Processing ${remainingPostIds.length} posts (from index ${startIndex})`);
+    console.log(`[JOB ${job.id}] Processing ${remainingPostIds.length} posts (from index ${startIndex})`);
 
-    let successful = 0;
-    let failed = 0;
+    let successful = job.progress?.successful || 0;
+    let failed = job.progress?.failed || 0;
     let skipped = job.progress?.skipped || 0;
     let processedSinceUpdate = 0;
 
@@ -458,23 +408,24 @@ async function processJob(job: ImportJob): Promise<void> {
     const { batchSize, concurrentImports, importDelay, dbUpdateInterval } = currentSettings;
     for (let i = 0; i < remainingPostIds.length; i += batchSize) {
       // Check if job was paused/cancelled externally
-      if (!(await isJobStillRunning(job._id!))) {
-        console.log(`[JOB ${job._id}] Job was paused/cancelled externally, stopping gracefully`);
-        // Save current progress before exiting
+      if (!(await isJobStillRunning(job.id))) {
+        console.log(`[JOB ${job.id}] Job was paused/cancelled externally, stopping gracefully`);
         const currentIndex = startIndex + i;
-        await jobsCollection.updateOne(
-          { _id: job._id },
-          {
-            $set: {
-              currentPostIndex: currentIndex,
-              'progress.current': currentIndex,
-              'progress.successful': successful,
-              'progress.failed': failed,
-              'progress.skipped': skipped,
-            },
-          }
+        const savedProgress = {
+          current: currentIndex,
+          total: postIds.length,
+          successful,
+          failed,
+          skipped,
+        };
+
+        await query(
+          `UPDATE import_jobs
+           SET current_post_index = $1, progress = $2
+           WHERE id = $3`,
+          [currentIndex, JSON.stringify(savedProgress), job.id]
         );
-        return; // Exit gracefully without marking as completed/failed
+        return;
       }
 
       const batchIds = remainingPostIds.slice(i, i + batchSize);
@@ -483,14 +434,14 @@ async function processJob(job: ImportJob): Promise<void> {
       const postDataMap = await prefetchPosts(batchIds);
       const validPosts = batchIds
         .map(id => postDataMap.get(id))
-        .filter((p): p is DanbooruPost => p !== null);
+        .filter((p): p is DanbooruPost => p !== undefined && p !== null);
 
       // Process posts in parallel
       for (let j = 0; j < validPosts.length; j += concurrentImports) {
         const chunk = validPosts.slice(j, j + concurrentImports);
         
         const results = await Promise.allSettled(
-          chunk.map(post => importSinglePost(post, imagesCollection, tagsCollection))
+          chunk.map(post => importSinglePost(post))
         );
 
         for (const result of results) {
@@ -507,21 +458,23 @@ async function processJob(job: ImportJob): Promise<void> {
         // Update progress periodically
         if (processedSinceUpdate >= dbUpdateInterval) {
           const currentIndex = startIndex + i + j + chunk.length;
-          await jobsCollection.updateOne(
-            { _id: job._id },
-            {
-              $set: {
-                currentPostIndex: currentIndex,
-                'progress.current': currentIndex,
-                'progress.successful': successful,
-                'progress.failed': failed,
-                'progress.skipped': skipped,
-              },
-            }
+          const currentProgress = {
+            current: currentIndex,
+            total: postIds.length,
+            successful,
+            failed,
+            skipped,
+          };
+
+          await query(
+            `UPDATE import_jobs
+             SET current_post_index = $1, progress = $2
+             WHERE id = $3`,
+            [currentIndex, JSON.stringify(currentProgress), job.id]
           );
           processedSinceUpdate = 0;
           
-          console.log(`[JOB ${job._id}] Progress: ${currentIndex}/${postIds.length} (✓${successful} ✗${failed} ⊘${skipped})`);
+          console.log(`[JOB ${job.id}] Progress: ${currentIndex}/${postIds.length} (✓${successful} ✗${failed} ⊘${skipped})`);
         }
 
         if (importDelay > 0) {
@@ -531,27 +484,27 @@ async function processJob(job: ImportJob): Promise<void> {
     }
 
     // Final update
-    await jobsCollection.updateOne(
-      { _id: job._id },
-      {
-        $set: {
-          status: 'completed',
-          completedAt: new Date(),
-          currentPostIndex: postIds.length,
-          'progress.current': postIds.length,
-          'progress.successful': successful,
-          'progress.failed': failed,
-          'progress.skipped': skipped,
-        },
-      }
+    const finalProgress = {
+      current: postIds.length,
+      total: postIds.length,
+      successful,
+      failed,
+      skipped,
+    };
+
+    await query(
+      `UPDATE import_jobs
+       SET status = 'completed', completed_at = NOW(), current_post_index = $1, progress = $2
+       WHERE id = $3`,
+      [postIds.length, JSON.stringify(finalProgress), job.id]
     );
 
-    console.log(`[JOB ${job._id}] COMPLETED: ✓${successful} ✗${failed} ⊘${skipped}`);
+    console.log(`[JOB ${job.id}] COMPLETED: ✓${successful} ✗${failed} ⊘${skipped}`);
   } catch (error: any) {
-    console.error(`[JOB ${job._id}] FAILED:`, error.message);
-    await jobsCollection.updateOne(
-      { _id: job._id },
-      { $set: { status: 'failed', error: error.message, completedAt: new Date() } }
+    console.error(`[JOB ${job.id}] FAILED:`, error.message);
+    await query(
+      `UPDATE import_jobs SET status = 'failed', error = $1, completed_at = NOW() WHERE id = $2`,
+      [error.message, job.id]
     );
   }
 }
@@ -568,19 +521,10 @@ async function processImportQueue(): Promise<void> {
   console.log(`[IMPORT WORKER] 🔥 ${currentMode.toUpperCase()} MODE - ${currentSettings.concurrentJobs} jobs × ${currentSettings.concurrentImports} imports`);
 
   try {
-    const jobsCollection = await getCollection('import_jobs');
-
-    // First, reset any stuck "running" jobs to "paused" (from previous crash/restart)
-    const stuckJobs = await jobsCollection.updateMany(
-      { status: 'running' },
-      { $set: { status: 'paused' } }
-    );
-    if (stuckJobs.modifiedCount > 0) {
-      console.log(`[IMPORT WORKER] Reset ${stuckJobs.modifiedCount} stuck running jobs to paused`);
-    }
-
+    // First, reset any stuck "running" jobs to "paused"
+    const stuckJobs = await query(`UPDATE import_jobs SET status = 'paused' WHERE status = 'running'`);
+    
     while (true) {
-      // Check how many jobs we can start
       const slotsAvailable = currentSettings.concurrentJobs - activeJobCount;
       
       if (slotsAvailable <= 0) {
@@ -588,12 +532,30 @@ async function processImportQueue(): Promise<void> {
         continue;
       }
 
-      // Get multiple pending jobs at once
-      const pendingJobs = await jobsCollection
-        .find({ status: { $in: ['pending', 'paused'] } })
-        .sort({ createdAt: 1 })
-        .limit(slotsAvailable)
-        .toArray() as ImportJob[];
+      // Get pending/paused jobs
+      const pendingJobsResult = await query(
+        `SELECT * FROM import_jobs
+         WHERE status IN ('pending', 'paused')
+         ORDER BY created_at ASC
+         LIMIT $1`,
+        [slotsAvailable]
+      );
+
+      const pendingJobs: ImportJob[] = pendingJobsResult.rows.map((row: any) => ({
+        id: row.id,
+        type: row.type,
+        query: row.query,
+        limit_val: row.limit_val,
+        status: row.status,
+        progress: row.progress || { current: 0, total: 0, successful: 0, failed: 0, skipped: 0 },
+        posts: row.posts || [],
+        current_post_index: row.current_post_index || 0,
+        created_at: row.created_at,
+        started_at: row.started_at,
+        completed_at: row.completed_at,
+        error: row.error,
+        created_by: row.created_by,
+      }));
 
       if (pendingJobs.length === 0 && activeJobCount === 0) {
         console.log('[IMPORT WORKER] No more jobs, stopping');
@@ -601,18 +563,16 @@ async function processImportQueue(): Promise<void> {
       }
 
       if (pendingJobs.length === 0) {
-        // No new jobs but some are still running, wait a bit
         await new Promise(resolve => setTimeout(resolve, 1000));
         continue;
       }
 
       console.log(`[IMPORT WORKER] Starting ${pendingJobs.length} new jobs (${activeJobCount} already running)`);
 
-      // Start jobs in parallel
       for (const job of pendingJobs) {
-        await jobsCollection.updateOne(
-          { _id: job._id },
-          { $set: { status: 'running', startedAt: new Date() } }
+        await query(
+          `UPDATE import_jobs SET status = 'running', started_at = NOW() WHERE id = $1`,
+          [job.id]
         );
 
         activeJobCount++;
@@ -636,30 +596,38 @@ async function processImportQueue(): Promise<void> {
 // Create a new import job
 export async function createImportJob(
   type: 'artist' | 'tags' | 'single',
-  query: string,
-  limit: number,
+  queryStr: string,
+  limitVal: number,
   createdBy: string
 ): Promise<ImportJob> {
-  const jobsCollection = await getCollection('import_jobs');
-
-  const job: ImportJob = {
-    type,
-    query,
-    limit,
-    status: 'pending',
-    progress: {
-      current: 0,
-      total: 0,
-      successful: 0,
-      failed: 0,
-      skipped: 0,
-    },
-    createdAt: new Date(),
-    createdBy,
+  const progressInit = {
+    current: 0,
+    total: 0,
+    successful: 0,
+    failed: 0,
+    skipped: 0,
   };
 
-  const result = await jobsCollection.insertOne(job);
-  job._id = result.insertedId;
+  const result = await query(
+    `INSERT INTO import_jobs (type, query, limit_val, status, progress, posts, current_post_index, created_at, created_by)
+     VALUES ($1, $2, $3, 'pending', $4, '[]'::jsonb, 0, NOW(), $5)
+     RETURNING *`,
+    [type, queryStr, limitVal, JSON.stringify(progressInit), createdBy]
+  );
+
+  const row = result.rows[0];
+  const job: ImportJob = {
+    id: row.id,
+    type: row.type,
+    query: row.query,
+    limit_val: row.limit_val,
+    status: row.status,
+    progress: row.progress || progressInit,
+    posts: row.posts || [],
+    current_post_index: row.current_post_index || 0,
+    created_at: row.created_at,
+    created_by: row.created_by,
+  };
 
   startImportWorker();
 
@@ -673,56 +641,83 @@ export function startImportWorker(): void {
 }
 
 export async function getImportJobs(limit = 50): Promise<ImportJob[]> {
-  const jobsCollection = await getCollection('import_jobs');
-  return jobsCollection
-    .find({})
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .toArray() as Promise<ImportJob[]>;
+  const result = await query(
+    `SELECT * FROM import_jobs ORDER BY created_at DESC LIMIT $1`,
+    [limit]
+  );
+  return result.rows.map((row: any) => ({
+    id: row.id,
+    type: row.type,
+    query: row.query,
+    limit_val: row.limit_val,
+    status: row.status,
+    progress: row.progress || { current: 0, total: 0, successful: 0, failed: 0, skipped: 0 },
+    posts: row.posts || [],
+    current_post_index: row.current_post_index || 0,
+    created_at: row.created_at,
+    started_at: row.started_at,
+    completed_at: row.completed_at,
+    error: row.error,
+    created_by: row.created_by,
+  }));
 }
 
 export async function getImportJob(jobId: string): Promise<ImportJob | null> {
-  const jobsCollection = await getCollection('import_jobs');
-  return jobsCollection.findOne({ _id: new ObjectId(jobId) }) as Promise<ImportJob | null>;
+  const parsedId = parseInt(jobId, 10);
+  if (isNaN(parsedId)) return null;
+
+  const result = await query(`SELECT * FROM import_jobs WHERE id = $1`, [parsedId]);
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    type: row.type,
+    query: row.query,
+    limit_val: row.limit_val,
+    status: row.status,
+    progress: row.progress || { current: 0, total: 0, successful: 0, failed: 0, skipped: 0 },
+    posts: row.posts || [],
+    current_post_index: row.current_post_index || 0,
+    created_at: row.created_at,
+    started_at: row.started_at,
+    completed_at: row.completed_at,
+    error: row.error,
+    created_by: row.created_by,
+  };
 }
 
 export async function cancelImportJob(jobId: string): Promise<boolean> {
-  const jobsCollection = await getCollection('import_jobs');
-  const result = await jobsCollection.updateOne(
-    { _id: new ObjectId(jobId), status: { $in: ['pending', 'running', 'paused'] } },
-    { $set: { status: 'failed', error: 'Cancelled by user', completedAt: new Date() } }
+  const parsedId = parseInt(jobId, 10);
+  if (isNaN(parsedId)) return false;
+
+  const result = await query(
+    `UPDATE import_jobs
+     SET status = 'failed', error = 'Cancelled by user', completed_at = NOW()
+     WHERE id = $1 AND status IN ('pending', 'running', 'paused')`,
+    [parsedId]
   );
-  return result.modifiedCount > 0;
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function pauseRunningJobs(): Promise<void> {
-  const jobsCollection = await getCollection('import_jobs');
-  await jobsCollection.updateMany(
-    { status: 'running' },
-    { $set: { status: 'paused' } }
-  );
+  await query(`UPDATE import_jobs SET status = 'paused' WHERE status = 'running'`);
 }
 
 export async function resumePausedJobs(): Promise<void> {
-  const jobsCollection = await getCollection('import_jobs');
+  // Reset stuck running jobs to paused
+  await query(`UPDATE import_jobs SET status = 'paused' WHERE status = 'running'`);
   
-  // First, reset any stuck "running" jobs to "paused" (server might have restarted)
-  const stuckJobs = await jobsCollection.updateMany(
-    { status: 'running' },
-    { $set: { status: 'paused' } }
-  );
-  if (stuckJobs.modifiedCount > 0) {
-    console.log(`[IMPORT] Reset ${stuckJobs.modifiedCount} stuck running jobs to paused`);
-  }
+  const pausedRes = await query(`SELECT COUNT(*) FROM import_jobs WHERE status = 'paused'`);
+  const pendingRes = await query(`SELECT COUNT(*) FROM import_jobs WHERE status = 'pending'`);
   
-  const pausedJobs = await jobsCollection.countDocuments({ status: 'paused' });
-  const pendingJobs = await jobsCollection.countDocuments({ status: 'pending' });
+  const pausedJobs = parseInt(pausedRes.rows[0].count, 10);
+  const pendingJobs = parseInt(pendingRes.rows[0].count, 10);
   
   console.log(`[IMPORT] Jobs status: ${pausedJobs} paused, ${pendingJobs} pending`);
   
   if (pausedJobs > 0 || pendingJobs > 0) {
     console.log(`[IMPORT] Starting worker to process ${pausedJobs + pendingJobs} jobs...`);
-    // Force restart the worker
     workerRunning = false;
     workerPromise = null;
     startImportWorker();
@@ -732,36 +727,23 @@ export async function resumePausedJobs(): Promise<void> {
 }
 
 export async function cleanupOldJobs(daysOld = 7): Promise<number> {
-  const jobsCollection = await getCollection('import_jobs');
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-  
-  const result = await jobsCollection.deleteMany({
-    status: { $in: ['completed', 'failed'] },
-    completedAt: { $lt: cutoffDate }
-  });
-  
-  return result.deletedCount;
+  const result = await query(
+    `DELETE FROM import_jobs
+     WHERE status IN ('completed', 'failed')
+       AND completed_at < NOW() - $1 * INTERVAL '1 day'`,
+    [daysOld]
+  );
+  return result.rowCount ?? 0;
 }
 
-// Clear all completed jobs (for manual cleanup)
 export async function clearCompletedJobs(): Promise<number> {
-  const jobsCollection = await getCollection('import_jobs');
-  const result = await jobsCollection.deleteMany({
-    status: 'completed'
-  });
-  
-  console.log(`[IMPORT] Cleared ${result.deletedCount} completed jobs`);
-  return result.deletedCount;
+  const result = await query(`DELETE FROM import_jobs WHERE status = 'completed'`);
+  console.log(`[IMPORT] Cleared ${result.rowCount} completed jobs`);
+  return result.rowCount ?? 0;
 }
 
-// Clear all failed jobs (for manual cleanup)
 export async function clearFailedJobs(): Promise<number> {
-  const jobsCollection = await getCollection('import_jobs');
-  const result = await jobsCollection.deleteMany({
-    status: 'failed'
-  });
-  
-  console.log(`[IMPORT] Cleared ${result.deletedCount} failed jobs`);
-  return result.deletedCount;
+  const result = await query(`DELETE FROM import_jobs WHERE status = 'failed'`);
+  console.log(`[IMPORT] Cleared ${result.rowCount} failed jobs`);
+  return result.rowCount ?? 0;
 }

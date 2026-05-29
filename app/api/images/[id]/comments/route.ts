@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
-import type { ObjectId as ObjectIdType } from 'mongodb';
 
 export async function GET(
   request: NextRequest,
@@ -9,8 +8,6 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const { ObjectId } = await import('mongodb');
-    
     const sequentialId = parseInt(id, 10);
     if (isNaN(sequentialId)) {
       return NextResponse.json(
@@ -19,51 +16,56 @@ export async function GET(
       );
     }
 
-    const imagesCollection = await getCollection('images');
-    const image = await imagesCollection.findOne({ sequentialId });
-    if (!image) {
+    const imgResult = await query(
+      `SELECT id FROM images WHERE sequential_id = $1`,
+      [sequentialId]
+    );
+    if (imgResult.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Image not found' },
         { status: 404 }
       );
     }
-    
-    const commentsCollection = await getCollection('comments');
-    const comments = await commentsCollection
-      .find({ imageId: image._id })
-      .sort({ createdAt: 1 })
-      .toArray();
-    
-    // Get artist info for comments marked as artist
-    const artistTagIds = comments
-      .filter(c => c.asArtist && c.artistTagId)
-      .map(c => c.artistTagId);
-    
-    let artistTagNames: Record<string, string> = {};
+
+    const imageDbId = imgResult.rows[0].id;
+
+    const commentsResult = await query(
+      `SELECT * FROM comments WHERE image_id = $1 ORDER BY created_at ASC`,
+      [imageDbId]
+    );
+
+    // Get artist tag names for artist comments
+    const artistTagIds = commentsResult.rows
+      .filter(c => c.artist_tag_id)
+      .map(c => c.artist_tag_id);
+
+    let artistTagNames: Record<number, string> = {};
     if (artistTagIds.length > 0) {
-      const tagsCollection = await getCollection('tags');
-      const tags = await tagsCollection.find({ _id: { $in: artistTagIds } }).toArray();
-      artistTagNames = tags.reduce((acc, tag) => {
-        acc[tag._id.toString()] = tag.name;
+      const tagResult = await query(
+        `SELECT id, name FROM tags WHERE id = ANY($1::int[])`,
+        [artistTagIds]
+      );
+      artistTagNames = tagResult.rows.reduce((acc, t) => {
+        acc[t.id] = t.name;
         return acc;
-      }, {} as Record<string, string>);
+      }, {} as Record<number, string>);
     }
-    
+
     return NextResponse.json({
       success: true,
-      comments: comments.map(c => ({
-        _id: c._id.toString(),
-        imageId: c.imageId.toString(),
-        userId: c.userId.toString(),
+      comments: commentsResult.rows.map(c => ({
+        _id: String(c.id),
+        imageId: String(c.image_id),
+        userId: c.user_id,
         username: c.username,
-        avatarUrl: c.avatarUrl,
+        avatarUrl: c.avatar_url,
         rank: c.rank || 'user',
         content: c.content,
-        parentId: c.parentId?.toString(),
-        asArtist: c.asArtist || false,
-        artistTagName: c.artistTagId ? artistTagNames[c.artistTagId.toString()] : undefined,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
+        parentId: c.parent_id ? String(c.parent_id) : undefined,
+        asArtist: c.as_artist || false,
+        artistTagName: c.artist_tag_id ? artistTagNames[c.artist_tag_id] : undefined,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
       })),
     });
   } catch (error: any) {
@@ -106,8 +108,6 @@ export async function POST(
       );
     }
 
-    const { ObjectId } = await import('mongodb');
-    
     const sequentialId = parseInt(id, 10);
     if (isNaN(sequentialId)) {
       return NextResponse.json(
@@ -116,101 +116,96 @@ export async function POST(
       );
     }
 
-    const imagesCollection = await getCollection('images');
-    const image = await imagesCollection.findOne({ sequentialId });
-    if (!image) {
+    const imgResult = await query(
+      `SELECT id FROM images WHERE sequential_id = $1`,
+      [sequentialId]
+    );
+    if (imgResult.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Image not found' },
         { status: 404 }
       );
     }
-    
+    const imageDbId = imgResult.rows[0].id;
+
     // Get user details
-    const usersCollection = await getCollection('users');
-    const userDoc = await usersCollection.findOne({ _id: new ObjectId(user.id) });
-    
-    if (!userDoc) {
+    const userResult = await query(
+      `SELECT username, avatar_url, rank FROM users WHERE id = $1`,
+      [user.id]
+    );
+    if (userResult.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'User not found' },
         { status: 404 }
       );
     }
+    const userDoc = userResult.rows[0];
 
-    // Validate asArtist claim
-    let validatedArtistTagId: ObjectIdType | undefined;
+    // Validate artist claim
+    let validatedArtistTagId: number | undefined;
     if (asArtist && artistTagId) {
-      // Check if user owns this artist page
-      const artistsCollection = await getCollection('artists');
-      const artist = await artistsCollection.findOne({
-        tagId: new ObjectId(artistTagId),
-        claimedByUserId: new ObjectId(user.id),
-        verified: true,
-      });
-
-      if (!artist) {
+      const artistResult = await query(
+        `SELECT id FROM artists WHERE tag_id = $1 AND claimed_by_user_id = $2 AND verified = TRUE`,
+        [parseInt(artistTagId), user.id]
+      );
+      if (artistResult.rows.length === 0) {
         return NextResponse.json(
           { success: false, error: 'You are not verified as this artist' },
           { status: 403 }
         );
       }
 
-      // Check if the image has this artist tag
-      const imageHasTag = image.tags.some((t: any) => 
-        t.toString() === artistTagId || 
-        (t._id && t._id.toString() === artistTagId)
+      // Check if image has this tag
+      const hasTag = await query(
+        `SELECT 1 FROM image_tags WHERE image_id = $1 AND tag_id = $2`,
+        [imageDbId, parseInt(artistTagId)]
       );
-
-      if (!imageHasTag) {
+      if (hasTag.rows.length === 0) {
         return NextResponse.json(
           { success: false, error: 'This image is not tagged with your artist tag' },
           { status: 400 }
         );
       }
-
-      validatedArtistTagId = new ObjectId(artistTagId);
+      validatedArtistTagId = parseInt(artistTagId);
     }
 
-    // Create comment
-    const commentsCollection = await getCollection('comments');
-    const comment = {
-      imageId: image._id,
-      userId: new ObjectId(user.id),
-      username: userDoc.username,
-      avatarUrl: userDoc.avatarUrl,
-      rank: userDoc.rank || 'user',
-      content: content.trim(),
-      parentId: parentId ? new ObjectId(parentId) : undefined,
-      asArtist: asArtist && validatedArtistTagId ? true : false,
-      artistTagId: validatedArtistTagId,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    const commentResult = await query(
+      `INSERT INTO comments (image_id, user_id, username, avatar_url, rank, content, parent_id, as_artist, artist_tag_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+       RETURNING *`,
+      [
+        imageDbId, user.id, userDoc.username, userDoc.avatar_url,
+        userDoc.rank || 'user', content.trim(),
+        parentId ? parseInt(parentId) : null,
+        asArtist && validatedArtistTagId ? true : false,
+        validatedArtistTagId || null,
+      ]
+    );
 
-    const result = await commentsCollection.insertOne(comment);
+    const comment = commentResult.rows[0];
 
     // Get artist tag name if applicable
     let artistTagName: string | undefined;
     if (validatedArtistTagId) {
-      const tagsCollection = await getCollection('tags');
-      const tag = await tagsCollection.findOne({ _id: validatedArtistTagId });
-      artistTagName = tag?.name;
+      const tagResult = await query(`SELECT name FROM tags WHERE id = $1`, [validatedArtistTagId]);
+      artistTagName = tagResult.rows[0]?.name;
     }
 
     return NextResponse.json({
       success: true,
       comment: {
-        _id: result.insertedId.toString(),
-        imageId: comment.imageId.toString(),
-        userId: comment.userId.toString(),
+        _id: String(comment.id),
+        imageId: String(comment.image_id),
+        userId: comment.user_id,
         username: comment.username,
-        avatarUrl: comment.avatarUrl,
+        avatarUrl: comment.avatar_url,
         rank: comment.rank,
         content: comment.content,
-        parentId: comment.parentId?.toString(),
-        asArtist: comment.asArtist,
+        parentId: comment.parent_id ? String(comment.parent_id) : undefined,
+        asArtist: comment.as_artist,
         artistTagName,
-        createdAt: comment.createdAt,
-        updatedAt: comment.updatedAt,
+        createdAt: comment.created_at,
+        updatedAt: comment.updated_at,
       },
     });
   } catch (error: any) {

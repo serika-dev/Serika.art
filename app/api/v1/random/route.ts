@@ -1,13 +1,7 @@
 import { NextRequest } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { Document, Filter, ObjectId } from 'mongodb';
-import { publicImageMongoFilter, ratingMongoFilter } from '@/lib/contentFilters';
-
-type ImageDocument = Document & {
-  _id: ObjectId;
-  tags?: ObjectId[];
-};
+import { publicImageFilter, ratingFilter } from '@/lib/contentFilters';
 
 // GET /api/v1/random - Get random image(s) with metadata
 export async function GET(request: NextRequest) {
@@ -29,95 +23,142 @@ export async function GET(request: NextRequest) {
     const aiOnly = searchParams.get('ai') === 'true';
     const noAi = searchParams.get('no_ai') === 'true';
 
-    const collection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
+    const whereClauses: string[] = [publicImageFilter()];
+    const queryParams: any[] = [];
+    let paramIndex = 1;
 
-    // Build query
-    const query: Filter<Document> & Record<string, unknown> = publicImageMongoFilter();
-
-    // Rating filter
-    const ratingFilter = ratingMongoFilter(ratings);
-    if (ratingFilter) {
-      query.rating = ratingFilter;
-    }
-
-    // Tag filters
+    // Filter by tags
     if (tagNames.length > 0) {
-      const tagDocs = await tagsCollection
-        .find({ name: { $in: tagNames.map((t) => t.toLowerCase()) } })
-        .toArray();
-      const tagIds = tagDocs.map((t) => t._id);
-      if (tagIds.length > 0) {
-        query.tags = { $all: tagIds };
-      } else {
+      const tagDocsResult = await query(
+        `SELECT id FROM tags WHERE LOWER(name) = ANY($1)`,
+        [tagNames.map(t => t.toLowerCase())]
+      );
+      if (tagDocsResult.rows.length === 0) {
         return apiResponse([], { message: 'No images match the specified tags' });
       }
+      const tagIds = tagDocsResult.rows.map(r => r.id);
+      
+      const imageIdsRes = await query(
+        `SELECT image_id FROM image_tags WHERE tag_id = ANY($1) GROUP BY image_id HAVING COUNT(DISTINCT tag_id) = $2`,
+        [tagIds, tagIds.length]
+      );
+      if (imageIdsRes.rows.length === 0) {
+        return apiResponse([], { message: 'No images match the specified tags' });
+      }
+      const matchingImageIds = imageIdsRes.rows.map(r => r.image_id);
+      whereClauses.push(`i.id = ANY($${paramIndex})`);
+      queryParams.push(matchingImageIds);
+      paramIndex++;
     }
 
     // Exclude tags
     if (excludeTags.length > 0) {
-      const excludeTagDocs = await tagsCollection
-        .find({ name: { $in: excludeTags.map((t) => t.toLowerCase()) } })
-        .toArray();
-      const excludeTagIds = excludeTagDocs.map((t) => t._id);
-      if (excludeTagIds.length > 0) {
-        const existingTagFilter = typeof query.tags === 'object' && query.tags ? query.tags : {};
-        query.tags = { ...existingTagFilter, $nin: excludeTagIds };
+      const excludeTagDocsResult = await query(
+        `SELECT id FROM tags WHERE LOWER(name) = ANY($1)`,
+        [excludeTags.map(t => t.toLowerCase())]
+      );
+      if (excludeTagDocsResult.rows.length > 0) {
+        const excludeTagIds = excludeTagDocsResult.rows.map(r => r.id);
+        const excludeImageIdsRes = await query(
+          `SELECT DISTINCT image_id FROM image_tags WHERE tag_id = ANY($1)`,
+          [excludeTagIds]
+        );
+        if (excludeImageIdsRes.rows.length > 0) {
+          const excludeImageIds = excludeImageIdsRes.rows.map(r => r.image_id);
+          whereClauses.push(`NOT (i.id = ANY($${paramIndex}))`);
+          queryParams.push(excludeImageIds);
+          paramIndex++;
+        }
       }
     }
 
+    // Ratings filter
+    const rFilter = ratingFilter(ratings, paramIndex);
+    if (rFilter) {
+      whereClauses.push(`i.${rFilter.clause}`);
+      queryParams.push(...rFilter.params);
+      paramIndex += rFilter.params.length;
+    }
+
     // Dimension filters
-    if (minWidth > 0) query.width = { ...query.width, $gte: minWidth };
-    if (minHeight > 0) query.height = { ...query.height, $gte: minHeight };
-    if (maxWidth > 0) query.width = { ...query.width, $lte: maxWidth };
-    if (maxHeight > 0) query.height = { ...query.height, $lte: maxHeight };
+    if (minWidth > 0) {
+      whereClauses.push(`i.width >= $${paramIndex}`);
+      queryParams.push(minWidth);
+      paramIndex++;
+    }
+    if (minHeight > 0) {
+      whereClauses.push(`i.height >= $${paramIndex}`);
+      queryParams.push(minHeight);
+      paramIndex++;
+    }
+    if (maxWidth > 0) {
+      whereClauses.push(`i.width <= $${paramIndex}`);
+      queryParams.push(maxWidth);
+      paramIndex++;
+    }
+    if (maxHeight > 0) {
+      whereClauses.push(`i.height <= $${paramIndex}`);
+      queryParams.push(maxHeight);
+      paramIndex++;
+    }
 
-    // AI filter
-    if (aiOnly) query.isAIGenerated = true;
-    if (noAi) query.isAIGenerated = { $ne: true };
+    // AI filters
+    if (aiOnly) {
+      whereClauses.push(`i.is_ai_generated = TRUE`);
+    } else if (noAi) {
+      whereClauses.push(`i.is_ai_generated = FALSE`);
+    }
 
-    // Get random images using aggregation
-    const pipeline: Document[] = [
-      { $match: query },
-      { $sample: { size: count } },
-    ];
+    // Query images
+    const imagesResult = await query(
+      `SELECT i.*, u.username as u_username
+       FROM images i
+       LEFT JOIN users u ON u.id = i.user_id
+       WHERE ${whereClauses.join(' AND ')}
+       ORDER BY RANDOM()
+       LIMIT $${paramIndex}`,
+      [...queryParams, count]
+    );
 
-    const images = await collection.aggregate<ImageDocument>(pipeline).toArray();
+    const images = imagesResult.rows;
 
     if (images.length === 0) {
       return apiResponse([], { message: 'No images match the criteria' });
     }
 
-    // Populate tags
-    const allTagIds = new Set<string>();
-    images.forEach((img) => {
-      (img.tags || []).forEach((tagId: ObjectId) => allTagIds.add(tagId.toString()));
-    });
+    // Fetch tags in one batch
+    const imageIds = images.map(img => img.id);
+    const tagsResult = await query(
+      `SELECT it.image_id, t.name, t.type
+       FROM image_tags it
+       JOIN tags t ON t.id = it.tag_id
+       WHERE it.image_id = ANY($1)`,
+      [imageIds]
+    );
 
-    const tagDocs = await tagsCollection
-      .find({ _id: { $in: Array.from(allTagIds).map((id) => new ObjectId(id)) } })
-      .toArray();
-    const tagMap = new Map(tagDocs.map((t) => [t._id.toString(), t]));
+    const tagsByImage = new Map<number, any[]>();
+    for (const row of tagsResult.rows) {
+      const list = tagsByImage.get(row.image_id) || [];
+      list.push({ name: row.name, type: row.type });
+      tagsByImage.set(row.image_id, list);
+    }
 
     // Format response
     const formattedImages = images.map((img) => ({
-      id: img._id.toString(),
-      dbid: img._id.toString(),
-      post_id: img.sequentialId,
+      id: String(img.id),
+      dbid: String(img.id),
+      post_id: img.sequential_id,
       url: img.url,
-      thumbnail_url: img.thumbnailUrl,
+      thumbnail_url: img.thumbnail_url,
       width: img.width,
       height: img.height,
-      file_size: img.fileSize,
-      content_type: img.contentType,
+      file_size: img.file_size,
+      content_type: img.content_type,
       rating: img.rating,
-      is_ai_generated: img.isAIGenerated,
+      is_ai_generated: img.is_ai_generated,
       source: img.source || null,
       description: img.description || null,
-      tags: (img.tags || []).map((tagId: ObjectId) => {
-        const tag = tagMap.get(tagId.toString());
-        return tag ? { name: tag.name, type: tag.type } : null;
-      }).filter(Boolean),
+      tags: tagsByImage.get(img.id) || [],
       stats: {
         upvotes: img.upvotes || 0,
         downvotes: img.downvotes || 0,
@@ -125,13 +166,12 @@ export async function GET(request: NextRequest) {
         views: img.views || 0,
       },
       user: {
-        id: img.userId?.toString() || null,
-        username: img.username || 'Anonymous',
+        id: img.user_id || null,
+        username: img.u_username || img.username || 'Anonymous',
       },
-      created_at: img.createdAt,
+      created_at: img.created_at,
     }));
 
-    // Return single image if count is 1, otherwise array
     const data = count === 1 ? formattedImages[0] : formattedImages;
 
     return apiResponse(data, {

@@ -1,18 +1,11 @@
-import { connectToDatabase } from './lib/db';
+import { MongoClient } from 'mongodb';
+
 async function main() {
-  const { db } = await connectToDatabase();
-  const images = db.collection('images');
-  console.log('Building missing indexes...');
-  await Promise.all([
-    db.collection('users').createIndex({ username: 1 }, { background: true, unique: true }).catch(console.error),
-    images.createIndex({ userId: 1, createdAt: -1 }, { background: true }).catch(console.error),
-    images.createIndex({ username: 1, createdAt: -1 }, { background: true }).catch(console.error),
-    db.collection('votes').createIndex({ userId: 1, createdAt: -1 }, { background: true }).catch(console.error),
-    db.collection('favorites').createIndex({ userId: 1, createdAt: -1 }, { background: true }).catch(console.error),
-    db.collection('comments').createIndex({ userId: 1, createdAt: -1 }, { background: true }).catch(console.error),
-    db.collection('comments').createIndex({ imageId: 1, createdAt: -1 }, { background: true }).catch(console.error),
-  ]);
-  console.log('Indexes requested!');
-  process.exit(0);
+  const uri = process.env.MONGO_URI || "mongodb://root:****@85.215.191.94:37282/?directConnection=true";
+  const client = await MongoClient.connect(uri);
+  const db = client.db('serika-art');
+  const tag = await db.collection('tags').findOne({});
+  console.log('Mongo tag:', JSON.stringify(tag, null, 2));
+  await client.close();
 }
 main();

@@ -1,254 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
-import { ObjectId } from 'mongodb';
-import { cookies } from 'next/headers';
+import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
-// POST /api/moderation/action - Perform moderation action
 export async function POST(request: NextRequest) {
   try {
-    // Check auth
     const user = await getCurrentUser();
-    
-    if (!user || !['admin', 'owner', 'moderator'].includes(user.rank || '')) {
-      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { action, targetType, targetId, reason } = body;
+    const userResult = await query(`SELECT rank FROM users WHERE id = $1`, [user.id]);
+    const rank = userResult.rows[0]?.rank || 'user';
 
-    const validActions = ['delete', 'unlist', 'restore', 'undo'];
-    const validTargetTypes = ['image', 'comment', 'user'];
+    if (!['moderator', 'admin', 'owner'].includes(rank)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
 
-    if (!validActions.includes(action)) {
+    const { imageId, action, reason } = await request.json();
+    const sequentialId = parseInt(imageId, 10);
+
+    if (isNaN(sequentialId)) {
+      return NextResponse.json({ success: false, error: 'Invalid image ID' }, { status: 400 });
+    }
+
+    if (!['delete', 'unlist', 'restore'].includes(action)) {
       return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
     }
 
-    if (!validTargetTypes.includes(targetType)) {
-      return NextResponse.json({ success: false, error: 'Invalid target type' }, { status: 400 });
+    const imgResult = await query(`SELECT * FROM images WHERE sequential_id = $1`, [sequentialId]);
+    if (imgResult.rows.length === 0) {
+      return NextResponse.json({ success: false, error: 'Image not found' }, { status: 404 });
     }
 
-    const modLogCollection = await getCollection('moderation_logs');
-    const isAdmin = ['admin', 'owner'].includes(user.rank || '');
+    const image = imgResult.rows[0];
+    const now = new Date();
+    const reversibleUntil = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-    // Handle image actions
-    if (targetType === 'image') {
-      const imagesCollection = await getCollection('images');
-      
-      // Support both sequentialId (number) and ObjectId for images
-      let image;
-      let imageObjectId: ObjectId;
-      const sequentialId = parseInt(targetId, 10);
-      
-      if (!isNaN(sequentialId)) {
-        // Look up by sequentialId
-        image = await imagesCollection.findOne({ sequentialId });
-        if (image) {
-          imageObjectId = image._id;
-        }
-      } else if (ObjectId.isValid(targetId)) {
-        // Fall back to ObjectId lookup
-        image = await imagesCollection.findOne({ _id: new ObjectId(targetId) });
-        if (image) {
-          imageObjectId = image._id;
-        }
-      }
-      
-      if (!image || !imageObjectId!) {
-        return NextResponse.json({ success: false, error: 'Invalid target ID or image not found' }, { status: 404 });
-      }
-
-      // Store previous state for potential undo
-      const previousState = {
-        deleted: image.deleted || false,
-        unlisted: image.unlisted || false,
-      };
-
-      let updateData: any = {};
-      let logAction = action;
-
-      switch (action) {
-        case 'delete':
-          updateData = {
-            deleted: true,
-            deletedAt: new Date(),
-            deletedBy: new ObjectId(user.id),
-            deletedByUsername: user.username,
-            deletionReason: reason || 'Moderation action',
-            // Moderator deletions are reversible within 1 week
-            deletionReversibleUntil: isAdmin ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          };
-          break;
-
-        case 'unlist':
-          updateData = {
-            unlisted: true,
-            unlistedAt: new Date(),
-            unlistedBy: new ObjectId(user.id),
-            unlistedByUsername: user.username,
-            unlistReason: reason || 'Moderation action',
-            unlistReversibleUntil: isAdmin ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          };
-          break;
-
-        case 'restore':
-          // Only admin can restore DMCA takedowns
-          if (image.dmcaRequestId && !isAdmin) {
-            return NextResponse.json({ 
-              success: false, 
-              error: 'Only admins can restore DMCA takedowns' 
-            }, { status: 403 });
-          }
-          
-          updateData = {
-            deleted: false,
-            deletedAt: null,
-            deletedBy: null,
-            deletedByUsername: null,
-            deletionReason: null,
-            deletionReversibleUntil: null,
-            unlisted: false,
-            unlistedAt: null,
-            unlistedBy: null,
-            unlistedByUsername: null,
-            unlistReason: null,
-            unlistReversibleUntil: null,
-            restoredAt: new Date(),
-            restoredBy: new ObjectId(user.id),
-            restoredByUsername: user.username,
-          };
-          break;
-
-        case 'undo':
-          // Check if action is within the reversible window
-          const lastLog = await modLogCollection.findOne(
-            { 
-              targetId: imageObjectId,
-              performedBy: new ObjectId(user.id),
-              reversible: true,
-              undone: { $ne: true }
-            },
-            { sort: { createdAt: -1 } }
-          );
-
-          if (!lastLog) {
-            return NextResponse.json({ 
-              success: false, 
-              error: 'No reversible action found' 
-            }, { status: 400 });
-          }
-
-          // Check if still within the 1 week window
-          const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-          if (lastLog.createdAt < weekAgo && !isAdmin) {
-            return NextResponse.json({ 
-              success: false, 
-              error: 'Action can no longer be undone (past 1 week window)' 
-            }, { status: 400 });
-          }
-
-          // Restore previous state
-          updateData = lastLog.previousState || {
-            deleted: false,
-            unlisted: false,
-          };
-          logAction = `undo_${lastLog.action}`;
-
-          // Mark the original log as undone
-          await modLogCollection.updateOne(
-            { _id: lastLog._id },
-            { $set: { undone: true, undoneAt: new Date(), undoneBy: new ObjectId(user.id) } }
-          );
-          break;
-      }
-
-      await imagesCollection.updateOne(
-        { _id: imageObjectId },
-        { $set: updateData }
+    if (action === 'delete') {
+      await query(
+        `UPDATE images SET deleted = TRUE, deleted_at = $1, deleted_by = $2,
+         deleted_by_username = $3, deletion_reason = $4, deletion_reversible_until = $5,
+         updated_at = NOW() WHERE id = $6`,
+        [now, user.id, user.username, reason || null, reversibleUntil, image.id]
       );
-
-      // Log the moderation action
-      await modLogCollection.insertOne({
-        action: logAction,
-        targetType,
-        targetId: imageObjectId,
-        performedBy: new ObjectId(user.id),
-        performedByUsername: user.username,
-        performedByRank: user.rank,
-        reason: reason || null,
-        previousState,
-        reversible: !isAdmin && ['delete', 'unlist'].includes(action),
-        undone: false,
-        createdAt: new Date(),
-      });
-
-      return NextResponse.json({ 
-        success: true, 
-        message: `Image ${action}d successfully`,
-        reversible: !isAdmin && ['delete', 'unlist'].includes(action),
-        reversibleUntil: !isAdmin && ['delete', 'unlist'].includes(action) 
-          ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) 
-          : null
-      });
+    } else if (action === 'unlist') {
+      await query(
+        `UPDATE images SET unlisted = TRUE, unlisted_at = $1, unlisted_by = $2,
+         unlisted_by_username = $3, unlist_reason = $4, unlist_reversible_until = $5,
+         updated_at = NOW() WHERE id = $6`,
+        [now, user.id, user.username, reason || null, reversibleUntil, image.id]
+      );
+    } else if (action === 'restore') {
+      await query(
+        `UPDATE images SET deleted = FALSE, unlisted = FALSE, restored_at = $1,
+         restored_by = $2, restored_by_username = $3, updated_at = NOW() WHERE id = $4`,
+        [now, user.id, user.username, image.id]
+      );
     }
 
-    return NextResponse.json({ success: false, error: 'Action not implemented for this target type' }, { status: 400 });
+    return NextResponse.json({ success: true, message: `Image ${action}d successfully` });
   } catch (error) {
-    console.error('Moderation action error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to perform action' }, { status: 500 });
-  }
-}
-
-// GET /api/moderation/action - Get moderation logs
-export async function GET(request: NextRequest) {
-  try {
-    // Check auth
-    const user = await getCurrentUser();
-    
-    if (!user || !['admin', 'owner', 'moderator'].includes(user.rank || '')) {
-      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
-    }
-
-    const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = Math.min(100, parseInt(searchParams.get('limit') || '50'));
-    const targetId = searchParams.get('targetId');
-    const performedBy = searchParams.get('performedBy');
-    const action = searchParams.get('action');
-
-    const modLogCollection = await getCollection('moderation_logs');
-    
-    const query: any = {};
-    if (targetId && ObjectId.isValid(targetId)) {
-      query.targetId = new ObjectId(targetId);
-    }
-    if (performedBy && ObjectId.isValid(performedBy)) {
-      query.performedBy = new ObjectId(performedBy);
-    }
-    if (action) {
-      query.action = action;
-    }
-
-    const total = await modLogCollection.countDocuments(query);
-    const logs = await modLogCollection
-      .find(query)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .toArray();
-
-    return NextResponse.json({
-      success: true,
-      logs,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Moderation logs error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to fetch logs' }, { status: 500 });
+    console.error('Moderation error:', error);
+    return NextResponse.json({ success: false, error: 'Failed' }, { status: 500 });
   }
 }

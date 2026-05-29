@@ -1,55 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
-import { getCurrentUser } from '@/lib/auth';
-import { ObjectId } from 'mongodb';
+import { query } from '@/lib/db';
 
-// Get all artists or search for artists
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const query = searchParams.get('q') || '';
-    const limit = parseInt(searchParams.get('limit') || '50');
-    const verified = searchParams.get('verified');
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100);
+    const offset = (page - 1) * limit;
 
-    const collection = await getCollection('artists');
-    
-    const filter: any = {};
-    
-    if (query) {
-      filter.tagName = { $regex: query, $options: 'i' };
-    }
-    
-    if (verified === 'true') {
-      filter.verified = true;
-    } else if (verified === 'false') {
-      filter.verified = false;
-    }
+    const [artistsResult, countResult] = await Promise.all([
+      query(
+        `SELECT a.*, t.count as post_count
+         FROM artists a
+         JOIN tags t ON t.id = a.tag_id
+         ORDER BY t.count DESC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset]
+      ),
+      query(`SELECT COUNT(*) as count FROM artists`),
+    ]);
 
-    const artists = await collection
-      .find(filter)
-      .sort({ tagName: 1 })
-      .collation({ locale: 'en', strength: 2 }) // Case-insensitive sorting
-      .limit(limit)
-      .toArray();
+    const total = parseInt(countResult.rows[0].count);
 
     return NextResponse.json({
       success: true,
-      artists: artists.map(artist => ({
-        _id: artist._id.toString(),
-        tagId: artist.tagId.toString(),
-        tagName: artist.tagName,
-        claimedByUserId: artist.claimedByUserId?.toString(),
-        claimedByUsername: artist.claimedByUsername,
-        verified: artist.verified,
-        avatarUrl: artist.avatarUrl,
-        bannerUrl: artist.bannerUrl,
-        bio: artist.bio,
-        socials: artist.socials || {},
-        createdAt: artist.createdAt,
-        updatedAt: artist.updatedAt,
+      artists: artistsResult.rows.map(a => ({
+        _id: String(a.id),
+        tagId: String(a.tag_id),
+        tagName: a.tag_name,
+        claimedByUserId: a.claimed_by_user_id,
+        claimedByUsername: a.claimed_by_username,
+        verified: a.verified,
+        avatarUrl: a.avatar_url,
+        bannerUrl: a.banner_url,
+        bio: a.bio,
+        socials: a.socials || {},
+        postCount: a.post_count,
+        createdAt: a.created_at,
       })),
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching artists:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch artists' },

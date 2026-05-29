@@ -276,7 +276,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
                 <>
                   <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 pb-8">
                     {images.map((image) => (
-                      <ImageCard key={image._id.toString()} image={image} />
+                      <ImageCard key={(image.id || image._id)?.toString()} image={image} />
                     ))}
                   </div>
                   {page < totalPages && (
@@ -335,7 +335,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
                   <>
                     <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 pb-8">
                       {images.map((image) => (
-                        <ImageCard key={image._id.toString()} image={image} />
+                        <ImageCard key={(image.id || image._id)?.toString()} image={image} />
                       ))}
                     </div>
                     {page < totalPages && (
@@ -376,7 +376,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 pb-8">
                     {likedImages.map((image) => (
-                      <ImageCard key={image._id.toString()} image={image} />
+                      <ImageCard key={(image.id || image._id)?.toString()} image={image} />
                     ))}
                   </div>
                 )}

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection, getNextSequentialId } from '@/lib/db';
+import { query, getNextSequentialId, withTransaction } from '@/lib/db';
 import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
 import { requireAuth } from '@/lib/auth';
-import { ObjectId } from 'mongodb';
 import sharp from 'sharp';
 
 const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === 'true';
@@ -18,33 +17,23 @@ export async function POST(request: NextRequest) {
     } catch {
       // Anonymous upload
     }
-    
+
     // If user exists, ensure they're in local DB
     if (user) {
-      const usersCollection = await getCollection('users');
       let rank: 'user' | 'moderator' | 'admin' | 'owner' = 'user';
       if (user.id === '692ad0df032c62f79b57a08d') {
         rank = 'owner';
       }
-      
-      await usersCollection.updateOne(
-        { _id: new ObjectId(user.id) },
-        {
-          $set: {
-            username: user.username,
-            email: user.email,
-            avatarUrl: user.avatarUrl || '',
-            updatedAt: new Date(),
-          },
-          $setOnInsert: {
-            createdAt: new Date(),
-            rank,
-          },
-        },
-        { upsert: true }
+
+      await query(
+        `INSERT INTO users (id, username, email, avatar_url, rank, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+         ON CONFLICT (id) DO UPDATE SET
+           username = $2, email = $3, avatar_url = $4, updated_at = NOW()`,
+        [user.id, user.username, user.email, user.avatarUrl || '', rank]
       );
     }
-    
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const tagsString = formData.get('tags') as string;
@@ -52,7 +41,6 @@ export async function POST(request: NextRequest) {
     try {
       tagsData = JSON.parse(tagsString);
     } catch {
-      // Fallback to old format for backward compatibility
       tagsData = tagsString?.split(',').map(t => ({ name: t.trim(), type: 'general' })).filter(t => t.name) || [];
     }
     const rating = formData.get('rating') as 'safe' | 'questionable' | 'explicit';
@@ -82,25 +70,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Resolve tag names to ObjectIDs
-    const tagsCollection = await getCollection('tags');
-    const tagIds: ObjectId[] = [];
-    
-    for (const tagInfo of tagsData) {
-      let tag = await tagsCollection.findOne({ name: tagInfo.name.toLowerCase() });
-      if (!tag) {
-        const result = await tagsCollection.insertOne({
-          name: tagInfo.name.toLowerCase(),
-          type: tagInfo.type || 'general',
-          count: 0,
-          createdAt: new Date(),
-        });
-        tagIds.push(result.insertedId);
-      } else {
-        tagIds.push(tag._id);
-      }
-    }
-
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -108,19 +77,18 @@ export async function POST(request: NextRequest) {
     // Get image metadata
     const metadata = await sharp(buffer).metadata();
 
-    // Create aggressively compressed thumbnail for fast previews
+    // Create compressed thumbnail
     const thumbnailBuffer = await sharp(buffer)
       .resize(320, 320, { fit: 'cover' })
       .jpeg({ quality: 45, mozjpeg: true, progressive: true })
       .toBuffer();
 
-    // Upload to storage (R2 or local fallback)
+    // Upload to storage
     let imageUrl: string;
     let thumbnailUrl: string;
-    
+
     try {
       if (USE_LOCAL_STORAGE) {
-        console.log('Using local storage for uploads...');
         [imageUrl, thumbnailUrl] = await Promise.all([
           uploadLocally(buffer, file.name, file.type),
           uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
@@ -133,75 +101,98 @@ export async function POST(request: NextRequest) {
       }
     } catch (uploadError: any) {
       console.error('Primary upload failed, trying fallback:', uploadError);
-      
-      // Fallback to local storage if B2 fails
       if (!USE_LOCAL_STORAGE) {
-        console.log('B2 upload failed, falling back to local storage...');
         try {
           [imageUrl, thumbnailUrl] = await Promise.all([
             uploadLocally(buffer, file.name, file.type),
             uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
           ]);
         } catch (fallbackError) {
-          throw new Error('Both B2 and local storage uploads failed. Please check your configuration.');
+          throw new Error('Both B2 and local storage uploads failed.');
         }
       } else {
         throw uploadError;
       }
     }
 
-    const collection = await getCollection('images');
-    
     // Get the next sequential ID
     const nextSequentialId = await getNextSequentialId();
-    
-    // Create image document
-    const imageDoc = {
-      sequentialId: nextSequentialId,
-      userId: (user && !postAnonymously) ? new ObjectId(user.id) : null,
-      username: (user && !postAnonymously) ? user.username : 'Anonymous',
-      url: imageUrl,
-      thumbnailUrl,
-      originalFilename: file.name,
-      fileSize: buffer.length,
-      width: metadata.width || 0,
-      height: metadata.height || 0,
-      contentType: file.type,
-      tags: tagIds,
-      rating,
-      isAIGenerated,
-      source,
-      description,
-      upvotes: 0,
-      downvotes: 0,
-      favorites: 0,
-      views: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
 
-    const result = await collection.insertOne(imageDoc);
+    // Insert image and tags in a transaction
+    const imageResult = await withTransaction(async (client) => {
+      // Resolve tags
+      const tagIds: number[] = [];
+      for (const tagInfo of tagsData) {
+        const tagName = tagInfo.name.toLowerCase();
+        let tagResult = await client.query(
+          `SELECT id FROM tags WHERE name = $1`,
+          [tagName]
+        );
 
-    // Update tag counts
-    for (const tagId of tagIds) {
-      await tagsCollection.updateOne(
-        { _id: tagId },
-        { $inc: { count: 1 } }
+        if (tagResult.rows.length === 0) {
+          tagResult = await client.query(
+            `INSERT INTO tags (name, type, count, created_at) VALUES ($1, $2, 0, NOW()) RETURNING id`,
+            [tagName, tagInfo.type || 'general']
+          );
+        }
+        tagIds.push(tagResult.rows[0].id);
+      }
+
+      // Insert image
+      const imgResult = await client.query(
+        `INSERT INTO images (
+          sequential_id, user_id, username, url, thumbnail_url,
+          original_filename, file_size, width, height, content_type,
+          rating, is_ai_generated, source, description,
+          upvotes, downvotes, favorites, views, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0, 0, 0, 0, NOW(), NOW())
+        RETURNING *`,
+        [
+          nextSequentialId,
+          (user && !postAnonymously) ? user.id : null,
+          (user && !postAnonymously) ? user.username : 'Anonymous',
+          imageUrl, thumbnailUrl,
+          file.name, buffer.length,
+          metadata.width || 0, metadata.height || 0,
+          file.type, rating, isAIGenerated, source, description,
+        ]
       );
-    }
+
+      const imageId = imgResult.rows[0].id;
+
+      // Insert image_tags
+      if (tagIds.length > 0) {
+        const values = tagIds.map((_, i) => `($1, $${i + 2})`).join(',');
+        await client.query(
+          `INSERT INTO image_tags (image_id, tag_id) VALUES ${values}`,
+          [imageId, ...tagIds]
+        );
+      }
+
+      // Increment tag counts
+      for (const tagId of tagIds) {
+        await client.query(
+          `UPDATE tags SET count = count + 1 WHERE id = $1`,
+          [tagId]
+        );
+      }
+
+      return imgResult.rows[0];
+    });
 
     return NextResponse.json({
       success: true,
-      image: { 
-        ...imageDoc, 
-        _id: result.insertedId,
-        dbid: result.insertedId.toString(),
-        post_id: nextSequentialId 
+      image: {
+        ...imageResult,
+        _id: String(imageResult.id),
+        dbid: String(imageResult.id),
+        post_id: nextSequentialId,
+        sequentialId: nextSequentialId,
       },
     });
   } catch (error: any) {
     console.error('Error uploading image:', error);
-    
+
     if (error.message === 'Unauthorized') {
       return NextResponse.json(
         { success: false, error: 'You must be logged in to upload images' },
@@ -209,12 +200,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Provide more specific error messages
     let errorMessage = 'Failed to upload image';
-    
     if (error.message?.includes('B2') || error.message?.includes('SSL') || error.code === 'EPROTO') {
       errorMessage = 'Failed to upload to storage. Please check your B2 configuration or try again later.';
-    } else if (error.message?.includes('MongoDB') || error.message?.includes('connection')) {
+    } else if (error.message?.includes('connection')) {
       errorMessage = 'Database connection error. Please try again.';
     } else if (error.message) {
       errorMessage = error.message;

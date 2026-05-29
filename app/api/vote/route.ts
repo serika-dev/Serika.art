@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
-import { ObjectId } from 'mongodb';
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,82 +22,83 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const votesCollection = await getCollection('votes');
-    const imagesCollection = await getCollection('images');
-
-    // Get the image by sequential ID
-    const image = await imagesCollection.findOne({ sequentialId });
-    if (!image) {
+    // Get image
+    const imgResult = await query(
+      `SELECT id FROM images WHERE sequential_id = $1`,
+      [sequentialId]
+    );
+    if (imgResult.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Image not found' },
         { status: 404 }
       );
     }
 
-    const imageObjectId = image._id;
-    const userObjectId = new ObjectId(user.id);
+    const imageDbId = imgResult.rows[0].id;
 
-    // Check if user already voted
-    const existingVote = await votesCollection.findOne({
-      userId: userObjectId,
-      imageId: imageObjectId,
-    });
+    // Check existing vote
+    const existingVote = await query(
+      `SELECT id, type FROM votes WHERE user_id = $1 AND image_id = $2`,
+      [user.id, imageDbId]
+    );
 
     let userVote: string | null = null;
 
-    if (type === '' || (existingVote && existingVote.type === type)) {
+    if (type === '' || (existingVote.rows.length > 0 && existingVote.rows[0].type === type)) {
       // Remove vote
-      if (existingVote) {
-        await votesCollection.deleteOne({ _id: existingVote._id });
-        await imagesCollection.updateOne(
-          { _id: imageObjectId },
-          { $inc: { [existingVote.type === 'upvote' ? 'upvotes' : 'downvotes']: -1 } }
+      if (existingVote.rows.length > 0) {
+        const oldType = existingVote.rows[0].type;
+        await query(`DELETE FROM votes WHERE id = $1`, [existingVote.rows[0].id]);
+        const col = oldType === 'upvote' ? 'upvotes' : 'downvotes';
+        await query(
+          `UPDATE images SET ${col} = GREATEST(${col} - 1, 0) WHERE id = $1`,
+          [imageDbId]
         );
       }
       userVote = null;
-    } else if (existingVote) {
+    } else if (existingVote.rows.length > 0) {
       // Change vote
-      await votesCollection.updateOne(
-        { _id: existingVote._id },
-        { $set: { type, createdAt: new Date() } }
+      const oldType = existingVote.rows[0].type;
+      await query(
+        `UPDATE votes SET type = $1, created_at = NOW() WHERE id = $2`,
+        [type, existingVote.rows[0].id]
       );
-      await imagesCollection.updateOne(
-        { _id: imageObjectId },
-        {
-          $inc: {
-            [existingVote.type === 'upvote' ? 'upvotes' : 'downvotes']: -1,
-            [type === 'upvote' ? 'upvotes' : 'downvotes']: 1,
-          },
-        }
+      const decCol = oldType === 'upvote' ? 'upvotes' : 'downvotes';
+      const incCol = type === 'upvote' ? 'upvotes' : 'downvotes';
+      await query(
+        `UPDATE images SET ${decCol} = GREATEST(${decCol} - 1, 0), ${incCol} = ${incCol} + 1 WHERE id = $1`,
+        [imageDbId]
       );
       userVote = type;
     } else {
-      // Add new vote
-      await votesCollection.insertOne({
-        userId: userObjectId,
-        imageId: imageObjectId,
-        type,
-        createdAt: new Date(),
-      });
-      await imagesCollection.updateOne(
-        { _id: imageObjectId },
-        { $inc: { [type === 'upvote' ? 'upvotes' : 'downvotes']: 1 } }
+      // New vote
+      await query(
+        `INSERT INTO votes (user_id, image_id, type, created_at) VALUES ($1, $2, $3, NOW())`,
+        [user.id, imageDbId, type]
+      );
+      const col = type === 'upvote' ? 'upvotes' : 'downvotes';
+      await query(
+        `UPDATE images SET ${col} = ${col} + 1 WHERE id = $1`,
+        [imageDbId]
       );
       userVote = type;
     }
 
-    // Get updated image counts
-    const updatedImage = await imagesCollection.findOne({ _id: imageObjectId });
+    // Get updated counts
+    const updated = await query(
+      `SELECT upvotes, downvotes FROM images WHERE id = $1`,
+      [imageDbId]
+    );
 
     return NextResponse.json({
       success: true,
-      upvotes: updatedImage?.upvotes || 0,
-      downvotes: updatedImage?.downvotes || 0,
+      upvotes: updated.rows[0]?.upvotes || 0,
+      downvotes: updated.rows[0]?.downvotes || 0,
       userVote,
     });
   } catch (error: any) {
     console.error('Error voting:', error);
-    
+
     if (error.message === 'Unauthorized') {
       return NextResponse.json(
         { success: false, error: 'You must be logged in to vote' },

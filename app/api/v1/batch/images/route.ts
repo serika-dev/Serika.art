@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { ObjectId } from 'mongodb';
 
 // POST /api/v1/batch/images - Get multiple images by IDs in a single request
 export async function POST(request: NextRequest) {
@@ -23,82 +22,74 @@ export async function POST(request: NextRequest) {
     }
 
     // Convert and validate IDs
-    const objectIds: ObjectId[] = [];
-    for (const id of ids) {
-      try {
-        objectIds.push(new ObjectId(id));
-      } catch {
-        // Skip invalid IDs
-      }
-    }
+    const parsedIds = ids.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
 
-    if (objectIds.length === 0) {
+    if (parsedIds.length === 0) {
       return apiError('No valid IDs provided', 400, 'INVALID_IDS');
     }
 
-    const collection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
-    const usersCollection = await getCollection('users');
+    const imagesResult = await query(
+      `SELECT i.*, u.username as u_username
+       FROM images i
+       LEFT JOIN users u ON u.id = i.user_id
+       WHERE i.id = ANY($1)`,
+      [parsedIds]
+    );
 
-    const images = await collection
-      .find({ _id: { $in: objectIds } })
-      .toArray();
+    const images = imagesResult.rows;
 
-    // Get all tag IDs
-    const allTagIds = new Set<string>();
-    images.forEach((img) => {
-      (img.tags || []).forEach((tagId: ObjectId) => allTagIds.add(tagId.toString()));
-    });
+    if (images.length === 0) {
+      return apiResponse({ images: [], found: 0, requested: ids.length });
+    }
 
-    const tagDocs = await tagsCollection
-      .find({ _id: { $in: Array.from(allTagIds).map((id) => new ObjectId(id)) } })
-      .toArray();
-    const tagMap = new Map(tagDocs.map((t) => [t._id.toString(), t]));
+    // Fetch tags for all matching images in a single batch
+    const imageIds = images.map(img => img.id);
+    const tagsResult = await query(
+      `SELECT it.image_id, t.name, t.type
+       FROM image_tags it
+       JOIN tags t ON t.id = it.tag_id
+       WHERE it.image_id = ANY($1)`,
+      [imageIds]
+    );
 
-    // Get all user IDs
-    const userIds = [...new Set(images.map((img) => img.userId?.toString()).filter(Boolean))];
-    const userDocs = await usersCollection
-      .find({ _id: { $in: userIds.map((id) => new ObjectId(id)) } })
-      .toArray();
-    const userMap = new Map(userDocs.map((u) => [u._id.toString(), u]));
+    const tagsByImage = new Map<number, any[]>();
+    for (const row of tagsResult.rows) {
+      const list = tagsByImage.get(row.image_id) || [];
+      list.push({ name: row.name, type: row.type });
+      tagsByImage.set(row.image_id, list);
+    }
 
-    const formattedImages = images.map((img) => {
-      const user = img.userId ? userMap.get(img.userId.toString()) : null;
-      return {
-        id: img._id.toString(),
-        dbid: img._id.toString(),
-        post_id: img.sequentialId,
-        sequential_id: img.sequentialId,
-        url: img.url,
-        thumbnail_url: img.thumbnailUrl,
-        width: img.width,
-        height: img.height,
-        file_size: img.fileSize,
-        content_type: img.contentType,
-        rating: img.rating,
-        is_ai_generated: img.isAIGenerated || false,
-        source: img.source,
-        description: img.description,
-        tags: (img.tags || []).map((tagId: ObjectId) => {
-          const tag = tagMap.get(tagId.toString());
-          return tag ? { name: tag.name, type: tag.type } : null;
-        }).filter(Boolean),
-        stats: {
-          upvotes: img.upvotes || 0,
-          downvotes: img.downvotes || 0,
-          favorites: img.favorites || 0,
-          views: img.views || 0,
-        },
-        user: user ? {
-          id: user._id.toString(),
-          username: user.username,
-        } : null,
-        created_at: img.uploadedAt,
-      };
-    });
+    const formattedImages = images.map((img) => ({
+      id: String(img.id),
+      dbid: String(img.id),
+      post_id: img.sequential_id,
+      sequential_id: img.sequential_id,
+      url: img.url,
+      thumbnail_url: img.thumbnail_url,
+      width: img.width,
+      height: img.height,
+      file_size: img.file_size,
+      content_type: img.content_type,
+      rating: img.rating,
+      is_ai_generated: img.is_ai_generated || false,
+      source: img.source,
+      description: img.description,
+      tags: tagsByImage.get(img.id) || [],
+      stats: {
+        upvotes: img.upvotes || 0,
+        downvotes: img.downvotes || 0,
+        favorites: img.favorites || 0,
+        views: img.views || 0,
+      },
+      user: img.user_id ? {
+        id: img.user_id,
+        username: img.u_username || img.username || 'Anonymous',
+      } : null,
+      created_at: img.created_at,
+    }));
 
     // Return in the same order as requested
-    const idOrder = new Map(ids.map((id, index) => [id, index]));
+    const idOrder = new Map(ids.map((id, index) => [String(id), index]));
     formattedImages.sort((a, b) => {
       const orderA = idOrder.get(a.id) ?? 999;
       const orderB = idOrder.get(b.id) ?? 999;

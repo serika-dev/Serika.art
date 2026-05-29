@@ -1,102 +1,89 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
-import { ObjectId } from 'mongodb';
 
-// Get artist by tag name
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ tagName: string }> }
 ) {
   try {
     const { tagName } = await params;
-    // Next.js automatically decodes URL parameters, so tagName is already decoded
     const normalized = tagName.toLowerCase().trim();
-    // Create variations with both spaces and underscores to match database storage
     const possibleNames = Array.from(new Set([
       normalized,
       normalized.replace(/ /g, '_'),
       normalized.replace(/_/g, ' '),
     ]));
 
-    // First, check if the tag exists and is an artist tag
-    const tagsCollection = await getCollection('tags');
-    const tag = await tagsCollection.findOne({ 
-      name: { $in: possibleNames },
-      type: 'artist'
-    });
+    const tagResult = await query(
+      `SELECT * FROM tags WHERE name = ANY($1) AND type = 'artist'`,
+      [possibleNames]
+    );
 
-    if (!tag) {
+    if (tagResult.rows.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Artist tag not found' },
+        { success: false, error: 'Artist not found' },
         { status: 404 }
       );
     }
 
-    // Check if artist page exists
-    const artistsCollection = await getCollection('artists');
-    let artist = await artistsCollection.findOne({ tagId: tag._id });
+    const tag = tagResult.rows[0];
 
-    // If no artist page exists, create one (unclaimed)
-    if (!artist) {
-      const newArtist = {
-        tagId: tag._id,
-        tagName: tag.name,
-        verified: false,
-        socials: {},
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      
-      const result = await artistsCollection.insertOne(newArtist);
-      artist = { ...newArtist, _id: result.insertedId };
-    }
+    const artistResult = await query(
+      `SELECT * FROM artists WHERE tag_id = $1`,
+      [tag.id]
+    );
 
-    // Get image count for this artist
-    const imagesCollection = await getCollection('images');
-    const imageCount = await imagesCollection.countDocuments({
-      tags: tag._id,
-      deleted: { $ne: true }
-    });
+    const artist = artistResult.rows[0] || null;
 
-    // Get some sample images
-    const sampleImages = await imagesCollection
-      .find({ tags: tag._id, deleted: { $ne: true } })
-      .sort({ createdAt: -1 })
-      .limit(6)
-      .toArray();
+    // Get reviews summary
+    const reviewsResult = await query(
+      `SELECT
+        COUNT(*) as review_count,
+        AVG((ratings->>'trust')::numeric) as avg_trust,
+        AVG((ratings->>'quality')::numeric) as avg_quality,
+        AVG((ratings->>'communication')::numeric) as avg_communication,
+        AVG((ratings->>'pricing')::numeric) as avg_pricing
+       FROM artist_reviews
+       WHERE artist_tag_id = $1`,
+      [tag.id]
+    );
+
+    const reviewSummary = reviewsResult.rows[0];
 
     return NextResponse.json({
       success: true,
-      artist: {
-        _id: artist!._id.toString(),
-        tagId: artist!.tagId.toString(),
-        tagName: artist!.tagName,
-        claimedByUserId: artist!.claimedByUserId?.toString(),
-        claimedByUsername: artist!.claimedByUsername,
-        verified: artist!.verified,
-        avatarUrl: artist!.avatarUrl,
-        bannerUrl: artist!.bannerUrl,
-        bio: artist!.bio,
-        socials: artist!.socials || {},
-        createdAt: artist!.createdAt,
-        updatedAt: artist!.updatedAt,
-      },
       tag: {
-        _id: tag._id.toString(),
+        _id: String(tag.id),
+        id: tag.id,
         name: tag.name,
         type: tag.type,
         count: tag.count,
       },
-      imageCount,
-      sampleImages: sampleImages.map(img => ({
-        _id: img._id.toString(),
-        sequentialId: img.sequentialId,
-        thumbnailUrl: img.thumbnailUrl || img.url,
-        url: img.url,
-      })),
+      artist: artist ? {
+        _id: String(artist.id),
+        tagId: String(artist.tag_id),
+        tagName: artist.tag_name,
+        claimedByUserId: artist.claimed_by_user_id,
+        claimedByUsername: artist.claimed_by_username,
+        verified: artist.verified,
+        avatarUrl: artist.avatar_url,
+        bannerUrl: artist.banner_url,
+        bio: artist.bio,
+        socials: artist.socials || {},
+        createdAt: artist.created_at,
+      } : null,
+      reviews: {
+        count: parseInt(reviewSummary?.review_count || '0'),
+        averages: {
+          trust: parseFloat(reviewSummary?.avg_trust || '0'),
+          quality: parseFloat(reviewSummary?.avg_quality || '0'),
+          communication: parseFloat(reviewSummary?.avg_communication || '0'),
+          pricing: reviewSummary?.avg_pricing ? parseFloat(reviewSummary.avg_pricing) : null,
+        },
+      },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching artist:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch artist' },
@@ -105,7 +92,7 @@ export async function GET(
   }
 }
 
-// Update artist profile (only for verified owners)
+// Update artist profile (verified artist only)
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ tagName: string }> }
@@ -114,15 +101,13 @@ export async function PATCH(
     const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json(
-        { success: false, error: 'You must be logged in' },
+        { success: false, error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
     const { tagName } = await params;
-    // Next.js automatically decodes URL parameters, so tagName is already decoded
     const normalized = tagName.toLowerCase().trim();
-    // Create variations with both spaces and underscores to match database storage
     const possibleNames = Array.from(new Set([
       normalized,
       normalized.replace(/ /g, '_'),
@@ -131,78 +116,65 @@ export async function PATCH(
     const body = await request.json();
     const { bio, socials, avatarUrl, bannerUrl } = body;
 
-    const tagsCollection = await getCollection('tags');
-    const tag = await tagsCollection.findOne({ 
-      name: { $in: possibleNames },
-      type: 'artist'
-    });
+    const tagResult = await query(
+      `SELECT id FROM tags WHERE name = ANY($1) AND type = 'artist'`,
+      [possibleNames]
+    );
 
-    if (!tag) {
+    if (tagResult.rows.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Artist tag not found' },
+        { success: false, error: 'Artist not found' },
         { status: 404 }
       );
     }
 
-    const artistsCollection = await getCollection('artists');
-    const artist = await artistsCollection.findOne({ tagId: tag._id });
+    const artistResult = await query(
+      `SELECT * FROM artists WHERE tag_id = $1 AND claimed_by_user_id = $2 AND verified = TRUE`,
+      [tagResult.rows[0].id, user.id]
+    );
 
-    if (!artist) {
+    if (artistResult.rows.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Artist page not found' },
-        { status: 404 }
-      );
-    }
-
-    // Check if user is the verified owner or admin
-    const isOwner = artist.claimedByUserId?.toString() === user.id && artist.verified;
-    const isAdmin = user.rank === 'admin' || user.rank === 'owner';
-
-    if (!isOwner && !isAdmin) {
-      return NextResponse.json(
-        { success: false, error: 'You are not authorized to edit this artist page' },
+        { success: false, error: 'You are not verified as this artist' },
         { status: 403 }
       );
     }
 
-    // Validate socials
-    const validSocials = ['twitter', 'bluesky', 'youtube', 'pixiv', 'deviantart', 'artstation', 'patreon', 'linktree', 'carrd', 'website', 'skeb'];
-    const cleanedSocials: any = {};
-    if (socials && typeof socials === 'object') {
-      for (const key of validSocials) {
-        if (socials[key] && typeof socials[key] === 'string') {
-          cleanedSocials[key] = socials[key].trim();
-        }
-      }
-    }
-
-    const updateData: any = {
-      updatedAt: new Date(),
-    };
+    const setClauses: string[] = ['updated_at = NOW()'];
+    const updateParams: any[] = [];
+    let pIdx = 1;
 
     if (bio !== undefined) {
-      updateData.bio = bio?.trim() || '';
+      setClauses.push(`bio = $${pIdx}`);
+      updateParams.push(bio);
+      pIdx++;
     }
-    if (Object.keys(cleanedSocials).length > 0 || socials === null) {
-      updateData.socials = cleanedSocials;
+    if (socials !== undefined) {
+      setClauses.push(`socials = $${pIdx}`);
+      updateParams.push(JSON.stringify(socials));
+      pIdx++;
     }
     if (avatarUrl !== undefined) {
-      updateData.avatarUrl = avatarUrl || undefined;
+      setClauses.push(`avatar_url = $${pIdx}`);
+      updateParams.push(avatarUrl);
+      pIdx++;
     }
     if (bannerUrl !== undefined) {
-      updateData.bannerUrl = bannerUrl || undefined;
+      setClauses.push(`banner_url = $${pIdx}`);
+      updateParams.push(bannerUrl);
+      pIdx++;
     }
 
-    await artistsCollection.updateOne(
-      { _id: artist._id },
-      { $set: updateData }
+    await query(
+      `UPDATE artists SET ${setClauses.join(', ')} WHERE id = $${pIdx}`,
+      [...updateParams, artistResult.rows[0].id]
     );
 
     return NextResponse.json({
       success: true,
       message: 'Artist profile updated',
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error updating artist:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to update artist' },

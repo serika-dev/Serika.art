@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
-import { ObjectId } from 'mongodb';
 
 // Get a tag by name
 export async function GET(
@@ -10,33 +9,35 @@ export async function GET(
 ) {
   try {
     const { name } = await params;
-    // Next.js automatically decodes URL parameters, so name is already decoded
     const normalized = name.toLowerCase().trim();
-    // Create variations with both spaces and underscores to match database storage
     const possibleNames = Array.from(new Set([
       normalized,
       normalized.replace(/ /g, '_'),
       normalized.replace(/_/g, ' '),
     ]));
 
-    const tagsCollection = await getCollection('tags');
-    const tag = await tagsCollection.findOne({ name: { $in: possibleNames } });
+    const result = await query(
+      `SELECT * FROM tags WHERE name = ANY($1)`,
+      [possibleNames]
+    );
 
-    if (!tag) {
+    if (result.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Tag not found' },
         { status: 404 }
       );
     }
 
+    const tag = result.rows[0];
     return NextResponse.json({
       success: true,
       tag: {
-        _id: tag._id.toString(),
+        _id: String(tag.id),
+        id: tag.id,
         name: tag.name,
         type: tag.type,
         count: tag.count,
-        createdAt: tag.createdAt,
+        createdAt: tag.created_at,
       },
     });
   } catch (error: any) {
@@ -62,13 +63,12 @@ export async function PATCH(
       );
     }
 
-    // Fetch user rank from local DB
-    const usersCollection = await getCollection('users');
-    const userDoc = await usersCollection.findOne({ _id: new ObjectId(user.id) });
-    
-    const rank = userDoc?.rank || 'user';
-    
-    // Only admin and owner can change tag types
+    const userResult = await query(
+      `SELECT rank FROM users WHERE id = $1`,
+      [user.id]
+    );
+    const rank = userResult.rows[0]?.rank || 'user';
+
     if (rank !== 'admin' && rank !== 'owner') {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions. Admin+ required.' },
@@ -86,26 +86,17 @@ export async function PATCH(
       );
     }
 
-    const tagsCollection = await getCollection('tags');
-    const result = await tagsCollection.updateOne(
-      { name: name.toLowerCase() },
-      { $set: { type } }
+    const result = await query(
+      `UPDATE tags SET type = $1 WHERE name = $2 RETURNING id`,
+      [type, name.toLowerCase()]
     );
 
-    if (result.matchedCount === 0) {
+    if (result.rowCount === 0) {
       return NextResponse.json(
         { success: false, error: 'Tag not found' },
         { status: 404 }
       );
     }
-
-    // Update all images with this tag
-    const imagesCollection = await getCollection('images');
-    await imagesCollection.updateMany(
-      { 'tags.name': name.toLowerCase() },
-      { $set: { 'tags.$[tag].type': type } },
-      { arrayFilters: [{ 'tag.name': name.toLowerCase() }] }
-    );
 
     return NextResponse.json({
       success: true,

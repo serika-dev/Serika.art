@@ -71,12 +71,9 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 
     if (userResponse.data.success && userResponse.data.user) {
       // Fetch rank from local DB
-      const { getCollection } = await import('@/lib/db');
-      const { ObjectId } = await import('mongodb');
-      const usersCollection = await getCollection('users');
-      const localUser = await usersCollection.findOne({ 
-        _id: new ObjectId(userResponse.data.user.id) 
-      });
+      const { query } = await import('@/lib/db');
+      const userRes = await query(`SELECT rank FROM users WHERE id = $1`, [userResponse.data.user.id]);
+      const localUser = userRes.rows[0];
       
       return {
         id: userResponse.data.user.id || userResponse.data.user._id,

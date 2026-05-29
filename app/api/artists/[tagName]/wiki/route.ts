@@ -1,60 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
-import { ObjectId } from 'mongodb';
 
-// GET wiki content for an artist
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ tagName: string }> }
 ) {
   try {
     const { tagName } = await params;
-    // Next.js automatically decodes URL parameters, so tagName is already decoded
     const normalized = tagName.toLowerCase().trim();
-    // Create variations with both spaces and underscores to match database storage
     const possibleNames = Array.from(new Set([
-      normalized,
-      normalized.replace(/ /g, '_'),
-      normalized.replace(/_/g, ' '),
+      normalized, normalized.replace(/ /g, '_'), normalized.replace(/_/g, ' '),
     ]));
 
-    const tagsCollection = await getCollection('tags');
-    const tag = await tagsCollection.findOne({ 
-      name: { $in: possibleNames },
-      type: 'artist'
-    });
+    const tagResult = await query(
+      `SELECT id FROM tags WHERE name = ANY($1) AND type = 'artist'`,
+      [possibleNames]
+    );
 
-    if (!tag) {
-      return NextResponse.json(
-        { success: false, error: 'Artist not found' },
-        { status: 404 }
-      );
+    if (tagResult.rows.length === 0) {
+      return NextResponse.json({ success: false, error: 'Artist not found' }, { status: 404 });
     }
 
-    const wikiCollection = await getCollection('artistWikis');
-    const wiki = await wikiCollection.findOne({ artistTagId: tag._id });
+    const wikiResult = await query(
+      `SELECT * FROM artist_wikis WHERE artist_tag_id = $1`,
+      [tagResult.rows[0].id]
+    );
+
+    const wiki = wikiResult.rows[0] || null;
 
     return NextResponse.json({
       success: true,
       wiki: wiki ? {
         content: wiki.content,
         infobox: wiki.infobox,
-        lastEditedBy: wiki.lastEditedByUsername,
-        lastEditedAt: wiki.updatedAt,
-        editCount: wiki.editHistory?.length || 0,
+        lastEditedBy: wiki.last_edited_by_username,
+        lastEditedAt: wiki.updated_at,
+        editCount: Array.isArray(wiki.edit_history) ? wiki.edit_history.length : 0,
       } : null,
     });
   } catch (error) {
     console.error('Error fetching wiki:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch wiki' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to fetch wiki' }, { status: 500 });
   }
 }
 
-// POST/Update wiki content
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ tagName: string }> }
@@ -62,97 +52,68 @@ export async function POST(
   try {
     const user = await getCurrentUser();
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: 'You must be logged in to edit the wiki' },
-        { status: 401 }
-      );
+      return NextResponse.json({ success: false, error: 'Login required' }, { status: 401 });
     }
 
     const { tagName } = await params;
-    // Next.js automatically decodes URL parameters, so tagName is already decoded
     const normalized = tagName.toLowerCase().trim();
-    // Create variations with both spaces and underscores to match database storage
     const possibleNames = Array.from(new Set([
-      normalized,
-      normalized.replace(/ /g, '_'),
-      normalized.replace(/_/g, ' '),
+      normalized, normalized.replace(/ /g, '_'), normalized.replace(/_/g, ' '),
     ]));
-    const primaryName = possibleNames[0];
     const body = await request.json();
     const { content, infobox } = body;
 
     if (typeof content !== 'string') {
-      return NextResponse.json(
-        { success: false, error: 'Content is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Content is required' }, { status: 400 });
     }
 
-    const tagsCollection = await getCollection('tags');
-    const tag = await tagsCollection.findOne({ 
-      name: { $in: possibleNames },
-      type: 'artist'
-    });
+    const tagResult = await query(
+      `SELECT id, name FROM tags WHERE name = ANY($1) AND type = 'artist'`,
+      [possibleNames]
+    );
 
-    if (!tag) {
-      return NextResponse.json(
-        { success: false, error: 'Artist not found' },
-        { status: 404 }
-      );
+    if (tagResult.rows.length === 0) {
+      return NextResponse.json({ success: false, error: 'Artist not found' }, { status: 404 });
     }
 
-    const wikiCollection = await getCollection('artistWikis');
-    const existingWiki = await wikiCollection.findOne({ artistTagId: tag._id });
+    const tag = tagResult.rows[0];
+    const existingWiki = await query(
+      `SELECT * FROM artist_wikis WHERE artist_tag_id = $1`,
+      [tag.id]
+    );
 
-    if (existingWiki) {
-      // Update existing wiki and save history
-      await wikiCollection.updateOne(
-        { _id: existingWiki._id },
-        {
-          $set: {
-            content: content.trim(),
-            infobox: infobox,
-            lastEditedBy: new ObjectId(user.id),
-            lastEditedByUsername: user.username,
-            updatedAt: new Date(),
-          },
-          $push: {
-            editHistory: {
-              $each: [{
-                userId: new ObjectId(user.id),
-                username: user.username,
-                content: existingWiki.content, // Save previous content
-                editedAt: new Date(),
-              }],
-              $slice: -50, // Keep last 50 edits
-            } as any,
-          },
-        }
+    if (existingWiki.rows.length > 0) {
+      const wiki = existingWiki.rows[0];
+      const editHistory = Array.isArray(wiki.edit_history) ? wiki.edit_history : [];
+      editHistory.push({
+        userId: user.id,
+        username: user.username,
+        content: wiki.content,
+        editedAt: new Date().toISOString(),
+      });
+      // Keep last 50
+      const trimmedHistory = editHistory.slice(-50);
+
+      await query(
+        `UPDATE artist_wikis SET content = $1, infobox = $2, last_edited_by = $3,
+         last_edited_by_username = $4, edit_history = $5, updated_at = NOW()
+         WHERE id = $6`,
+        [content.trim(), infobox ? JSON.stringify(infobox) : null, user.id, user.username,
+         JSON.stringify(trimmedHistory), wiki.id]
       );
     } else {
-      // Create new wiki
-      await wikiCollection.insertOne({
-        artistTagId: tag._id,
-        artistTagName: primaryName,
-        content: content.trim(),
-        infobox: infobox,
-        lastEditedBy: new ObjectId(user.id),
-        lastEditedByUsername: user.username,
-        editHistory: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      await query(
+        `INSERT INTO artist_wikis (artist_tag_id, artist_tag_name, content, infobox,
+         last_edited_by, last_edited_by_username, edit_history, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, '[]', NOW(), NOW())`,
+        [tag.id, tag.name, content.trim(), infobox ? JSON.stringify(infobox) : null,
+         user.id, user.username]
+      );
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Wiki updated',
-    });
+    return NextResponse.json({ success: true, message: 'Wiki updated' });
   } catch (error) {
     console.error('Error updating wiki:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to update wiki' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to update wiki' }, { status: 500 });
   }
 }

@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "serika-accounts"]
+  "exclude": ["node_modules", "serika-accounts", "scripts", "scratch.ts"]
 }

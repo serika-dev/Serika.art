@@ -5,8 +5,8 @@ import { BASE_URL, SITEMAP_SIZE, wrapInSitemapIndex } from "@/lib/sitemap-utils"
 export async function GET() {
   try {
     const [totalImages, totalArtists] = await Promise.all([
-      getCachedCount("images", { deleted: { $ne: true }, unlisted: { $ne: true } }),
-      getCachedCount("tags", { type: "artist" })
+      getCachedCount("images", "deleted = FALSE AND unlisted = FALSE"),
+      getCachedCount("tags", "type = $1", ["artist"])
     ]);
 
     const imageChunks = Math.ceil(totalImages / SITEMAP_SIZE);

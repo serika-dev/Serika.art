@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCollection } from '@/lib/db';
+import { query, withTransaction } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { ObjectId } from 'mongodb';
 
 // GET /api/v1/images/[id] - Get single image details
 export async function GET(
@@ -15,52 +14,58 @@ export async function GET(
     }
 
     const { id } = await params;
-
-    if (!ObjectId.isValid(id)) {
+    const imageId = parseInt(id, 10);
+    if (isNaN(imageId)) {
       return apiError('Invalid image ID', 400, 'INVALID_ID');
     }
 
-    const collection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
-    const commentsCollection = await getCollection('comments');
+    const imageResult = await query(
+      `SELECT i.*, u.username as u_username
+       FROM images i
+       LEFT JOIN users u ON u.id = i.user_id
+       WHERE i.id = $1`,
+      [imageId]
+    );
 
-    const image = await collection.findOne({ _id: new ObjectId(id) });
-
-    if (!image) {
+    if (imageResult.rows.length === 0) {
       return apiError('Image not found', 404, 'NOT_FOUND');
     }
 
+    const image = imageResult.rows[0];
+
     // Get tags
-    const tagDocs = await tagsCollection
-      .find({ _id: { $in: image.tags || [] } })
-      .toArray();
-    const tagMap = new Map(tagDocs.map((t) => [t._id.toString(), t]));
+    const tagsResult = await query(
+      `SELECT t.name, t.type
+       FROM image_tags it
+       JOIN tags t ON t.id = it.tag_id
+       WHERE it.image_id = $1`,
+      [imageId]
+    );
 
     // Get comment count
-    const commentCount = await commentsCollection.countDocuments({
-      imageId: new ObjectId(id),
-    });
+    const commentCountResult = await query(
+      `SELECT COUNT(*) as count FROM comments WHERE image_id = $1`,
+      [imageId]
+    );
+    const commentCount = parseInt(commentCountResult.rows[0].count, 10);
 
     // Format response
     const formattedImage = {
-      id: image._id.toString(),
-      dbid: image._id.toString(),
-      post_id: image.sequentialId,
+      id: String(image.id),
+      dbid: String(image.id),
+      post_id: image.sequential_id,
       url: image.url,
-      thumbnail_url: image.thumbnailUrl,
-      original_filename: image.originalFilename,
+      thumbnail_url: image.thumbnail_url,
+      original_filename: image.original_filename,
       width: image.width,
       height: image.height,
-      file_size: image.fileSize,
-      content_type: image.contentType,
+      file_size: image.file_size,
+      content_type: image.content_type,
       rating: image.rating,
-      is_ai_generated: image.isAIGenerated,
+      is_ai_generated: image.is_ai_generated,
       source: image.source || null,
       description: image.description || null,
-      tags: (image.tags || []).map((tagId: ObjectId) => {
-        const tag = tagMap.get(tagId.toString());
-        return tag ? { name: tag.name, type: tag.type } : null;
-      }).filter(Boolean),
+      tags: tagsResult.rows.map(t => ({ name: t.name, type: t.type })),
       stats: {
         upvotes: image.upvotes || 0,
         downvotes: image.downvotes || 0,
@@ -70,17 +75,16 @@ export async function GET(
         comments: commentCount,
       },
       user: {
-        id: image.userId?.toString() || null,
-        username: image.username || 'Anonymous',
+        id: image.user_id || null,
+        username: image.u_username || image.username || 'Anonymous',
       },
-      created_at: image.createdAt,
-      updated_at: image.updatedAt,
+      created_at: image.created_at,
+      updated_at: image.updated_at,
     };
 
-    // Increment view count (don't wait)
-    collection.updateOne(
-      { _id: new ObjectId(id) },
-      { $inc: { views: 1 } }
+    // Increment view count (non-blocking)
+    query(`UPDATE images SET views = views + 1 WHERE id = $1`, [imageId]).catch((err) =>
+      console.error('Error incrementing view count:', err)
     );
 
     return apiResponse(formattedImage);
@@ -102,54 +106,56 @@ export async function DELETE(
     }
 
     const { id } = await params;
-
-    if (!ObjectId.isValid(id)) {
+    const imageId = parseInt(id, 10);
+    if (isNaN(imageId)) {
       return apiError('Invalid image ID', 400, 'INVALID_ID');
     }
 
-    const collection = await getCollection('images');
-    const tagsCollection = await getCollection('tags');
+    const imageResult = await query(`SELECT * FROM images WHERE id = $1`, [imageId]);
 
-    const image = await collection.findOne({ _id: new ObjectId(id) });
-
-    if (!image) {
+    if (imageResult.rows.length === 0) {
       return apiError('Image not found', 404, 'NOT_FOUND');
     }
 
+    const image = imageResult.rows[0];
+
     // Check ownership (API key owner must match image owner or be admin)
-    if (image.userId && validation.apiKey!.userId.toString() !== image.userId.toString()) {
+    if (image.user_id && validation.apiKey!.user_id !== image.user_id) {
       // Check if user is admin
-      const usersCollection = await getCollection('users');
-      const apiUser = await usersCollection.findOne({
-        _id: validation.apiKey!.userId,
-      });
+      const apiUserResult = await query(`SELECT rank FROM users WHERE id = $1`, [validation.apiKey!.user_id]);
+      const apiUser = apiUserResult.rows[0];
 
       if (!apiUser || !['admin', 'owner'].includes(apiUser.rank)) {
         return apiError('Unauthorized to delete this image', 403, 'FORBIDDEN');
       }
     }
 
-    // Decrement tag counts
-    if (image.tags && image.tags.length > 0) {
-      await tagsCollection.updateMany(
-        { _id: { $in: image.tags } },
-        { $inc: { count: -1 } }
+    // Perform deletions in a transaction
+    await withTransaction(async (client) => {
+      // Get associated tags
+      const tagIdsResult = await client.query(
+        `SELECT tag_id FROM image_tags WHERE image_id = $1`,
+        [imageId]
       );
-    }
+      const tagIds = tagIdsResult.rows.map(r => r.tag_id);
 
-    // Delete related data
-    const votesCollection = await getCollection('votes');
-    const favoritesCollection = await getCollection('favorites');
-    const commentsCollection = await getCollection('comments');
+      // Decrement tag counts
+      if (tagIds.length > 0) {
+        await client.query(
+          `UPDATE tags SET count = count - 1 WHERE id = ANY($1::int[])`,
+          [tagIds]
+        );
+      }
 
-    await Promise.all([
-      collection.deleteOne({ _id: new ObjectId(id) }),
-      votesCollection.deleteMany({ imageId: new ObjectId(id) }),
-      favoritesCollection.deleteMany({ imageId: new ObjectId(id) }),
-      commentsCollection.deleteMany({ imageId: new ObjectId(id) }),
-    ]);
+      // Delete relationships and image
+      await client.query(`DELETE FROM votes WHERE image_id = $1`, [imageId]);
+      await client.query(`DELETE FROM favorites WHERE image_id = $1`, [imageId]);
+      await client.query(`DELETE FROM comments WHERE image_id = $1`, [imageId]);
+      await client.query(`DELETE FROM image_tags WHERE image_id = $1`, [imageId]);
+      await client.query(`DELETE FROM images WHERE id = $1`, [imageId]);
+    });
 
-    return apiResponse({ deleted: true, id });
+    return apiResponse({ deleted: true, id: String(imageId) });
   } catch (error: any) {
     console.error('API v1 image delete error:', error);
     return apiError('Internal server error', 500, 'INTERNAL_ERROR');
