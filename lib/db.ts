@@ -184,6 +184,44 @@ export async function getNextSequentialId(
   return result.rows[0].value;
 }
 
+/** Synchronize all serial sequences and counters with actual max values in the tables. */
+export async function syncSequencesAndCounters(): Promise<void> {
+  const sequences = [
+    { table: 'tags', column: 'id', seq: 'tags_id_seq' },
+    { table: 'images', column: 'id', seq: 'images_id_seq' },
+    { table: 'votes', column: 'id', seq: 'votes_id_seq' },
+    { table: 'favorites', column: 'id', seq: 'favorites_id_seq' },
+    { table: 'comments', column: 'id', seq: 'comments_id_seq' },
+    { table: 'artists', column: 'id', seq: 'artists_id_seq' },
+    { table: 'artist_claims', column: 'id', seq: 'artist_claims_id_seq' },
+    { table: 'artist_reviews', column: 'id', seq: 'artist_reviews_id_seq' },
+    { table: 'artist_wikis', column: 'id', seq: 'artist_wikis_id_seq' },
+    { table: 'api_keys', column: 'id', seq: 'api_keys_id_seq' },
+    { table: 'import_jobs', column: 'id', seq: 'import_jobs_id_seq' },
+    { table: 'dmca_requests', column: 'id', seq: 'dmca_requests_id_seq' },
+    { table: 'moderation_logs', column: 'id', seq: 'moderation_logs_id_seq' },
+  ];
+
+  try {
+    for (const { table, column, seq } of sequences) {
+      await query(`
+        SELECT setval($1, COALESCE((SELECT MAX(${column}) FROM ${table}), 1))
+      `, [seq]);
+    }
+    
+    await query(`
+      INSERT INTO counters (name, value)
+      VALUES ('imageSequentialId', COALESCE((SELECT MAX(sequential_id) FROM images), 1))
+      ON CONFLICT (name) DO UPDATE SET value = GREATEST(counters.value, EXCLUDED.value)
+    `);
+    
+    console.log('[DB] Sequences and counters synchronized successfully ✓');
+  } catch (error) {
+    console.error('[DB] Failed to synchronize sequences and counters:', error);
+  }
+}
+
+
 // ── Schema bootstrap (called once) ─────────────────────────────────
 export async function ensureSchema(): Promise<void> {
   if (schemaInitialized) return;
@@ -463,6 +501,9 @@ export async function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+
+    // Self-heal/resync any diverged sequences/counters on startup
+    await syncSequencesAndCounters();
 
     console.log('[DB] Schema ensured ✓');
   } catch (error) {
