@@ -311,6 +311,7 @@ export async function ensureSchema(): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS idx_image_tags_tag ON image_tags (tag_id);
       CREATE INDEX IF NOT EXISTS idx_image_tags_image ON image_tags (image_id);
+      CREATE INDEX IF NOT EXISTS idx_image_tags_tag_image ON image_tags (tag_id, image_id);
 
       -- Votes
       CREATE TABLE IF NOT EXISTS votes (
@@ -333,6 +334,7 @@ export async function ensureSchema(): Promise<void> {
         UNIQUE (user_id, image_id)
       );
       CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites (user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_favorites_image ON favorites (image_id);
 
       -- Comments
       CREATE TABLE IF NOT EXISTS comments (

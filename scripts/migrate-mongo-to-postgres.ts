@@ -32,12 +32,12 @@ async function ensureUserExists(pgPool: Pool, userId: any, username: string) {
     if (nameCheck.rows.length > 0) {
       const uniqueUsername = `${username}_${sUserId.slice(-4)}`;
       await pgPool.query(
-        `INSERT INTO users (id, username, rank) VALUES ($1, $2, 'user') ON CONFLICT (id) DO NOTHING`,
+        `INSERT INTO users (id, username, rank, created_at) VALUES ($1, $2, 'user', '2000-01-01 00:00:00+00') ON CONFLICT (id) DO NOTHING`,
         [sUserId, uniqueUsername]
       );
     } else {
       await pgPool.query(
-        `INSERT INTO users (id, username, rank) VALUES ($1, $2, 'user') ON CONFLICT (id) DO NOTHING`,
+        `INSERT INTO users (id, username, rank, created_at) VALUES ($1, $2, 'user', '2000-01-01 00:00:00+00') ON CONFLICT (id) DO NOTHING`,
         [sUserId, username]
       );
     }
@@ -92,15 +92,21 @@ async function main() {
   const shouldClean = process.argv.includes('--clean');
   const skipVotes = process.argv.includes('--skip-votes');
   const skipFavorites = process.argv.includes('--skip-favorites');
+  const repairInteractions = process.argv.includes('--repair-interactions');
 
   try {
     if (shouldClean) {
       console.log('🗑️  Truncating target tables...');
       await pgPool.query(`TRUNCATE TABLE image_tags, votes, favorites, comments, artist_reviews, artist_claims, artist_wikis, artists, dmca_requests, moderation_logs, images, api_keys, users, counters, import_jobs RESTART IDENTITY CASCADE;`);
       console.log('✅ Tables truncated.\n');
+    } else if (repairInteractions) {
+      console.log('🗑️  Truncating comments, votes, and favorites tables for correction...');
+      await pgPool.query(`TRUNCATE TABLE comments, votes, favorites RESTART IDENTITY CASCADE;`);
+      console.log('✅ Comments, votes, and favorites tables truncated.\n');
     }
 
     const tagNameMap = new Map<string, number>();
+    const mongoIdToPgId = new Map<string, number>();
     if (!shouldClean) {
       console.log('🔄 Pre-loading existing tags...');
       const tagRes = await pgPool.query('SELECT id, name FROM tags');
@@ -234,6 +240,16 @@ async function main() {
       for (const res of imgResults) for (const row of res.rows) imageSeqIdToPgId.set(row.sequential_id, row.id);
       for (const img of deduplicatedChunk) if (existingImgIds.has(parseInt(img.sequentialId || img.sequential_id))) imageSeqIdToPgId.set(parseInt(img.sequentialId || img.sequential_id), existingImgIds.get(parseInt(img.sequentialId || img.sequential_id))!);
 
+      for (const img of deduplicatedChunk) {
+        const seqId = parseInt(img.sequentialId || img.sequential_id);
+        if (!isNaN(seqId) && img._id) {
+          const pgId = imageSeqIdToPgId.get(seqId);
+          if (pgId) {
+            mongoIdToPgId.set(img._id.toString(), pgId);
+          }
+        }
+      }
+
       const junctionQueue: { image_id: number; tag_id: number }[] = [];
       const newTagsToCreate = new Map<string, string>();
       for (const img of deduplicatedChunk) {
@@ -291,14 +307,6 @@ async function main() {
       }
     });
 
-    const imageSeqIdToPgId = new Map<number, number>();
-    if (!skipVotes || !skipFavorites) {
-      console.log('🔄 Loading image sequential ID mappings...');
-      const imgRes = await pgPool.query('SELECT id, sequential_id FROM images');
-      for (const row of imgRes.rows) imageSeqIdToPgId.set(row.sequential_id, row.id);
-      console.log(`✅ Loaded ${imageSeqIdToPgId.size} sequential ID mappings.\n`);
-    }
-
     // --- PHASE 4: VOTES ---
     if (!skipVotes) {
       console.log('🗳️  Migrating votes...');
@@ -306,8 +314,10 @@ async function main() {
         const uniqueVotesMap = new Map<string, any>();
         for (const v of chunk) {
           const userId = (v.userId || v.user_id)?.toString();
-          const pgImgId = imageSeqIdToPgId.get(parseInt(v.imageId || v.image_id));
+          const mongoId = (v.imageId || v.image_id)?.toString();
+          const pgImgId = mongoId ? mongoIdToPgId.get(mongoId) : undefined;
           if (!userId || !pgImgId) continue;
+          v.pgImgId = pgImgId;
           uniqueVotesMap.set(`${userId}-${pgImgId}`, v);
         }
         const deduplicatedVotes = Array.from(uniqueVotesMap.values());
@@ -321,7 +331,7 @@ async function main() {
           const placeholders: string[] = []; const values: any[] = []; let idx = 1;
           for (const v of subChunk) {
             placeholders.push(`($${idx}, $${idx+1}, $${idx+2}, $${idx+3})`);
-            values.push((v.userId || v.user_id).toString(), imageSeqIdToPgId.get(parseInt(v.imageId || v.image_id))!, v.type || 'upvote', v.createdAt || v.created_at || new Date());
+            values.push((v.userId || v.user_id).toString(), v.pgImgId, v.type || 'upvote', v.createdAt || v.created_at || new Date());
             idx += 4;
           }
           if (values.length > 0) vPromises.push(pgPool.query(`INSERT INTO votes (user_id, image_id, type, created_at) VALUES ${placeholders.join(', ')} ON CONFLICT (user_id, image_id) DO UPDATE SET type = EXCLUDED.type`, values));
@@ -338,8 +348,10 @@ async function main() {
         const uniqueFavsMap = new Map<string, any>();
         for (const f of chunk) {
           const userId = (f.userId || f.user_id)?.toString();
-          const pgImgId = imageSeqIdToPgId.get(parseInt(f.imageId || f.image_id));
+          const mongoId = (f.imageId || f.image_id)?.toString();
+          const pgImgId = mongoId ? mongoIdToPgId.get(mongoId) : undefined;
           if (!userId || !pgImgId) continue;
+          f.pgImgId = pgImgId;
           uniqueFavsMap.set(`${userId}-${pgImgId}`, f);
         }
         const deduplicatedFavs = Array.from(uniqueFavsMap.values());
@@ -353,7 +365,7 @@ async function main() {
           const placeholders: string[] = []; const values: any[] = []; let idx = 1;
           for (const f of subChunk) {
             placeholders.push(`($${idx}, $${idx+1}, $${idx+2})`);
-            values.push((f.userId || f.user_id).toString(), imageSeqIdToPgId.get(parseInt(f.imageId || f.image_id))!, f.createdAt || f.created_at || new Date());
+            values.push((f.userId || f.user_id).toString(), f.pgImgId, f.createdAt || f.created_at || new Date());
             idx += 3;
           }
           if (values.length > 0) fPromises.push(pgPool.query(`INSERT INTO favorites (user_id, image_id, created_at) VALUES ${placeholders.join(', ')} ON CONFLICT (user_id, image_id) DO NOTHING`, values));
@@ -374,7 +386,8 @@ async function main() {
         const subChunk = chunk.slice(i, i + 6000);
         const placeholders: string[] = []; const values: any[] = []; let idx = 1;
         for (const c of subChunk) {
-          const pgImgId = imageSeqIdToPgId.get(parseInt(c.imageId || c.image_id));
+          const mongoId = (c.imageId || c.image_id)?.toString();
+          const pgImgId = mongoId ? mongoIdToPgId.get(mongoId) : undefined;
           const userId = c.userId ? c.userId.toString() : (c.user_id ? c.user_id.toString() : null);
           if (!pgImgId || !userId) continue;
           placeholders.push(`($${idx}, $${idx+1}, $${idx+2}, $${idx+3}, $${idx+4}, $${idx+5}, NULL, $${idx+6}, $${idx+7}, $${idx+8}, $${idx+9})`);
@@ -385,6 +398,51 @@ async function main() {
       }
       await Promise.all(cPromises);
     });
+
+    // --- PHASE 7: IMPORT JOBS ---
+    console.log('📦 Migrating import jobs...');
+    try {
+      let collectionName = 'import_jobs';
+      const collections = await mdb.listCollections().toArray();
+      const names = collections.map((c: any) => c.name);
+      if (!names.includes('import_jobs') && names.includes('importJobs')) {
+        collectionName = 'importJobs';
+      }
+      
+      await migrateCollectionInBatches<any>(mdb, collectionName, 20000, null, async (chunk) => {
+        const promises = [];
+        for (const j of chunk) {
+          const type = j.type || 'tags';
+          const queryVal = j.query || '';
+          const limitVal = parseInt(j.limit || j.limit_val) || 100;
+          const status = j.status || 'pending';
+          const progress = JSON.stringify(j.progress || { current: 0, total: 0, successful: 0, failed: 0, skipped: 0 });
+          const posts = JSON.stringify(j.posts || []);
+          const currentIndex = parseInt(j.currentPostIndex || j.current_post_index) || 0;
+          const errorVal = j.error || null;
+          const createdBy = j.createdBy || j.created_by || 'system';
+          const startedAt = j.startedAt || j.started_at || null;
+          const completedAt = j.completedAt || j.completed_at || null;
+          const createdAt = j.createdAt || j.created_at || new Date();
+
+          promises.push(pgPool.query(
+            `INSERT INTO import_jobs (
+               type, query, limit_val, status, progress, posts, current_post_index,
+               error, created_by, started_at, completed_at, created_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             ON CONFLICT DO NOTHING`,
+            [
+              type, queryVal, limitVal, status, progress, posts, currentIndex,
+              errorVal, createdBy, startedAt, completedAt, createdAt
+            ]
+          ));
+        }
+        await Promise.all(promises);
+      });
+      console.log('✅ Completed import jobs migration.\n');
+    } catch (err: any) {
+      console.log(`⚠️ Warning: Failed to migrate import jobs: ${err.message}`);
+    }
 
   } catch (error) {
     console.error('\n❌ Migration Failed:', error);

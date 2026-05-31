@@ -664,10 +664,16 @@ function YouTubeWidget({ params }: { params: Record<string, string> }) {
   const id = params.id || params.v || params._0;
   if (!id) return null;
 
+  // Extract ID from full URL if provided
+  const trimmed = id.trim();
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = trimmed.match(regExp);
+  const finalId = (match && match[2].length === 11) ? match[2] : trimmed;
+
   return (
     <div className="my-6 aspect-video rounded-xl overflow-hidden bg-zinc-900">
       <iframe
-        src={`https://www.youtube.com/embed/${id}`}
+        src={`https://www.youtube.com/embed/${finalId}`}
         className="w-full h-full"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowFullScreen
@@ -675,6 +681,7 @@ function YouTubeWidget({ params }: { params: Record<string, string> }) {
     </div>
   );
 }
+
 
 // Columns Widget
 function ColumnsWidget({ params, content }: { params: Record<string, string>; content?: string }) {

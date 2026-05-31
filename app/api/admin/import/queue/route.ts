@@ -92,13 +92,40 @@ export async function GET(request: NextRequest) {
     if (!job) {
       return NextResponse.json({ success: false, error: 'Job not found' }, { status: 404 });
     }
-    return NextResponse.json({ success: true, job });
+    const formattedJob = {
+      _id: String(job.id),
+      type: job.type,
+      query: job.query,
+      limit: job.limit_val,
+      status: job.status,
+      progress: job.progress,
+      createdAt: job.created_at,
+      startedAt: job.started_at,
+      completedAt: job.completed_at,
+      error: job.error,
+      createdBy: job.created_by,
+    };
+    return NextResponse.json({ success: true, job: formattedJob });
   }
 
   const jobs = await getImportJobs(50);
+  const formattedJobs = jobs.map(job => ({
+    _id: String(job.id),
+    type: job.type,
+    query: job.query,
+    limit: job.limit_val,
+    status: job.status,
+    progress: job.progress,
+    createdAt: job.created_at,
+    startedAt: job.started_at,
+    completedAt: job.completed_at,
+    error: job.error,
+    createdBy: job.created_by,
+  }));
+
   return NextResponse.json({ 
     success: true, 
-    jobs,
+    jobs: formattedJobs,
     speedMode: getCurrentMode(),
     speedSettings: getCurrentSettings(),
   });
@@ -171,7 +198,19 @@ export async function POST(request: NextRequest) {
       for (const q of queries) {
         if (q.trim()) {
           const job = await createImportJob(type, q.trim(), limit, user.username);
-          jobs.push(job);
+          jobs.push({
+            _id: String(job.id),
+            type: job.type,
+            query: job.query,
+            limit: job.limit_val,
+            status: job.status,
+            progress: job.progress,
+            createdAt: job.created_at,
+            startedAt: job.started_at,
+            completedAt: job.completed_at,
+            error: job.error,
+            createdBy: job.created_by,
+          });
         }
       }
       return NextResponse.json({
@@ -183,10 +222,23 @@ export async function POST(request: NextRequest) {
 
     // Single query
     const job = await createImportJob(type, query, limit, user.username);
+    const formattedJob = {
+      _id: String(job.id),
+      type: job.type,
+      query: job.query,
+      limit: job.limit_val,
+      status: job.status,
+      progress: job.progress,
+      createdAt: job.created_at,
+      startedAt: job.started_at,
+      completedAt: job.completed_at,
+      error: job.error,
+      createdBy: job.created_by,
+    };
     return NextResponse.json({
       success: true,
       message: `Import job created for "${query}"`,
-      job,
+      job: formattedJob,
     });
   } catch (error: any) {
     console.error('Error creating import job:', error);

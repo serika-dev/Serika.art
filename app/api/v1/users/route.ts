@@ -15,6 +15,9 @@ export async function GET(request: NextRequest) {
     const queryParams: any[] = [];
     let paramIdx = 1;
 
+    // Exclude auto-generated dummy placeholder accounts from the user directory
+    whereClauses.push(`u.username !~ '^user_[a-zA-Z0-9]{6}$'`);
+
     if (search) {
       whereClauses.push(`u.username ILIKE $${paramIdx}`);
       queryParams.push(`%${search}%`);
