@@ -89,6 +89,16 @@ async function main() {
   const mdb = mongoClient.db(mongoDbName);
   const pgPool = new Pool({ connectionString: postgresUrl, max: 20 });
 
+  const migratedUserIds = new Set<string>();
+  migratedUserIds.add('system');
+
+  // Ensure system user exists
+  await pgPool.query(`
+    INSERT INTO users (id, username, rank, created_at)
+    VALUES ('system', 'system', 'admin', '2000-01-01 00:00:00+00')
+    ON CONFLICT (id) DO NOTHING
+  `);
+
   const shouldClean = process.argv.includes('--clean');
   const skipVotes = process.argv.includes('--skip-votes');
   const skipFavorites = process.argv.includes('--skip-favorites');
@@ -128,6 +138,7 @@ async function main() {
       for (const row of existingUsers.rows) {
         takenUsernames.add(row.username.toLowerCase());
         existingUsersById.set(row.id, row.username);
+        migratedUserIds.add(row.id);
       }
     }
 
@@ -165,6 +176,9 @@ async function main() {
       }
     }
     await Promise.all(userPromises);
+    for (const u of deduplicatedUsers) {
+      migratedUserIds.add(u.id || u._id.toString());
+    }
     console.log(`✅ Migrated ${deduplicatedUsers.length} users.\n`);
 
     // --- PHASE 2: TAGS ---
@@ -214,10 +228,7 @@ async function main() {
       const deduplicatedChunk = Array.from(uniqueChunkMap.values());
       const filteredChunk = deduplicatedChunk.filter(img => !existingImgIds.has(parseInt(img.sequentialId || img.sequential_id)));
 
-      const chunkUploaderIds = new Set<string>();
-      for (const img of filteredChunk) chunkUploaderIds.add((img.userId || img.user_id || 'system').toString());
-      await Promise.all(Array.from(chunkUploaderIds).map(userId => ensureUserExists(pgPool, userId, `user_${userId.slice(-6)}`)));
-
+      // We don't need any ensureUserExists call since we'll fall back to 'system'
       const imageSeqIdToPgId = new Map<number, number>();
       const imgPromises = [];
 
@@ -228,8 +239,11 @@ async function main() {
         let idx = 1;
 
         for (const img of subChunk) {
+          const rawUserId = (img.userId || img.user_id || 'system').toString();
+          const finalUserId = migratedUserIds.has(rawUserId) ? rawUserId : 'system';
+
           placeholders.push(`($${idx}, $${idx+1}, $${idx+2}, $${idx+3}, $${idx+4}, $${idx+5}, $${idx+6}, $${idx+7}, $${idx+8}, $${idx+9}, $${idx+10}, $${idx+11}, $${idx+12}, $${idx+13}, $${idx+14}, $${idx+15}, $${idx+16}, $${idx+17}, $${idx+18}, $${idx+19}, $${idx+20}, $${idx+21}, $${idx+22}, $${idx+23}, $${idx+24}, $${idx+25}, $${idx+26}, $${idx+27}, $${idx+28}, $${idx+29})`);
-          values.push(parseInt(img.sequentialId || img.sequential_id), (img.userId || img.user_id || 'system').toString(), img.username || 'Anonymous', img.url, img.thumbnailUrl || img.thumbnail_url || null, img.originalFilename || img.original_filename || null, parseInt(img.fileSize || img.file_size) || 0, parseInt(img.width) || 0, parseInt(img.height) || 0, img.contentType || img.content_type || 'image/png', img.rating || 'safe', img.isAIGenerated || img.is_ai_generated || false, img.source || '', img.description || '', parseInt(img.upvotes) || 0, parseInt(img.downvotes) || 0, parseInt(img.favorites) || 0, parseInt(img.views) || 0, img.deleted || false, img.deletedAt || img.deleted_at || null, img.deletedBy || img.deleted_by || null, img.deletedByUsername || img.deleted_by_username || null, img.deletionReason || img.deletion_reason || null, img.unlisted || false, img.unlistedAt || img.unlisted_at || null, img.unlistedBy || img.unlisted_by || null, img.unlistedByUsername || img.unlisted_by_username || null, img.unlistReason || img.unlist_reason || null, img.createdAt || img.created_at || new Date(), img.updatedAt || img.updated_at || new Date());
+          values.push(parseInt(img.sequentialId || img.sequential_id), finalUserId, img.username || 'Anonymous', img.url, img.thumbnailUrl || img.thumbnail_url || null, img.originalFilename || img.original_filename || null, parseInt(img.fileSize || img.file_size) || 0, parseInt(img.width) || 0, parseInt(img.height) || 0, img.contentType || img.content_type || 'image/png', img.rating || 'safe', img.isAIGenerated || img.is_ai_generated || false, img.source || '', img.description || '', parseInt(img.upvotes) || 0, parseInt(img.downvotes) || 0, parseInt(img.favorites) || 0, parseInt(img.views) || 0, img.deleted || false, img.deletedAt || img.deleted_at || null, img.deletedBy || img.deleted_by || null, img.deletedByUsername || img.deleted_by_username || null, img.deletionReason || img.deletion_reason || null, img.unlisted || false, img.unlistedAt || img.unlisted_at || null, img.unlistedBy || img.unlisted_by || null, img.unlistedByUsername || img.unlisted_by_username || null, img.unlistReason || img.unlist_reason || null, img.createdAt || img.created_at || new Date(), img.updatedAt || img.updated_at || new Date());
           idx += 30;
         }
         if (values.length > 0) {
@@ -314,16 +328,15 @@ async function main() {
         const uniqueVotesMap = new Map<string, any>();
         for (const v of chunk) {
           const userId = (v.userId || v.user_id)?.toString();
+          const finalUserId = (userId && migratedUserIds.has(userId)) ? userId : 'system';
           const mongoId = (v.imageId || v.image_id)?.toString();
           const pgImgId = mongoId ? mongoIdToPgId.get(mongoId) : undefined;
-          if (!userId || !pgImgId) continue;
+          if (!pgImgId) continue;
           v.pgImgId = pgImgId;
-          uniqueVotesMap.set(`${userId}-${pgImgId}`, v);
+          v.finalUserId = finalUserId;
+          uniqueVotesMap.set(`${finalUserId}-${pgImgId}`, v);
         }
         const deduplicatedVotes = Array.from(uniqueVotesMap.values());
-        
-        const uniqueUserIds = Array.from(new Set(deduplicatedVotes.map(v => (v.userId || v.user_id).toString())));
-        await Promise.all(uniqueUserIds.map(userId => ensureUserExists(pgPool, userId, `user_${userId.slice(-6)}`)));
 
         const vPromises = [];
         for (let i = 0; i < deduplicatedVotes.length; i += 15000) {
@@ -331,7 +344,7 @@ async function main() {
           const placeholders: string[] = []; const values: any[] = []; let idx = 1;
           for (const v of subChunk) {
             placeholders.push(`($${idx}, $${idx+1}, $${idx+2}, $${idx+3})`);
-            values.push((v.userId || v.user_id).toString(), v.pgImgId, v.type || 'upvote', v.createdAt || v.created_at || new Date());
+            values.push(v.finalUserId, v.pgImgId, v.type || 'upvote', v.createdAt || v.created_at || new Date());
             idx += 4;
           }
           if (values.length > 0) vPromises.push(pgPool.query(`INSERT INTO votes (user_id, image_id, type, created_at) VALUES ${placeholders.join(', ')} ON CONFLICT (user_id, image_id) DO UPDATE SET type = EXCLUDED.type`, values));
@@ -348,16 +361,15 @@ async function main() {
         const uniqueFavsMap = new Map<string, any>();
         for (const f of chunk) {
           const userId = (f.userId || f.user_id)?.toString();
+          const finalUserId = (userId && migratedUserIds.has(userId)) ? userId : 'system';
           const mongoId = (f.imageId || f.image_id)?.toString();
           const pgImgId = mongoId ? mongoIdToPgId.get(mongoId) : undefined;
-          if (!userId || !pgImgId) continue;
+          if (!pgImgId) continue;
           f.pgImgId = pgImgId;
-          uniqueFavsMap.set(`${userId}-${pgImgId}`, f);
+          f.finalUserId = finalUserId;
+          uniqueFavsMap.set(`${finalUserId}-${pgImgId}`, f);
         }
         const deduplicatedFavs = Array.from(uniqueFavsMap.values());
-
-        const uniqueUserIds = Array.from(new Set(deduplicatedFavs.map(f => (f.userId || f.user_id).toString())));
-        await Promise.all(uniqueUserIds.map(userId => ensureUserExists(pgPool, userId, `user_${userId.slice(-6)}`)));
 
         const fPromises = [];
         for (let i = 0; i < deduplicatedFavs.length; i += 20000) {
@@ -365,7 +377,7 @@ async function main() {
           const placeholders: string[] = []; const values: any[] = []; let idx = 1;
           for (const f of subChunk) {
             placeholders.push(`($${idx}, $${idx+1}, $${idx+2})`);
-            values.push((f.userId || f.user_id).toString(), f.pgImgId, f.createdAt || f.created_at || new Date());
+            values.push(f.finalUserId, f.pgImgId, f.createdAt || f.created_at || new Date());
             idx += 3;
           }
           if (values.length > 0) fPromises.push(pgPool.query(`INSERT INTO favorites (user_id, image_id, created_at) VALUES ${placeholders.join(', ')} ON CONFLICT (user_id, image_id) DO NOTHING`, values));
@@ -378,9 +390,6 @@ async function main() {
     // --- PHASE 6: COMMENTS ---
     console.log('💬 Migrating comments...');
     await migrateCollectionInBatches<any>(mdb, 'comments', 20000, null, async (chunk) => {
-      const uniqueUserIds = Array.from(new Set(chunk.map(c => c.userId ? c.userId.toString() : (c.user_id ? c.user_id.toString() : null)).filter(Boolean)));
-      await Promise.all(uniqueUserIds.map((userId: string) => ensureUserExists(pgPool, userId, `user_${userId.slice(-6)}`)));
-
       const cPromises = [];
       for (let i = 0; i < chunk.length; i += 6000) {
         const subChunk = chunk.slice(i, i + 6000);
@@ -390,8 +399,11 @@ async function main() {
           const pgImgId = mongoId ? mongoIdToPgId.get(mongoId) : undefined;
           const userId = c.userId ? c.userId.toString() : (c.user_id ? c.user_id.toString() : null);
           if (!pgImgId || !userId) continue;
+
+          const finalUserId = migratedUserIds.has(userId) ? userId : 'system';
+
           placeholders.push(`($${idx}, $${idx+1}, $${idx+2}, $${idx+3}, $${idx+4}, $${idx+5}, NULL, $${idx+6}, $${idx+7}, $${idx+8}, $${idx+9})`);
-          values.push(pgImgId, userId, c.username || 'Anonymous', c.avatarUrl || c.avatar_url || null, c.rank || 'user', c.content, c.asArtist || c.as_artist || false, c.artistTagId || c.artist_tag_id || null, c.createdAt || c.created_at || new Date(), c.updatedAt || c.updated_at || new Date());
+          values.push(pgImgId, finalUserId, c.username || 'Anonymous', c.avatarUrl || c.avatar_url || null, c.rank || 'user', c.content, c.asArtist || c.as_artist || false, c.artistTagId || c.artist_tag_id || null, c.createdAt || c.created_at || new Date(), c.updatedAt || c.updated_at || new Date());
           idx += 10;
         }
         if (values.length > 0) cPromises.push(pgPool.query(`INSERT INTO comments (image_id, user_id, username, avatar_url, rank, content, parent_id, as_artist, artist_tag_id, created_at, updated_at) VALUES ${placeholders.join(', ')} ON CONFLICT DO NOTHING`, values));

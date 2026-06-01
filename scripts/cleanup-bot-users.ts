@@ -29,17 +29,78 @@ async function cleanup() {
   const pgPool = new Pool({ connectionString: postgresUrl, max: 1 });
 
   try {
-    const countRes = await pgPool.query("SELECT COUNT(*) FROM users WHERE username ~ '^user_[a-zA-Z0-9]{6}$'");
-    console.log(`Total users matching '^user_[a-zA-Z0-9]{6}$': ${countRes.rows[0].count}`);
+    console.log('Beginning split-query database consolidation...');
 
-    const uploadRes = await pgPool.query("SELECT COUNT(*) FROM users u WHERE u.username ~ '^user_[a-zA-Z0-9]{6}$' AND NOT EXISTS (SELECT 1 FROM images WHERE user_id = u.id)");
-    console.log(`Matching users with 0 uploads: ${uploadRes.rows[0].count}`);
+    // 1. Ensure system user exists
+    await pgPool.query(`
+      INSERT INTO users (id, username, rank, created_at)
+      VALUES ('system', 'system', 'admin', '2000-01-01 00:00:00+00')
+      ON CONFLICT (id) DO NOTHING
+    `);
+    console.log('  - Ensured system user account exists.');
 
-    console.log('Purging all auto-generated placeholder dummy users...');
-    const result = await pgPool.query("DELETE FROM users WHERE username ~ '^user_[a-zA-Z0-9]{6}$'");
-    console.log(`✅ Purged ${result.rowCount} placeholder user accounts!`);
+    // 2. Consolidate anonymous images under system (split queries)
+    let res = await pgPool.query(`
+      UPDATE images 
+      SET user_id = 'system' 
+      WHERE user_id IS NULL
+    `);
+    console.log(`  - Reassigned ${res.rowCount} null user_id images to 'system'.`);
+
+    try {
+      res = await pgPool.query(`
+        UPDATE images 
+        SET user_id = 'system' 
+        WHERE username = 'Anonymous' AND user_id != 'system'
+      `);
+      console.log(`  - Reassigned ${res.rowCount} Anonymous images to 'system'.`);
+    } catch (e: any) {
+      console.log(`  ⚠️ Warning during Anonymous images reassignment: ${e.message}`);
+    }
+
+    try {
+      res = await pgPool.query(`
+        UPDATE images 
+        SET user_id = 'system' 
+        WHERE user_id ~ '^user_[a-zA-Z0-9]{6}$'
+      `);
+      console.log(`  - Reassigned ${res.rowCount} dummy user_id images to 'system'.`);
+    } catch (e: any) {
+      console.log(`  ⚠️ Warning during dummy user_id images reassignment: ${e.message}`);
+    }
+
+    // 3. Consolidate anonymous comments under system (split queries)
+    res = await pgPool.query(`
+      UPDATE comments 
+      SET user_id = 'system' 
+      WHERE user_id IS NULL
+    `);
+    console.log(`  - Reassigned ${res.rowCount} null user_id comments to 'system'.`);
+
+    res = await pgPool.query(`
+      UPDATE comments 
+      SET user_id = 'system' 
+      WHERE username = 'Anonymous' AND user_id != 'system'
+    `);
+    console.log(`  - Reassigned ${res.rowCount} Anonymous comments to 'system'.`);
+
+    res = await pgPool.query(`
+      UPDATE comments 
+      SET user_id = 'system' 
+      WHERE user_id ~ '^user_[a-zA-Z0-9]{6}$'
+    `);
+    console.log(`  - Reassigned ${res.rowCount} dummy user_id comments to 'system'.`);
+
+    // 4. Clean up any remaining placeholder dummy users
+    const userRes = await pgPool.query(`
+      DELETE FROM users 
+      WHERE username ~ '^user_[a-zA-Z0-9]{6}$'
+    `);
+    console.log(`  - Deleted ${userRes.rowCount} remaining placeholder dummy user profiles.`);
+
+    console.log('\n✅ Database consolidated successfully!');
   } catch (error) {
-    console.error('Error cleaning up bot users:', error);
+    console.error('\n❌ Error in consolidation:', error);
   } finally {
     await pgPool.end();
   }
