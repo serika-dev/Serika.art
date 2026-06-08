@@ -28,7 +28,7 @@ export interface ImportJob {
     failed: number;
     skipped: number;
   };
-  posts?: number[];
+  post_ids?: number[];
   current_post_index?: number;
   created_at: Date;
   started_at?: Date;
@@ -347,7 +347,7 @@ async function processJob(job: ImportJob): Promise<void> {
   console.log(`[JOB ${job.id}] Starting: ${job.type} - "${job.query}" (limit: ${job.limit_val === 0 ? 'UNLIMITED' : job.limit_val})`);
 
   try {
-    let postIds: number[] = job.posts || [];
+    let postIds: number[] = job.post_ids || [];
 
     // Fetch post list if needed
     if (postIds.length === 0) {
@@ -381,7 +381,7 @@ async function processJob(job: ImportJob): Promise<void> {
 
       await query(
         `UPDATE import_jobs
-         SET posts = $1, progress = $2, current_post_index = 0
+         SET post_ids = $1, progress = $2, current_post_index = 0
          WHERE id = $3`,
         [JSON.stringify(newPostIds), JSON.stringify(newProgress), job.id]
       );
@@ -554,7 +554,7 @@ async function processImportQueue(): Promise<void> {
         limit_val: row.limit_val,
         status: row.status,
         progress: row.progress || { current: 0, total: 0, successful: 0, failed: 0, skipped: 0 },
-        posts: row.posts || [],
+        post_ids: row.post_ids || [],
         current_post_index: row.current_post_index || 0,
         created_at: row.created_at,
         started_at: row.started_at,
@@ -615,7 +615,7 @@ export async function createImportJob(
   };
 
   const result = await query(
-    `INSERT INTO import_jobs (type, query, limit_val, status, progress, posts, current_post_index, created_at, created_by)
+    `INSERT INTO import_jobs (type, query, limit_val, status, progress, post_ids, current_post_index, created_at, created_by)
      VALUES ($1, $2, $3, 'pending', $4, '[]'::jsonb, 0, NOW(), $5)
      RETURNING *`,
     [type, queryStr, limitVal, JSON.stringify(progressInit), createdBy]
@@ -629,7 +629,7 @@ export async function createImportJob(
     limit_val: row.limit_val,
     status: row.status,
     progress: row.progress || progressInit,
-    posts: row.posts || [],
+    post_ids: row.post_ids || [],
     current_post_index: row.current_post_index || 0,
     created_at: row.created_at,
     created_by: row.created_by,
@@ -658,7 +658,7 @@ export async function getImportJobs(limit = 50): Promise<ImportJob[]> {
     limit_val: row.limit_val,
     status: row.status,
     progress: row.progress || { current: 0, total: 0, successful: 0, failed: 0, skipped: 0 },
-    posts: row.posts || [],
+    post_ids: row.post_ids || [],
     current_post_index: row.current_post_index || 0,
     created_at: row.created_at,
     started_at: row.started_at,
@@ -683,7 +683,7 @@ export async function getImportJob(jobId: string): Promise<ImportJob | null> {
     limit_val: row.limit_val,
     status: row.status,
     progress: row.progress || { current: 0, total: 0, successful: 0, failed: 0, skipped: 0 },
-    posts: row.posts || [],
+    post_ids: row.post_ids || [],
     current_post_index: row.current_post_index || 0,
     created_at: row.created_at,
     started_at: row.started_at,
