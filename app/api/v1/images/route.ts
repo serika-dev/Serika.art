@@ -48,6 +48,9 @@ export async function GET(request: NextRequest) {
           pagination: { page, limit, total: 0, pages: 0 },
         });
       }
+      if (tagDocsResult.rows.length < tagNames.length) {
+        return apiError('One or more specified tags were not found', 404, 'TAG_NOT_FOUND');
+      }
       const tagIds = tagDocsResult.rows.map((t) => t.id);
 
       const imageIdsRes = await dbQuery(

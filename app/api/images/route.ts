@@ -56,6 +56,12 @@ export async function GET(request: NextRequest) {
           pagination: { page, limit, total: 0, pages: 0 },
         });
       }
+      if (tagIds.length < tagNames.length) {
+        return NextResponse.json(
+          { success: false, error: 'One or more specified tags were not found', code: 'TAG_NOT_FOUND' },
+          { status: 404 }
+        );
+      }
 
       // Images must have ALL specified tags
       conditions.push(

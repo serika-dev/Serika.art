@@ -58,6 +58,10 @@ export async function GET(
         `SELECT id FROM tags WHERE LOWER(name) = ANY($1)`,
         [tagNames.map(t => t.toLowerCase())]
       );
+      if (tagDocsResult.rows.length < tagNames.length) {
+        // Not all tags found; treat as no match so a placeholder is returned
+        tagDocsResult.rows = [];
+      }
       if (tagDocsResult.rows.length > 0) {
         const tagIds = tagDocsResult.rows.map(r => r.id);
         const imageIdsRes = await dbQuery(

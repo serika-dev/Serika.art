@@ -36,6 +36,9 @@ export async function GET(request: NextRequest) {
       if (tagDocsResult.rows.length === 0) {
         return apiResponse([], { message: 'No images match the specified tags' });
       }
+      if (tagDocsResult.rows.length < tagNames.length) {
+        return apiError('One or more specified tags were not found', 404, 'TAG_NOT_FOUND');
+      }
       const tagIds = tagDocsResult.rows.map(r => r.id);
       
       const imageIdsRes = await query(
