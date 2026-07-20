@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+import { query, cacheGet, cacheSet } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
@@ -65,10 +65,18 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedQuery = searchQuery.trim().toLowerCase();
+    const safeLimit = Math.min(Math.max(parseInt(String(limit)) || 10, 1), 50);
+
+    // Autocomplete is hit on every keystroke — serve hot queries from cache.
+    const cacheKey = `tagac:${normalizedQuery}:${safeLimit}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached !== null) {
+      return NextResponse.json({ success: true, suggestions: JSON.parse(cached) });
+    }
 
     const result = await query(
       `SELECT * FROM tags WHERE name ILIKE $1 ORDER BY count DESC LIMIT $2`,
-      [`%${normalizedQuery}%`, limit * 3]
+      [`%${normalizedQuery}%`, safeLimit * 3]
     );
 
     // Score and sort suggestions
@@ -95,8 +103,10 @@ export async function POST(request: NextRequest) {
 
     const suggestions = scoredSuggestions
       .sort((a, b) => b.score - a.score)
-      .slice(0, limit)
+      .slice(0, safeLimit)
       .map(({ score, ...tag }) => tag);
+
+    await cacheSet(cacheKey, JSON.stringify(suggestions), 120);
 
     return NextResponse.json({ success: true, suggestions });
   } catch (error: any) {

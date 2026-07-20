@@ -194,17 +194,30 @@ export async function GET(request: NextRequest) {
     const total = countResult;
     const pages = Math.ceil(total / limit);
 
-    return NextResponse.json({
-      success: true,
-      images,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages,
-        has_next: page < pages,
+    return NextResponse.json(
+      {
+        success: true,
+        images,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages,
+          has_next: page < pages,
+        },
       },
-    });
+      {
+        headers: {
+          // Response is fully keyed by URL params, so it is safe to let the CDN/browser
+          // serve it briefly while revalidating in the background. Random sort must never
+          // be cached or every visitor sees the same "random" page.
+          'Cache-Control':
+            sort === 'random'
+              ? 'no-store'
+              : 'public, s-maxage=30, stale-while-revalidate=120',
+        },
+      }
+    );
   } catch (error) {
     console.error('Error fetching images:', error);
     return NextResponse.json(

@@ -39,9 +39,14 @@ export default function ImageCard({ image }: ImageCardProps) {
             title={(image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
             width={400}
             height={400}
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 25vw"
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1536px) 25vw, 20vw"
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
             loading="lazy"
+            decoding="async"
+            // Thumbnails are already generated at 320px and served from the CDN with a
+            // 1-year cache. Skip the Next.js image optimizer so the browser fetches them
+            // straight from the CDN instead of round-tripping through /_next/image.
+            unoptimized
           />
           
           {/* Overlays */}

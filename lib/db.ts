@@ -251,6 +251,11 @@ export async function ensureSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_tags_name ON tags (name);
       CREATE INDEX IF NOT EXISTS idx_tags_count ON tags (count DESC, name);
 
+      -- Trigram indexes for fast case-insensitive substring (ILIKE '%q%') search.
+      -- Powers tag autocomplete and the free-text image search without full scans.
+      CREATE EXTENSION IF NOT EXISTS pg_trgm;
+      CREATE INDEX IF NOT EXISTS idx_tags_name_trgm ON tags USING gin (name gin_trgm_ops);
+
       -- Images
       CREATE TABLE IF NOT EXISTS images (
         id SERIAL PRIMARY KEY,
@@ -302,6 +307,8 @@ export async function ensureSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_images_upvotes ON images (upvotes DESC, views DESC);
       CREATE INDEX IF NOT EXISTS idx_images_favorites ON images (favorites DESC);
       CREATE INDEX IF NOT EXISTS idx_images_views ON images (views DESC);
+      CREATE INDEX IF NOT EXISTS idx_images_description_trgm ON images USING gin (description gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS idx_images_username_trgm ON images USING gin (username gin_trgm_ops);
 
       -- Image-Tag junction
       CREATE TABLE IF NOT EXISTS image_tags (

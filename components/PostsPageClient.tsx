@@ -195,12 +195,14 @@ function PostsPageContent() {
   };
 
   useEffect(() => {
-    if (tagInput.trim().length > 0) {
-      fetchTagSuggestions();
-    } else {
+    if (tagInput.trim().length === 0) {
       setTagSuggestions([]);
       setShowSuggestions(false);
+      return;
     }
+    // Debounce so we don't fire a request on every keystroke.
+    const t = setTimeout(() => fetchTagSuggestions(), 250);
+    return () => clearTimeout(t);
   }, [tagInput]);
 
   const fetchImages = async () => {
@@ -571,9 +573,9 @@ function PostsPageContent() {
 
   return (
     <div className="flex gap-6 px-4 sm:px-6 lg:px-8 py-8 max-w-[1800px] mx-auto">
-      <aside className="hidden lg:block w-64 shrink-0">
-        <div className="sticky top-20">
-          <ScrollArea className="h-[calc(100vh-120px)] pr-4">
+      <aside className="hidden lg:block w-60 xl:w-64 2xl:w-72 shrink-0">
+        <div className="sticky top-[4.5rem]">
+          <ScrollArea className="h-[calc(100vh-6rem)] pr-4">
             {SidebarContent}
           </ScrollArea>
         </div>
