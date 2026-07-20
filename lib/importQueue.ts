@@ -1,4 +1,6 @@
-import { query, withTransaction } from '@/lib/db';
+// Background imports use the dedicated bounded import pool so they can never
+// exhaust connections needed by live web requests.
+import { importQuery as query, withImportTransaction as withTransaction } from '@/lib/db';
 import {
   fetchDanbooruPost,
   fetchDanbooruPostsByArtist,
@@ -59,15 +61,18 @@ const SPEED_PRESETS: Record<Exclude<SpeedMode, 'custom'>, SpeedSettings> = {
     dbUpdateInterval: 5,
   },
   turbo: {
-    concurrentJobs: 5,
-    concurrentImports: 20,
+    concurrentJobs: 2,
+    concurrentImports: 8,
     batchSize: 50,
     importDelay: 10,
     dbUpdateInterval: 10,
   },
+  // "insane" is bounded so total peak DB connections (jobs × imports) stays within
+  // the dedicated import pool (max 20). Fetch/upload/sharp work is still parallel;
+  // it's the DB fan-out that must be capped to avoid pool exhaustion.
   insane: {
-    concurrentJobs: 10,
-    concurrentImports: 50,
+    concurrentJobs: 3,
+    concurrentImports: 6,
     batchSize: 100,
     importDelay: 0,
     dbUpdateInterval: 20,

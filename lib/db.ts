@@ -15,7 +15,7 @@ export function getPool(): Pool {
   if (!pool) {
     pool = new Pool({
       connectionString: POSTGRES_URL,
-      max: 50,
+      max: 45,
       min: 5,
       idleTimeoutMillis: 60000,
       connectionTimeoutMillis: 10000,
@@ -28,12 +28,43 @@ export function getPool(): Pool {
   return pool;
 }
 
+// ── Dedicated import pool ────────────────────────────────────────────
+// Background bulk imports must NEVER be able to consume every connection and
+// starve live web requests (auth, image, tag lookups). They get their own
+// small, bounded pool so the web pool above always keeps headroom.
+let importPool: Pool | null = null;
+
+export function getImportPool(): Pool {
+  if (!importPool) {
+    importPool = new Pool({
+      connectionString: POSTGRES_URL,
+      max: 20,
+      min: 2,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 15000,
+      statement_timeout: 60000,
+    });
+    importPool.on('error', (err) => {
+      console.error('[DB] Unexpected import pool error:', err);
+    });
+  }
+  return importPool;
+}
+
 export async function query<T extends Record<string, any> = any>(
   text: string,
   params?: any[]
 ): Promise<QueryResult<T>> {
   const p = getPool();
   return p.query<T>(text, params);
+}
+
+/** Query against the bounded import pool (background jobs only). */
+export async function importQuery<T extends Record<string, any> = any>(
+  text: string,
+  params?: any[]
+): Promise<QueryResult<T>> {
+  return getImportPool().query<T>(text, params);
 }
 
 export async function getClient(): Promise<PoolClient> {
@@ -44,7 +75,21 @@ export async function getClient(): Promise<PoolClient> {
 export async function withTransaction<T>(
   fn: (client: PoolClient) => Promise<T>
 ): Promise<T> {
-  const client = await getClient();
+  return runTransaction(getPool(), fn);
+}
+
+/** Same as withTransaction but on the bounded import pool. */
+export async function withImportTransaction<T>(
+  fn: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  return runTransaction(getImportPool(), fn);
+}
+
+async function runTransaction<T>(
+  p: Pool,
+  fn: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  const client = await p.connect();
   try {
     await client.query('BEGIN');
     const result = await fn(client);
@@ -222,6 +267,57 @@ export async function syncSequencesAndCounters(): Promise<void> {
 }
 
 
+// Create optional/advanced indexes one at a time; failures are logged, not fatal.
+async function ensureIndividualIndexes(): Promise<void> {
+  // Functional index for import dedupe lookups (critical for import performance).
+  const critical = [
+    `CREATE INDEX IF NOT EXISTS idx_images_danbooru_id ON images ((metadata->>'danbooruId'))`,
+  ];
+  // Trigram indexes accelerate ILIKE '%q%' search but need the pg_trgm extension.
+  const trigram = [
+    `CREATE INDEX IF NOT EXISTS idx_tags_name_trgm ON tags USING gin (name gin_trgm_ops)`,
+    `CREATE INDEX IF NOT EXISTS idx_images_description_trgm ON images USING gin (description gin_trgm_ops)`,
+    `CREATE INDEX IF NOT EXISTS idx_images_username_trgm ON images USING gin (username gin_trgm_ops)`,
+  ];
+
+  // Index builds on a large existing table can exceed the pool statement_timeout.
+  // Use a dedicated client with the timeout disabled so builds can complete.
+  const client = await getPool().connect();
+  try {
+    await client.query(`SET statement_timeout = 0`);
+
+    for (const sql of critical) {
+      try {
+        await client.query(sql);
+      } catch (err: any) {
+        console.error('[DB] Failed to create critical index:', err?.message || err);
+      }
+    }
+
+    let trgmReady = false;
+    try {
+      await client.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+      trgmReady = true;
+    } catch (err: any) {
+      console.warn('[DB] pg_trgm extension unavailable, skipping trigram indexes:', err?.message || err);
+    }
+
+    if (trgmReady) {
+      for (const sql of trigram) {
+        try {
+          await client.query(sql);
+        } catch (err: any) {
+          console.error('[DB] Failed to create trigram index:', err?.message || err);
+        }
+      }
+    }
+  } finally {
+    // Reset the session default before returning the connection to the pool.
+    try { await client.query(`SET statement_timeout = 45000`); } catch {}
+    client.release();
+  }
+}
+
 // ── Schema bootstrap (called once) ─────────────────────────────────
 export async function ensureSchema(): Promise<void> {
   if (schemaInitialized) return;
@@ -250,11 +346,6 @@ export async function ensureSchema(): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS idx_tags_name ON tags (name);
       CREATE INDEX IF NOT EXISTS idx_tags_count ON tags (count DESC, name);
-
-      -- Trigram indexes for fast case-insensitive substring (ILIKE '%q%') search.
-      -- Powers tag autocomplete and the free-text image search without full scans.
-      CREATE EXTENSION IF NOT EXISTS pg_trgm;
-      CREATE INDEX IF NOT EXISTS idx_tags_name_trgm ON tags USING gin (name gin_trgm_ops);
 
       -- Images
       CREATE TABLE IF NOT EXISTS images (
@@ -307,8 +398,6 @@ export async function ensureSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_images_upvotes ON images (upvotes DESC, views DESC);
       CREATE INDEX IF NOT EXISTS idx_images_favorites ON images (favorites DESC);
       CREATE INDEX IF NOT EXISTS idx_images_views ON images (views DESC);
-      CREATE INDEX IF NOT EXISTS idx_images_description_trgm ON images USING gin (description gin_trgm_ops);
-      CREATE INDEX IF NOT EXISTS idx_images_username_trgm ON images USING gin (username gin_trgm_ops);
 
       -- Image-Tag junction
       CREATE TABLE IF NOT EXISTS image_tags (
@@ -510,6 +599,12 @@ export async function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+
+    // Create performance-critical indexes individually so that one failing
+    // (e.g. pg_trgm needs privileges the DB user lacks) never blocks the others.
+    // The danbooru-id index in particular prevents full-table scans that cause
+    // statement timeouts during bulk imports.
+    await ensureIndividualIndexes();
 
     // Self-heal/resync any diverged sequences/counters on startup
     await syncSequencesAndCounters();
