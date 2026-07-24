@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, cacheGet, cacheSet } from '@/lib/db';
 import { publicImageFilter, ratingFilter } from '@/lib/contentFilters';
 
-// Cache tag lookups
-const TAG_CACHE_TTL = 60; // 1 minute (Redis seconds)
+// Cache tag name→ID lookups — tag names almost never change
+const TAG_CACHE_TTL = 300; // 5 minutes
+const COUNT_CACHE_TTL = 600; // 10 minutes — counts are expensive on 1.5M rows
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,27 +41,58 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Resolve tag names to IDs
+    // Resolve tag names to IDs — with per-tag Redis cache
     if (tagNames.length > 0) {
-      const tagPlaceholders = tagNames.map((_, i) => `$${i + 1}`);
-      const tagResult = await query(
-        `SELECT id FROM tags WHERE name = ANY(ARRAY[${tagPlaceholders.join(',')}])`,
-        tagNames.map(t => t.toLowerCase())
-      );
+      const normalizedNames = tagNames.map(t => t.toLowerCase());
+      const tagIds: number[] = [];
+      const uncachedNames: string[] = [];
 
-      const tagIds = tagResult.rows.map(r => r.id);
+      // Check cache for each tag
+      for (const name of normalizedNames) {
+        const cachedId = await cacheGet(`tagid:${name}`);
+        if (cachedId !== null) {
+          tagIds.push(parseInt(cachedId, 10));
+        } else {
+          uncachedNames.push(name);
+        }
+      }
+
+      // Fetch uncached tags from DB in one query
+      if (uncachedNames.length > 0) {
+        const tagResult = await query(
+          `SELECT id, name FROM tags WHERE name = ANY($1::text[])`,
+          [uncachedNames]
+        );
+        for (const row of tagResult.rows) {
+          tagIds.push(row.id);
+          // Cache for 5 minutes
+          cacheSet(`tagid:${row.name}`, String(row.id), TAG_CACHE_TTL).catch(() => {});
+        }
+        // Check if any tags were not found
+        if (tagResult.rows.length < uncachedNames.length) {
+          const foundNames = new Set(tagResult.rows.map((r: any) => r.name));
+          const missing = uncachedNames.filter(n => !foundNames.has(n));
+          if (tagIds.length === 0) {
+            return NextResponse.json({
+              success: true,
+              images: [],
+              pagination: { page, limit, total: 0, pages: 0 },
+            });
+          }
+          // Some tags found, some not
+          return NextResponse.json(
+            { success: false, error: 'One or more specified tags were not found', code: 'TAG_NOT_FOUND' },
+            { status: 404 }
+          );
+        }
+      }
+
       if (tagIds.length === 0) {
         return NextResponse.json({
           success: true,
           images: [],
           pagination: { page, limit, total: 0, pages: 0 },
         });
-      }
-      if (tagIds.length < tagNames.length) {
-        return NextResponse.json(
-          { success: false, error: 'One or more specified tags were not found', code: 'TAG_NOT_FOUND' },
-          { status: 404 }
-        );
       }
 
       // Images must have ALL specified tags
@@ -148,7 +180,7 @@ export async function GET(request: NextRequest) {
           params
         );
         const count = parseInt(res.rows[0]?.count ?? '0', 10);
-        await cacheSet(countCacheKey, String(count), 300);
+        await cacheSet(countCacheKey, String(count), COUNT_CACHE_TTL);
         return count;
       })(),
     ]);

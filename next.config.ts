@@ -38,6 +38,11 @@ const nextConfig: NextConfig = {
     // Thumbnails are pre-generated & CDN-cached; keep modern formats + sane device sizes
     formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 31536000,
+    // Tuned to the grid layout breakpoints: 50vw mobile, 33vw tablet, 25vw desktop, 20vw 2xl
+    deviceSizes: [640, 750, 828, 1080, 1200, 1536, 1920],
+    imageSizes: [128, 256, 320, 400],
+    dangerouslyAllowSVG: true,
+    contentDispositionType: 'inline' as const,
     remotePatterns: [
       {
         protocol: 'https',

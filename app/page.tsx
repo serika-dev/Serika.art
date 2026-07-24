@@ -1,6 +1,9 @@
 import { Metadata } from 'next';
-import { query } from '@/lib/db';
+import { getCachedCount } from '@/lib/db';
 import HomePageClient from '@/components/HomePageClient';
+
+// ISR: cache this page for 60s — stats don't need to be real-time
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: 'Serika.art - Modern Anime Art Image Board & Serika Booru | 1.5M+ Artworks',
@@ -24,12 +27,11 @@ export const metadata: Metadata = {
 
 async function getStats() {
   try {
-    const imagesCountRes = await query(`SELECT COUNT(*) FROM images WHERE deleted = FALSE`);
-    const tagsCountRes = await query(`SELECT COUNT(*) FROM tags`);
-    
-    const imageCount = parseInt(imagesCountRes.rows[0].count, 10);
-    const tagCount = parseInt(tagsCountRes.rows[0].count, 10);
-    
+    // Use cached counts — backed by Redis with 5-min TTL, avoids raw COUNT(*) on 1.5M rows
+    const [imageCount, tagCount] = await Promise.all([
+      getCachedCount('images', 'deleted = FALSE'),
+      getCachedCount('tags'),
+    ]);
     return { imageCount, tagCount };
   } catch (error) {
     console.error('Error fetching stats:', error);

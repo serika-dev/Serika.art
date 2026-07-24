@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { query } from '@/lib/db';
@@ -7,12 +8,20 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-async function getImageData(id: string) {
+// React cache() deduplicates calls within the same request so
+// generateMetadata + ImagePage share one DB round-trip instead of two.
+const getImageData = cache(async (id: string) => {
   const sequentialId = parseInt(id, 10);
   if (isNaN(sequentialId)) return null;
 
+  // Explicit columns — avoid pulling metadata JSONB, moderation fields, etc.
   const imageResult = await query(
-    `SELECT i.*, u.username as u_username
+    `SELECT i.id, i.sequential_id, i.user_id, i.username, i.url, i.thumbnail_url,
+            i.original_filename, i.file_size, i.width, i.height, i.content_type,
+            i.rating, i.is_ai_generated, i.source, i.description,
+            i.upvotes, i.downvotes, i.favorites, i.views,
+            i.deleted, i.unlisted, i.created_at, i.updated_at,
+            u.username as u_username
      FROM images i
      LEFT JOIN users u ON u.id = i.user_id
      WHERE i.sequential_id = $1`,
@@ -36,7 +45,7 @@ async function getImageData(id: string) {
     type: t.type,
   }));
 
-  // Increment views in background
+  // Increment views in background (fire-and-forget)
   query(`UPDATE images SET views = views + 1 WHERE id = $1`, [image.id]).catch(console.error);
 
   // Return compatible object structure
@@ -57,7 +66,7 @@ async function getImageData(id: string) {
     tags: populatedTags,
     views: image.views + 1
   };
-}
+});
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;

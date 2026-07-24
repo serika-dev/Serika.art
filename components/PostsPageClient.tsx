@@ -291,7 +291,7 @@ function PostsPageContent() {
     }
   };
 
-  const updateUrl = (newTags?: string[], newSort?: string, newPage?: number, newUploader?: string) => {
+  const updateUrl = useCallback((newTags?: string[], newSort?: string, newPage?: number, newUploader?: string) => {
     const params = new URLSearchParams();
     
     const tagsToUse = newTags !== undefined ? newTags : selectedTags.map(t => t.name);
@@ -306,27 +306,27 @@ function PostsPageContent() {
     
     const queryString = params.toString();
     router.push(`/posts${queryString ? '?' + queryString : ''}`);
-  };
+  }, [selectedTags, sort, uploaderParam, router]);
 
-  const addTag = (tag: Tag) => {
+  const addTag = useCallback((tag: Tag) => {
     if (!selectedTags.some(t => t.name === tag.name)) {
       const newTags = [...selectedTags.map(t => t.name), tag.name];
       updateUrl(newTags, sort, 1);
     }
     setTagInput('');
     setShowSuggestions(false);
-  };
+  }, [selectedTags, sort, updateUrl]);
 
-  const removeTag = (tagName: string) => {
+  const removeTag = useCallback((tagName: string) => {
     const newTags = selectedTags.filter(t => t.name !== tagName).map(t => t.name);
     updateUrl(newTags, sort, 1);
-  };
+  }, [selectedTags, sort, updateUrl]);
 
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     router.push('/posts');
-  };
+  }, [router]);
 
-  const toggleTag = (tag: Tag | { name: string; type: TagType }) => {
+  const toggleTag = useCallback((tag: Tag | { name: string; type: TagType }) => {
     const newTags = selectedTags.map(t => t.name);
     const exists = newTags.includes(tag.name);
     if (exists) {
@@ -334,14 +334,14 @@ function PostsPageContent() {
     } else {
       updateUrl([...newTags, tag.name], sort, 1);
     }
-  };
+  }, [selectedTags, sort, updateUrl]);
 
-  const toggleRating = (rating: Rating) => {
+  const toggleRating = useCallback((rating: Rating) => {
     const newRatings = toggleRatingUtil(selectedRatings, rating);
     setSelectedRatings(newRatings);
     setRatingsCookie(newRatings);
     if (urlPage > 1) updateUrl(undefined, undefined, 1);
-  };
+  }, [selectedRatings, urlPage, updateUrl]);
 
   const typeColors: Record<TagType, string> = {
     artist: 'text-red-400',
@@ -561,7 +561,7 @@ function PostsPageContent() {
         })}
       </div>
     </div>
-  ), [tagSuggestions, showSuggestions, selectedRatings, hideAI, selectedTags, tagsByType, blacklistEnabled, blacklistedTags, uploaderParam, urlPage]);
+  ), [tagSuggestions, showSuggestions, selectedRatings, hideAI, selectedTags, tagsByType, blacklistEnabled, blacklistedTags, uploaderParam, urlPage, addTag, removeTag, clearFilters, toggleTag, toggleRating, updateUrl]);
 
   const filteredImages = useMemo(() => {
     const sourceImages = infiniteScroll && allImages.length > 0 ? allImages : images;
@@ -637,7 +637,7 @@ function PostsPageContent() {
 
         {loading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-            {Array.from({ length: 15 }).map((_, i) => <Skeleton key={i} className="aspect-square rounded-2xl" />)}
+            {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="aspect-square rounded-2xl" />)}
           </div>
         ) : filteredImages.length === 0 ? (
           <div className="text-center py-20">
@@ -672,7 +672,7 @@ function PostsPageContent() {
                         rating={adRating}
                       />
                     )}
-                    <ImageCard image={image} />
+                    <ImageCard image={image} priority={index < 8} />
                   </Fragment>
                 ));
               })()}

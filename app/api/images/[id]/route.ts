@@ -16,8 +16,16 @@ export async function GET(
       );
     }
 
+    // Explicit columns — skip metadata JSONB and moderation fields for reads
     const result = await query(
-      `SELECT * FROM images WHERE sequential_id = $1`,
+      `SELECT id, sequential_id, user_id, username, url, thumbnail_url,
+              original_filename, file_size, width, height, content_type,
+              rating, is_ai_generated, source, description,
+              upvotes, downvotes, favorites, views,
+              deleted, unlisted, deleted_at, deleted_by,
+              unlisted_at, unlisted_by,
+              created_at, updated_at
+       FROM images WHERE sequential_id = $1`,
       [sequentialId]
     );
 
@@ -127,7 +135,7 @@ export async function PATCH(
     }
 
     const imgResult = await query(
-      `SELECT * FROM images WHERE sequential_id = $1`,
+      `SELECT id, sequential_id, user_id, username FROM images WHERE sequential_id = $1`,
       [sequentialId]
     );
 
@@ -159,59 +167,53 @@ export async function PATCH(
           `SELECT tag_id FROM image_tags WHERE image_id = $1`,
           [image.id]
         );
-        const oldTagIds = new Set(currentTagsResult.rows.map(r => r.tag_id));
+        const oldTagIds = new Set<number>(currentTagsResult.rows.map(r => r.tag_id));
 
-        // Resolve new tag names to IDs (create if needed)
-        const newTagIds: number[] = [];
-        for (const tagInfo of newTags) {
-          const tagName = tagInfo.name.toLowerCase();
-          let tagResult = await client.query(
-            `SELECT id FROM tags WHERE name = $1`,
-            [tagName]
-          );
+        // BATCH resolve all tag names to IDs in one query, creating missing ones
+        const tagNames = newTags.map((t: any) => t.name.toLowerCase());
+        const tagTypes = newTags.map((t: any) => t.type || 'general');
 
-          if (tagResult.rows.length === 0) {
-            tagResult = await client.query(
-              `INSERT INTO tags (name, type, count, created_at) VALUES ($1, $2, 0, NOW()) RETURNING id`,
-              [tagName, tagInfo.type || 'general']
-            );
-          }
-          newTagIds.push(tagResult.rows[0].id);
-        }
+        // Insert any missing tags in bulk, then fetch all IDs
+        await client.query(
+          `INSERT INTO tags (name, type, count, created_at)
+           SELECT unnest($1::text[]), unnest($2::text[]), 0, NOW()
+           ON CONFLICT (name) DO NOTHING`,
+          [tagNames, tagTypes]
+        );
 
-        // Delete old associations
+        const resolvedTags = await client.query(
+          `SELECT id FROM tags WHERE name = ANY($1::text[]) ORDER BY array_position($1::text[], name)`,
+          [tagNames]
+        );
+        const newTagIds: number[] = resolvedTags.rows.map(r => r.id);
+
+        // Swap associations: delete old, insert new
         await client.query(`DELETE FROM image_tags WHERE image_id = $1`, [image.id]);
 
-        // Insert new associations
         if (newTagIds.length > 0) {
-          const values = newTagIds.map((tid, i) => `($1, $${i + 2})`).join(',');
           await client.query(
-            `INSERT INTO image_tags (image_id, tag_id) VALUES ${values}`,
-            [image.id, ...newTagIds]
+            `INSERT INTO image_tags (image_id, tag_id)
+             SELECT $1, unnest($2::int[])`,
+            [image.id, newTagIds]
           );
         }
 
-        // Update tag counts
+        // BATCH update tag counts — decrement removed, increment added
         const newTagIdSet = new Set(newTagIds);
+        const removedIds = [...oldTagIds].filter(id => !newTagIdSet.has(id));
+        const addedIds = newTagIds.filter(id => !oldTagIds.has(id));
 
-        // Decrement removed tags
-        for (const oldId of oldTagIds) {
-          if (!newTagIdSet.has(oldId)) {
-            await client.query(
-              `UPDATE tags SET count = GREATEST(count - 1, 0) WHERE id = $1`,
-              [oldId]
-            );
-          }
+        if (removedIds.length > 0) {
+          await client.query(
+            `UPDATE tags SET count = GREATEST(count - 1, 0) WHERE id = ANY($1::int[])`,
+            [removedIds]
+          );
         }
-
-        // Increment added tags
-        for (const newId of newTagIds) {
-          if (!oldTagIds.has(newId)) {
-            await client.query(
-              `UPDATE tags SET count = count + 1 WHERE id = $1`,
-              [newId]
-            );
-          }
+        if (addedIds.length > 0) {
+          await client.query(
+            `UPDATE tags SET count = count + 1 WHERE id = ANY($1::int[])`,
+            [addedIds]
+          );
         }
       }
 
@@ -279,7 +281,7 @@ export async function DELETE(
     }
 
     const imgResult = await query(
-      `SELECT * FROM images WHERE sequential_id = $1`,
+      `SELECT id, user_id, sequential_id FROM images WHERE sequential_id = $1`,
       [sequentialId]
     );
 

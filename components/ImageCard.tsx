@@ -9,9 +9,11 @@ import { Badge } from '@/components/ui/badge';
 
 interface ImageCardProps {
   image: Image;
+  /** When true, the thumbnail loads eagerly with high fetch priority (above-the-fold). */
+  priority?: boolean;
 }
 
-export default function ImageCard({ image }: ImageCardProps) {
+export default function ImageCard({ image, priority = false }: ImageCardProps) {
   const getRatingClass = (rating: string) => {
     switch (rating) {
       case 'safe':
@@ -41,8 +43,9 @@ export default function ImageCard({ image }: ImageCardProps) {
             height={400}
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1536px) 25vw, 20vw"
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-            loading="lazy"
-            decoding="async"
+            loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
+            decoding={priority ? 'sync' : 'async'}
             // Thumbnails are already generated at 320px and served from the CDN with a
             // 1-year cache. Skip the Next.js image optimizer so the browser fetches them
             // straight from the CDN instead of round-tripping through /_next/image.

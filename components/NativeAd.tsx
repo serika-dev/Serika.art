@@ -48,58 +48,29 @@ const NativeAd: React.FC<NativeAdProps> = ({ id, rating = 'safe', variant = 'inl
     };
   }, []);
 
-  // Track when ad script loads
+  // Track when ad script loads — single check + lightweight poll
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // Check if script already loaded
-    if (window.AdProvider && isMounted.current) {
-      setScriptLoaded(true);
+    if (window.AdProvider) {
+      if (isMounted.current) setScriptLoaded(true);
       return;
     }
 
-    // Poll for script load (max 10 seconds)
+    // Poll for script load (max 5 seconds, 250ms intervals instead of 200ms × 50)
     let attempts = 0;
-    const maxAttempts = 50;
     const interval = setInterval(() => {
       attempts++;
       if (window.AdProvider) {
         if (isMounted.current) setScriptLoaded(true);
         clearInterval(interval);
-      } else if (attempts >= maxAttempts) {
+      } else if (attempts >= 20) {
         clearInterval(interval);
       }
-    }, 200);
+    }, 250);
 
     return () => clearInterval(interval);
   }, []);
-
-  // Fetch ad data from API - also trigger on path/search changes to refresh metadata
-  useEffect(() => {
-    if (!zoneId || typeof window === 'undefined') return;
-
-    const fetchAdData = async () => {
-      try {
-        const response = await fetch(`/api/ad?zoneId=${zoneId}`);
-        if (!response.ok) return;
-        const data = await response.json();
-        
-        if (data.title && isMounted.current) {
-          setAdData({
-            title: data.title,
-            description: data.description || '',
-            brand: data.brand || 'ExoClick',
-            image: data.image || '',
-            url: data.url || '#',
-          });
-        }
-      } catch (e) {
-        console.error('Failed to fetch ad data:', e);
-      }
-    };
-
-    fetchAdData();
-  }, [zoneId, id, pathname, searchParams]);
 
   // Clean up and reset the ad container whenever pathname or search params change
   useEffect(() => {
