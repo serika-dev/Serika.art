@@ -9,7 +9,6 @@ if (!POSTGRES_URL) {
 }
 
 let pool: Pool | null = null;
-let schemaInitialized = false;
 
 export function getPool(): Pool {
   if (!pool) {
@@ -267,30 +266,80 @@ export async function syncSequencesAndCounters(): Promise<void> {
 }
 
 
-// Create optional/advanced indexes one at a time; failures are logged, not fatal.
-async function ensureIndividualIndexes(): Promise<void> {
+// Every secondary index, created one at a time so a single failure (e.g.
+// pg_trgm needs privileges the DB user lacks) never blocks the others. Built
+// CONCURRENTLY like scripts/sync-postgres.ts so live writes are never locked
+// out. CONCURRENTLY cannot run inside a transaction block, so each statement
+// runs standalone on an autocommit client.
+const SCHEMA_INDEXES: { name: string; sql: string; trgm?: boolean }[] = [
+  { name: 'idx_tags_name', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tags_name ON tags (name)` },
+  { name: 'idx_tags_count', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tags_count ON tags (count DESC, name)` },
+  { name: 'idx_images_sequential', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_sequential ON images (sequential_id)` },
+  { name: 'idx_images_user', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_user ON images (user_id, created_at DESC)` },
+  { name: 'idx_images_username', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_username ON images (LOWER(username), created_at DESC)` },
+  { name: 'idx_images_created', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_created ON images (created_at DESC)` },
+  { name: 'idx_images_rating', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_rating ON images (rating, created_at DESC)` },
+  { name: 'idx_images_rating_ai', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_rating_ai ON images (rating, is_ai_generated, created_at DESC)` },
+  { name: 'idx_images_listing', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_listing ON images (deleted, unlisted, rating, created_at DESC)` },
+  { name: 'idx_images_upvotes', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_upvotes ON images (upvotes DESC, views DESC)` },
+  { name: 'idx_images_favorites', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_favorites ON images (favorites DESC)` },
+  { name: 'idx_images_views', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_views ON images (views DESC)` },
   // Functional index for import dedupe lookups (critical for import performance).
-  const critical = [
-    `CREATE INDEX IF NOT EXISTS idx_images_danbooru_id ON images ((metadata->>'danbooruId'))`,
-  ];
+  { name: 'idx_images_danbooru_id', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_danbooru_id ON images ((metadata->>'danbooruId'))` },
+  { name: 'idx_image_tags_tag', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_image_tags_tag ON image_tags (tag_id)` },
+  { name: 'idx_image_tags_image', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_image_tags_image ON image_tags (image_id)` },
+  { name: 'idx_image_tags_tag_image', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_image_tags_tag_image ON image_tags (tag_id, image_id)` },
+  { name: 'idx_votes_user', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_votes_user ON votes (user_id, created_at DESC)` },
+  { name: 'idx_votes_image', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_votes_image ON votes (image_id)` },
+  { name: 'idx_favorites_user', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_favorites_user ON favorites (user_id, created_at DESC)` },
+  { name: 'idx_favorites_image', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_favorites_image ON favorites (image_id)` },
+  { name: 'idx_comments_image', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_comments_image ON comments (image_id, created_at DESC)` },
+  { name: 'idx_comments_user', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_comments_user ON comments (user_id, created_at DESC)` },
+  { name: 'idx_artists_tag', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_artists_tag ON artists (tag_id)` },
+  { name: 'idx_artists_claimed', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_artists_claimed ON artists (claimed_by_user_id)` },
+  { name: 'idx_artists_tagname', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_artists_tagname ON artists (tag_name)` },
+  { name: 'idx_claims_status', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_claims_status ON artist_claims (status, created_at DESC)` },
+  { name: 'idx_claims_user', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_claims_user ON artist_claims (user_id, artist_tag_id)` },
+  { name: 'idx_api_keys_hash', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_api_keys_hash ON api_keys (key_hash)` },
+  { name: 'idx_api_keys_user', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_api_keys_user ON api_keys (user_id)` },
+  { name: 'idx_import_status', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_import_status ON import_jobs (status, created_at)` },
   // Trigram indexes accelerate ILIKE '%q%' search but need the pg_trgm extension.
-  const trigram = [
-    `CREATE INDEX IF NOT EXISTS idx_tags_name_trgm ON tags USING gin (name gin_trgm_ops)`,
-    `CREATE INDEX IF NOT EXISTS idx_images_description_trgm ON images USING gin (description gin_trgm_ops)`,
-    `CREATE INDEX IF NOT EXISTS idx_images_username_trgm ON images USING gin (username gin_trgm_ops)`,
-  ];
+  { name: 'idx_tags_name_trgm', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tags_name_trgm ON tags USING gin (name gin_trgm_ops)`, trgm: true },
+  { name: 'idx_images_description_trgm', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_description_trgm ON images USING gin (description gin_trgm_ops)`, trgm: true },
+  { name: 'idx_images_username_trgm', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_username_trgm ON images USING gin (username gin_trgm_ops)`, trgm: true },
+];
 
-  // Index builds on a large existing table can exceed the pool statement_timeout.
-  // Use a dedicated client with the timeout disabled so builds can complete.
+// Advisory-lock key so concurrent app workers serialize index builds.
+const INDEX_BUILD_LOCK_KEY = 72419641703;
+
+async function ensureIndexes(): Promise<void> {
+  // Index builds on a large existing table can exceed the pool
+  // statement_timeout. Use a dedicated client with the timeout disabled so
+  // builds can complete.
   const client = await getPool().connect();
   try {
     await client.query(`SET statement_timeout = 0`);
 
-    for (const sql of critical) {
+    // Several app workers may bootstrap in parallel (next start spawns one
+    // per render worker); wait for any in-progress build to finish first.
+    // Our IF NOT EXISTS builds then become fast no-ops.
+    await client.query(`SELECT pg_advisory_lock(${INDEX_BUILD_LOCK_KEY})`);
+
+    // A canceled CONCURRENTLY build leaves an INVALID index behind which
+    // IF NOT EXISTS would treat as complete – drop those so they rebuild.
+    const invalid = await client.query(
+      `SELECT c.relname AS name
+       FROM pg_index i
+       JOIN pg_class c ON c.oid = i.indexrelid
+       WHERE NOT i.indisvalid AND c.relname = ANY($1)`,
+      [SCHEMA_INDEXES.map((i) => i.name)]
+    );
+    for (const row of invalid.rows) {
       try {
-        await client.query(sql);
+        await client.query(`DROP INDEX CONCURRENTLY IF EXISTS ${row.name}`);
+        console.warn(`[DB] Dropped invalid index ${row.name} (leftover from canceled build)`);
       } catch (err: any) {
-        console.error('[DB] Failed to create critical index:', err?.message || err);
+        console.error(`[DB] Failed to drop invalid index ${row.name}:`, err?.message || err);
       }
     }
 
@@ -302,27 +351,37 @@ async function ensureIndividualIndexes(): Promise<void> {
       console.warn('[DB] pg_trgm extension unavailable, skipping trigram indexes:', err?.message || err);
     }
 
-    if (trgmReady) {
-      for (const sql of trigram) {
-        try {
-          await client.query(sql);
-        } catch (err: any) {
-          console.error('[DB] Failed to create trigram index:', err?.message || err);
-        }
+    for (const { name, sql, trgm } of SCHEMA_INDEXES) {
+      if (trgm && !trgmReady) continue;
+      try {
+        await client.query(sql);
+      } catch (err: any) {
+        console.error(`[DB] Failed to create index ${name}:`, err?.message || err);
       }
     }
   } finally {
-    // Reset the session default before returning the connection to the pool.
-    try { await client.query(`SET statement_timeout = 45000`); } catch {}
+    try { await client.query(`SELECT pg_advisory_unlock(${INDEX_BUILD_LOCK_KEY})`); } catch {}
+    // Reset to the session default before returning the connection to the pool.
+    try { await client.query(`RESET statement_timeout`); } catch {}
     client.release();
   }
 }
 
 // ── Schema bootstrap (called once) ─────────────────────────────────
-export async function ensureSchema(): Promise<void> {
-  if (schemaInitialized) return;
-  schemaInitialized = true;
+// Concurrent callers (module init, scripts/bootstrap.ts, route handlers)
+// share one in-flight run: awaiting must not return while index builds are
+// still executing, or a caller like bootstrap.ts calling process.exit()
+// would cancel them mid-build.
+let schemaInitPromise: Promise<void> | null = null;
 
+export function ensureSchema(): Promise<void> {
+  if (!schemaInitPromise) {
+    schemaInitPromise = runEnsureSchema();
+  }
+  return schemaInitPromise;
+}
+
+async function runEnsureSchema(): Promise<void> {
   try {
     await query(`
       -- Users
@@ -344,8 +403,6 @@ export async function ensureSchema(): Promise<void> {
         count INTEGER NOT NULL DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-      CREATE INDEX IF NOT EXISTS idx_tags_name ON tags (name);
-      CREATE INDEX IF NOT EXISTS idx_tags_count ON tags (count DESC, name);
 
       -- Images
       CREATE TABLE IF NOT EXISTS images (
@@ -388,16 +445,6 @@ export async function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-      CREATE INDEX IF NOT EXISTS idx_images_sequential ON images (sequential_id);
-      CREATE INDEX IF NOT EXISTS idx_images_user ON images (user_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_images_username ON images (LOWER(username), created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_images_created ON images (created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_images_rating ON images (rating, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_images_rating_ai ON images (rating, is_ai_generated, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_images_listing ON images (deleted, unlisted, rating, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_images_upvotes ON images (upvotes DESC, views DESC);
-      CREATE INDEX IF NOT EXISTS idx_images_favorites ON images (favorites DESC);
-      CREATE INDEX IF NOT EXISTS idx_images_views ON images (views DESC);
 
       -- Image-Tag junction
       CREATE TABLE IF NOT EXISTS image_tags (
@@ -405,9 +452,6 @@ export async function ensureSchema(): Promise<void> {
         tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
         PRIMARY KEY (image_id, tag_id)
       );
-      CREATE INDEX IF NOT EXISTS idx_image_tags_tag ON image_tags (tag_id);
-      CREATE INDEX IF NOT EXISTS idx_image_tags_image ON image_tags (image_id);
-      CREATE INDEX IF NOT EXISTS idx_image_tags_tag_image ON image_tags (tag_id, image_id);
 
       -- Votes
       CREATE TABLE IF NOT EXISTS votes (
@@ -418,8 +462,6 @@ export async function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE (user_id, image_id)
       );
-      CREATE INDEX IF NOT EXISTS idx_votes_user ON votes (user_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_votes_image ON votes (image_id);
 
       -- Favorites
       CREATE TABLE IF NOT EXISTS favorites (
@@ -429,8 +471,6 @@ export async function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE (user_id, image_id)
       );
-      CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites (user_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_favorites_image ON favorites (image_id);
 
       -- Comments
       CREATE TABLE IF NOT EXISTS comments (
@@ -447,8 +487,6 @@ export async function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-      CREATE INDEX IF NOT EXISTS idx_comments_image ON comments (image_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_comments_user ON comments (user_id, created_at DESC);
 
       -- Artists
       CREATE TABLE IF NOT EXISTS artists (
@@ -465,9 +503,6 @@ export async function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-      CREATE INDEX IF NOT EXISTS idx_artists_tag ON artists (tag_id);
-      CREATE INDEX IF NOT EXISTS idx_artists_claimed ON artists (claimed_by_user_id);
-      CREATE INDEX IF NOT EXISTS idx_artists_tagname ON artists (tag_name);
 
       -- Artist Claims
       CREATE TABLE IF NOT EXISTS artist_claims (
@@ -489,8 +524,6 @@ export async function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-      CREATE INDEX IF NOT EXISTS idx_claims_status ON artist_claims (status, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_claims_user ON artist_claims (user_id, artist_tag_id);
 
       -- Artist Reviews
       CREATE TABLE IF NOT EXISTS artist_reviews (
@@ -536,8 +569,6 @@ export async function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-      CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys (key_hash);
-      CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys (user_id);
 
       -- Counters
       CREATE TABLE IF NOT EXISTS counters (
@@ -561,7 +592,6 @@ export async function ensureSchema(): Promise<void> {
         completed_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-      CREATE INDEX IF NOT EXISTS idx_import_status ON import_jobs (status, created_at);
 
       -- DMCA Requests
       CREATE TABLE IF NOT EXISTS dmca_requests (
@@ -600,11 +630,10 @@ export async function ensureSchema(): Promise<void> {
       );
     `);
 
-    // Create performance-critical indexes individually so that one failing
-    // (e.g. pg_trgm needs privileges the DB user lacks) never blocks the others.
-    // The danbooru-id index in particular prevents full-table scans that cause
-    // statement timeouts during bulk imports.
-    await ensureIndividualIndexes();
+    // Secondary indexes are built separately (see ensureIndexes) so this DDL
+    // stays fast on large databases – the inline CREATE INDEX statements used
+    // to exceed the pool statement_timeout and cancel the whole bootstrap.
+    await ensureIndexes();
 
     // Self-heal/resync any diverged sequences/counters on startup
     await syncSequencesAndCounters();
