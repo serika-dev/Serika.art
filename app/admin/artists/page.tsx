@@ -78,8 +78,8 @@ export default function AdminArtistsPage() {
       const res = await fetch(`/api/admin/artists/claims?status=${activeTab}`);
       const data = await res.json();
       if (data.success) {
-        setClaims(data.claims);
-        setPagination(data.pagination);
+        setClaims(data.claims ?? []);
+        setPagination(data.pagination ?? { page: 1, total: 0, pages: 1 });
       }
     } catch (err) {
       console.error('Failed to fetch claims:', err);
@@ -92,7 +92,7 @@ export default function AdminArtistsPage() {
     setProcessing(claimId);
     try {
       const res = await fetch('/api/admin/artists/claims', {
-        method: 'POST',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           claimId,
@@ -105,6 +105,7 @@ export default function AdminArtistsPage() {
       if (data.success) {
         // Remove from list
         setClaims(prev => prev.filter(c => c._id !== claimId));
+        setPagination(prev => ({ ...prev, total: Math.max(0, prev.total - 1) }));
       } else {
         alert(data.error || 'Failed to process claim');
       }

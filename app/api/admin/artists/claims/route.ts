@@ -20,8 +20,10 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || 'pending';
 
     const claims = await query(
-      `SELECT * FROM artist_claims WHERE status = $1 ORDER BY created_at DESC`,
-      [status]
+      status === 'all'
+        ? `SELECT * FROM artist_claims ORDER BY created_at DESC`
+        : `SELECT * FROM artist_claims WHERE status = $1 ORDER BY created_at DESC`,
+      status === 'all' ? [] : [status]
     );
 
     return NextResponse.json({
@@ -44,6 +46,7 @@ export async function GET(request: NextRequest) {
         reviewedAt: c.reviewed_at,
         createdAt: c.created_at,
       })),
+      pagination: { page: 1, total: claims.rows.length, pages: 1 },
     });
   } catch (error) {
     console.error('Error fetching claims:', error);
