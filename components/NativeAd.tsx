@@ -12,8 +12,8 @@ import SerikaNativeAd, { AdPlaceholder } from '@/components/SerikaNativeAd';
  * NSFW pages (rating other than `safe`) it is always ExoClick with the NSFW zone,
  * because Serika Ads is SFW only. If Serika Ads has nothing for the slot, the slot
  * shows ExoClick instead; if ExoClick has nothing or is blocked (uBlock Origin blocks
- * magsrv.com), it shows a Serika Ads card (served from cdn.serika.dev, which blockers
- * don't block). A slot is never left empty.
+ * magsrv.com) on a SFW page, it shows a Serika Ads card (served from cdn.serika.dev,
+ * which blockers don't block). NSFW slots stay ExoClick only.
  *
  * The split is rolled once per slot per page view (pathname + query): re-renders
  * keep it, a client navigation or a remount rolls again. It is only rolled in the
@@ -66,12 +66,13 @@ const NativeAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inlin
   const handleExoEmpty = useCallback(() => setExoEmptyKey(rollKey), [rollKey]);
   const exoEmpty = exoEmptyKey === rollKey && emptyKey !== rollKey;
 
-  if (exoEmpty && hydrated) {
+  // Serika Ads is SFW only: NSFW slots never fall back to it (brand safety).
+  if (exoEmpty && hydrated && isSafeAdRating(rating)) {
     return <SerikaNativeAd key={`exo-${rollKey}`} variant={variant} onEmpty={handleSerikaEmpty} />;
   }
 
   if (!serikaEligible) {
-    return <ExoClickAd id={id} rating={rating} variant={variant} onEmpty={handleExoEmpty} />;
+    return <ExoClickAd id={id} rating={rating} variant={variant} onEmpty={isSafeAdRating(rating) ? handleExoEmpty : undefined} />;
   }
 
   if (!hydrated) {
