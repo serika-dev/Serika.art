@@ -17,6 +17,7 @@ export default function Footer() {
           <Link href="/posts" className="hover:text-foreground transition-colors">Posts</Link>
           <Link href="/tags" className="hover:text-foreground transition-colors">Tags</Link>
           <Link href="/api-docs" className="hover:text-foreground transition-colors">API</Link>
+          <a href="https://issues.serika.dev/issues/new?project=serika-art" className="hover:text-foreground transition-colors">Report a bug</a>
           <Link href="/contact" className="hover:text-foreground transition-colors">Contact</Link>
           <Link href="/dmca" className="hover:text-foreground transition-colors">DMCA</Link>
           <a href="https://serika.dev/terms" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Terms</a>

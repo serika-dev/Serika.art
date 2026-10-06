@@ -11,7 +11,9 @@ import SerikaNativeAd, { AdPlaceholder } from '@/components/SerikaNativeAd';
  * NEXT_PUBLIC_EXOCLICK_AD_SHARE (the share that goes to ExoClick, default 0.5). On
  * NSFW pages (rating other than `safe`) it is always ExoClick with the NSFW zone,
  * because Serika Ads is SFW only. If Serika Ads has nothing for the slot, the slot
- * shows ExoClick instead, so it is never left empty.
+ * shows ExoClick instead; if ExoClick has nothing or is blocked (uBlock Origin blocks
+ * magsrv.com), it shows a Serika Ads card (served from cdn.serika.dev, which blockers
+ * don't block). A slot is never left empty.
  *
  * The split is rolled once per slot per page view (pathname + query): re-renders
  * keep it, a client navigation or a remount rolls again. It is only rolled in the
@@ -59,9 +61,17 @@ const NativeAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inlin
   // The page view whose Serika Ads request came back empty; that slot shows ExoClick.
   const [emptyKey, setEmptyKey] = useState<string | null>(null);
   const handleSerikaEmpty = useCallback(() => setEmptyKey(rollKey), [rollKey]);
+  // The page view whose ExoClick slot stayed empty or was blocked; that slot shows Serika Ads.
+  const [exoEmptyKey, setExoEmptyKey] = useState<string | null>(null);
+  const handleExoEmpty = useCallback(() => setExoEmptyKey(rollKey), [rollKey]);
+  const exoEmpty = exoEmptyKey === rollKey && emptyKey !== rollKey;
+
+  if (exoEmpty && hydrated) {
+    return <SerikaNativeAd key={`exo-${rollKey}`} variant={variant} onEmpty={handleSerikaEmpty} />;
+  }
 
   if (!serikaEligible) {
-    return <ExoClickAd id={id} rating={rating} variant={variant} />;
+    return <ExoClickAd id={id} rating={rating} variant={variant} onEmpty={handleExoEmpty} />;
   }
 
   if (!hydrated) {
@@ -71,7 +81,7 @@ const NativeAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inlin
   const source: Source = emptyKey === rollKey ? 'exoclick' : rollSource(rollKey);
 
   if (source === 'exoclick') {
-    return <ExoClickAd id={id} rating={rating} variant={variant} />;
+    return <ExoClickAd id={id} rating={rating} variant={variant} onEmpty={emptyKey === rollKey ? undefined : handleExoEmpty} />;
   }
 
   return <SerikaNativeAd key={rollKey} variant={variant} onEmpty={handleSerikaEmpty} />;

@@ -20,7 +20,15 @@ export interface AdSlotProps {
   id?: string | number;
   rating?: AdRating;
   variant?: AdVariant;
+  /**
+   * ExoClick had no ad for the slot, or is blocked (uBlock Origin blocks magsrv.com):
+   * NativeAd shows a Serika Ads card instead.
+   */
+  onEmpty?: () => void;
 }
+
+/** How long an ExoClick slot may stay empty before it counts as unfilled. */
+const EXOCLICK_FILL_TIMEOUT_MS = 6000;
 
 /** Only `safe` counts as SFW: questionable and explicit pages get the NSFW zone. */
 export const isSafeAdRating = (rating: AdRating = 'safe') => rating === 'safe';
@@ -37,7 +45,9 @@ interface AdData {
 }
 
 /** ExoClick native ad (SFW or NSFW zone). Used by NativeAd for its ExoClick share. */
-const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inline' }) => {
+const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inline', onEmpty }) => {
+  const onEmptyRef = useRef(onEmpty);
+  useEffect(() => { onEmptyRef.current = onEmpty; }, [onEmpty]);
   const isSafe = isSafeAdRating(rating);
   const zoneId = isSafe ? SFW_ZONE_ID : NSFW_ZONE_ID;
   const insRef = useRef<HTMLModElement>(null);
@@ -73,11 +83,24 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
         clearInterval(interval);
       } else if (attempts >= 20) {
         clearInterval(interval);
+        // Five seconds and still no ExoClick script: it was blocked.
+        onEmptyRef.current?.();
       }
     }, 250);
 
     return () => clearInterval(interval);
   }, []);
+
+  // No creative in the slot after a while: unfilled (or its requests were blocked).
+  useEffect(() => {
+    if (!onEmptyRef.current) return;
+    const timer = setTimeout(() => {
+      const el = insRef.current;
+      const filled = !!el && (el.querySelector('iframe, img, a') || (el.parentElement?.querySelector('[id^="exo-native-widget"]')));
+      if (!filled) onEmptyRef.current?.();
+    }, EXOCLICK_FILL_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [pathname, searchParams]);
 
   // Clean up and reset the ad container whenever pathname or search params change
   useEffect(() => {
@@ -132,7 +155,7 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
   // Don't render if no zone configured (but still return placeholder to avoid layout shift)
   if (!zoneId) {
     return (
-      <div className="native-ad-item group flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40 relative">
+      <div className="promo-card group flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40 relative">
         <div className="relative aspect-square overflow-hidden bg-muted flex items-center justify-center">
           <Badge data-ad-badge="true" className="absolute top-3 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-gray-500/20 text-gray-400 border-gray-500/30 z-10">
             Ad Unavailable
@@ -144,7 +167,7 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
 
   if (variant === 'banner') {
     return (
-      <div className="native-ad-banner w-full flex items-center justify-center bg-card/30 rounded-2xl overflow-hidden border border-border/30 relative py-2 min-h-[120px]">
+      <div className="promo-card-banner w-full flex items-center justify-center bg-card/30 rounded-2xl overflow-hidden border border-border/30 relative py-2 min-h-[120px]">
         <Badge data-ad-badge="true" className="absolute top-2 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-blue-500/20 text-blue-400 border-blue-500/30 z-10 pointer-events-none">
           Sponsored{isSafe ? "" : " (18+)"}
         </Badge>
@@ -155,7 +178,7 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
 
   if (variant === 'sidebar') {
     return (
-      <div className="native-ad-sidebar group flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative">
+      <div className="promo-card-sidebar group flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative">
         <div className="relative aspect-[16/10] overflow-hidden bg-muted shrink-0">
           <Badge data-ad-badge="true" className="absolute top-2 left-2 backdrop-blur-md uppercase text-[9px] font-black tracking-widest px-1.5 py-0.5 border bg-blue-500/20 text-blue-400 border-blue-500/30 z-10 pointer-events-none">
             Sponsored{isSafe ? "" : " (18+)"}
@@ -183,7 +206,7 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
   }
 
   return (
-    <div className="native-ad-item group flex flex-col h-full bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative">
+    <div className="promo-card group flex flex-col h-full bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative">
       <div className="relative aspect-square overflow-hidden bg-muted shrink-0">
         <Badge data-ad-badge="true" className="absolute top-3 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-blue-500/20 text-blue-400 border-blue-500/30 z-10 pointer-events-none">
           Sponsored{isSafe ? "" : " (18+)"}

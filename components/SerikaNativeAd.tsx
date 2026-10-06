@@ -9,7 +9,7 @@ import { ArrowUpRight, Megaphone } from 'lucide-react';
 import type { AdVariant } from '@/components/ExoClickAd';
 
 /**
- * Serika Ads (ads.serika.dev) native ad, rendered as one of our own cards.
+ * Serika Ads native ad (from cdn.serika.dev), rendered as one of our own cards.
  *
  * The public embed script (`/api/embed?format=script`) only fills a single
  * `#serika-ad-container` per page, so each slot asks `/api/embed` for JSON instead
@@ -20,7 +20,11 @@ import type { AdVariant } from '@/components/ExoClickAd';
  * Serika Ads is SFW only: NativeAd never shows this on NSFW pages.
  */
 
-const SERIKA_ADS_URL = (process.env.NEXT_PUBLIC_SERIKA_ADS_URL || 'https://ads.serika.dev').replace(/\/+$/, '');
+// cdn.serika.dev is Serika Ads under a name ad blockers don't block (uBlock Origin's `://ads.`
+// rule stops scripts and clicks on ads.serika.dev).
+const SERIKA_ADS_URL = (process.env.NEXT_PUBLIC_SERIKA_ADS_URL || 'https://cdn.serika.dev')
+  .replace(/\/+$/, '')
+  .replace('://ads.serika.dev', '://cdn.serika.dev');
 const PLACEMENT_ID = process.env.NEXT_PUBLIC_SERIKA_ADS_PLACEMENT_ID || '5';
 const FETCH_TIMEOUT_MS = 6000;
 
@@ -80,7 +84,7 @@ const badgeClass =
 export const AdPlaceholder: React.FC<{ variant?: AdVariant }> = ({ variant = 'inline' }) => {
   if (variant === 'banner') {
     return (
-      <div className="native-ad-banner w-full bg-card/30 rounded-2xl overflow-hidden border border-border/30 min-h-[120px] flex items-center gap-4 p-3" aria-hidden="true">
+      <div className="promo-card-banner w-full bg-card/30 rounded-2xl overflow-hidden border border-border/30 min-h-[120px] flex items-center gap-4 p-3" aria-hidden="true">
         <Skeleton className="h-24 aspect-[16/10] rounded-xl shrink-0" />
         <div className="flex-1 space-y-2">
           <Skeleton className="h-4 w-1/2" />
@@ -91,7 +95,7 @@ export const AdPlaceholder: React.FC<{ variant?: AdVariant }> = ({ variant = 'in
   }
   if (variant === 'sidebar') {
     return (
-      <div className="native-ad-sidebar flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40" aria-hidden="true">
+      <div className="promo-card-sidebar flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40" aria-hidden="true">
         <Skeleton className="aspect-[16/10] rounded-none" />
         <div className="p-3 space-y-2">
           <Skeleton className="h-3 w-2/3" />
@@ -101,7 +105,7 @@ export const AdPlaceholder: React.FC<{ variant?: AdVariant }> = ({ variant = 'in
     );
   }
   return (
-    <div className="native-ad-item flex flex-col h-full bg-card/50 rounded-2xl overflow-hidden border border-border/40" aria-hidden="true">
+    <div className="promo-card flex flex-col h-full bg-card/50 rounded-2xl overflow-hidden border border-border/40" aria-hidden="true">
       <Skeleton className="aspect-square rounded-none" />
       <div className="p-4 space-y-2">
         <Skeleton className="h-4 w-2/3" />
@@ -215,7 +219,7 @@ const SerikaNativeAd: React.FC<SerikaNativeAdProps> = ({ variant = 'inline', onE
     return (
       <a
         {...linkProps}
-        className="native-ad-banner group w-full flex items-center gap-4 bg-card/30 rounded-2xl overflow-hidden border border-border/30 hover:border-primary/30 transition-colors duration-300 relative p-3 min-h-[120px]"
+        className="promo-card-banner group w-full flex items-center gap-4 bg-card/30 rounded-2xl overflow-hidden border border-border/30 hover:border-primary/30 transition-colors duration-300 relative p-3 min-h-[120px]"
       >
         <div className="relative h-24 aspect-[16/10] rounded-xl overflow-hidden bg-muted shrink-0">{image}</div>
         <div className="min-w-0 flex-1">
@@ -235,7 +239,7 @@ const SerikaNativeAd: React.FC<SerikaNativeAdProps> = ({ variant = 'inline', onE
     return (
       <a
         {...linkProps}
-        className="native-ad-sidebar group flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative"
+        className="promo-card-sidebar group flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative"
       >
         <div className="relative aspect-[16/10] overflow-hidden bg-muted shrink-0">
           <Badge className={`${badgeClass} top-2 left-2 text-[9px] px-1.5 py-0.5`}>Sponsored</Badge>
@@ -265,7 +269,7 @@ const SerikaNativeAd: React.FC<SerikaNativeAdProps> = ({ variant = 'inline', onE
   return (
     <a
       {...linkProps}
-      className="native-ad-item group flex flex-col h-full bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative"
+      className="promo-card group flex flex-col h-full bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative"
     >
       <div className="relative aspect-square overflow-hidden bg-muted shrink-0">
         <Badge className={`${badgeClass} top-3 left-3 text-[10px] px-2 py-0.5`}>Sponsored</Badge>
