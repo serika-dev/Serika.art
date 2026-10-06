@@ -137,6 +137,14 @@ R2_ACCESS_KEY_ID=your-access-key
 R2_SECRET_ACCESS_KEY=your-secret-key
 R2_BUCKET_NAME=serika-art
 R2_CUSTOM_DOMAIN=cdn.yourdomain.com
+
+# Ads (all optional). SFW slots split between Serika Ads native and ExoClick;
+# NSFW slots, and SFW slots Serika Ads can't fill, are always ExoClick.
+NEXT_PUBLIC_SFW_AD_ZONE_ID=5897078
+NEXT_PUBLIC_NSFW_AD_ZONE_ID=5897078
+NEXT_PUBLIC_SERIKA_ADS_URL=https://ads.serika.dev
+NEXT_PUBLIC_SERIKA_ADS_PLACEMENT_ID=5
+NEXT_PUBLIC_EXOCLICK_AD_SHARE=0.5   # share of SFW slots that go to ExoClick (0 to 1)
 ```
 
 ### 3. Run Development Server

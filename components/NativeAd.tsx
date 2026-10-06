@@ -1,211 +1,80 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useId, useState, useSyncExternalStore } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
-import { Badge } from '@/components/ui/badge';
-import { CardContent } from '@/components/ui/card';
-import { Megaphone } from 'lucide-react';
+import ExoClickAd, { isSafeAdRating, type AdSlotProps } from '@/components/ExoClickAd';
+import SerikaNativeAd, { AdPlaceholder } from '@/components/SerikaNativeAd';
 
-declare global {
-  interface Window {
-    AdProvider?: Array<{ serve?: Record<string, unknown>; render?: Record<string, unknown> }>;
+/**
+ * One ad slot. On SFW pages it shows a Serika Ads native ad or ExoClick, split by
+ * NEXT_PUBLIC_EXOCLICK_AD_SHARE (the share that goes to ExoClick, default 0.5). On
+ * NSFW pages (rating other than `safe`) it is always ExoClick with the NSFW zone,
+ * because Serika Ads is SFW only. If Serika Ads has nothing for the slot, the slot
+ * shows ExoClick instead, so it is never left empty.
+ *
+ * The split is rolled once per slot per page view (pathname + query): re-renders
+ * keep it, a client navigation or a remount rolls again. It is only rolled in the
+ * browser, so the server render and hydration match (both show a placeholder card).
+ */
+
+const parseShare = (value: string | undefined, fallback: number) => {
+  const n = value === undefined || value.trim() === '' ? NaN : Number(value);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
+};
+
+const EXOCLICK_SHARE = parseShare(process.env.NEXT_PUBLIC_EXOCLICK_AD_SHARE, 0.5);
+
+type Source = 'serika' | 'exoclick';
+
+// Rolls per slot per page view. Kept outside React so a re-render, Strict Mode's
+// double render or a parent update can never re-roll a slot.
+const rolls = new Map<string, Source>();
+const MAX_ROLLS = 2000;
+
+const rollSource = (key: string): Source => {
+  let source = rolls.get(key);
+  if (!source) {
+    source = Math.random() < EXOCLICK_SHARE ? 'exoclick' : 'serika';
+    rolls.set(key, source);
+    if (rolls.size > MAX_ROLLS) rolls.delete(rolls.keys().next().value as string);
   }
-}
+  return source;
+};
 
-interface NativeAdProps {
-  id?: string | number;
-  rating?: 'safe' | 'questionable' | 'explicit';
-  variant?: 'inline' | 'banner' | 'sidebar'; // inline = grid card, banner = full-width row, sidebar = compact sidebar block
-}
+const noopSubscribe = () => () => {};
 
-const SFW_ZONE_ID = process.env.NEXT_PUBLIC_SFW_AD_ZONE_ID || '5897078';
-const NSFW_ZONE_ID = process.env.NEXT_PUBLIC_NSFW_AD_ZONE_ID || SFW_ZONE_ID;
-
-interface AdData {
-  title: string;
-  description: string;
-  brand: string;
-  image: string;
-  url: string;
-}
-
-const NativeAd: React.FC<NativeAdProps> = ({ id, rating = 'safe', variant = 'inline' }) => {
-  const isSafe = rating === 'safe';
-  const zoneId = isSafe ? SFW_ZONE_ID : NSFW_ZONE_ID;
-  const insRef = useRef<HTMLModElement>(null);
-  const [scriptLoaded, setScriptLoaded] = useState(false);
-  const [adData, setAdData] = useState<AdData | null>(null);
-  const isMounted = useRef(false);
+const NativeAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inline' }) => {
+  const serikaEligible = isSafeAdRating(rating) && EXOCLICK_SHARE < 1;
 
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const slotId = useId();
+  const rollKey = `${slotId}|${pathname}?${searchParams?.toString() ?? ''}`;
 
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  // False on the server and during hydration, so both render the placeholder and
+  // the roll only happens in the browser. Slots mounted later roll straight away.
+  const hydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
-  // Track when ad script loads — single check + lightweight poll
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  // The page view whose Serika Ads request came back empty; that slot shows ExoClick.
+  const [emptyKey, setEmptyKey] = useState<string | null>(null);
+  const handleSerikaEmpty = useCallback(() => setEmptyKey(rollKey), [rollKey]);
 
-    if (window.AdProvider) {
-      if (isMounted.current) setScriptLoaded(true);
-      return;
-    }
-
-    // Poll for script load (max 5 seconds, 250ms intervals instead of 200ms × 50)
-    let attempts = 0;
-    const interval = setInterval(() => {
-      attempts++;
-      if (window.AdProvider) {
-        if (isMounted.current) setScriptLoaded(true);
-        clearInterval(interval);
-      } else if (attempts >= 20) {
-        clearInterval(interval);
-      }
-    }, 250);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Clean up and reset the ad container whenever pathname or search params change
-  useEffect(() => {
-    const el = insRef.current;
-    if (el) {
-      el.removeAttribute('data-processed');
-      el.innerHTML = '';
-      
-      const parent = el.parentElement;
-      if (parent) {
-        Array.from(parent.children).forEach((child) => {
-          if (child !== el && child.getAttribute('data-ad-badge') !== 'true') {
-            child.remove();
-          }
-        });
-      }
-    }
-  }, [pathname, searchParams]);
-
-  // Trigger ad render when script is ready, zoneId exists, and the element is in the DOM
-  useEffect(() => {
-    if (!zoneId || !scriptLoaded || typeof window === 'undefined') return;
-
-    let timer: NodeJS.Timeout;
-    let attempts = 0;
-    const maxAttempts = 50; // Poll for up to 5 seconds
-
-    const checkAndRender = () => {
-      attempts++;
-      const el = insRef.current;
-      
-      if (el && document.body.contains(el)) {
-        if (el.getAttribute('data-processed') !== 'true') {
-          try {
-            window.AdProvider = window.AdProvider || [];
-            window.AdProvider.push({
-              serve: {},
-            });
-          } catch (e) {
-            console.error('AdProvider render error:', e);
-          }
-        }
-      } else if (attempts < maxAttempts) {
-        timer = setTimeout(checkAndRender, 100);
-      }
-    };
-
-    timer = setTimeout(checkAndRender, 100);
-    return () => clearTimeout(timer);
-  }, [id, rating, zoneId, scriptLoaded, pathname, searchParams]);
-
-  // Don't render if no zone configured (but still return placeholder to avoid layout shift)
-  if (!zoneId) {
-    return (
-      <div className="native-ad-item group flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40 relative">
-        <div className="relative aspect-square overflow-hidden bg-muted flex items-center justify-center">
-          <Badge data-ad-badge="true" className="absolute top-3 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-gray-500/20 text-gray-400 border-gray-500/30 z-10">
-            Ad Unavailable
-          </Badge>
-        </div>
-      </div>
-    );
+  if (!serikaEligible) {
+    return <ExoClickAd id={id} rating={rating} variant={variant} />;
   }
 
-  if (variant === 'banner') {
-    return (
-      <div className="native-ad-banner w-full flex items-center justify-center bg-card/30 rounded-2xl overflow-hidden border border-border/30 relative py-2 min-h-[120px]">
-        <Badge data-ad-badge="true" className="absolute top-2 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-blue-500/20 text-blue-400 border-blue-500/30 z-10 pointer-events-none">
-          Sponsored{isSafe ? "" : " (18+)"}
-        </Badge>
-        <ins ref={insRef} className="eas6a97888e20" data-zoneid={zoneId} style={{ display: 'block', width: '100%', minHeight: '90px' }}></ins>
-      </div>
-    );
+  if (!hydrated) {
+    return <AdPlaceholder variant={variant} />;
   }
 
-  if (variant === 'sidebar') {
-    return (
-      <div className="native-ad-sidebar group flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative">
-        <div className="relative aspect-[16/10] overflow-hidden bg-muted shrink-0">
-          <Badge data-ad-badge="true" className="absolute top-2 left-2 backdrop-blur-md uppercase text-[9px] font-black tracking-widest px-1.5 py-0.5 border bg-blue-500/20 text-blue-400 border-blue-500/30 z-10 pointer-events-none">
-            Sponsored{isSafe ? "" : " (18+)"}
-          </Badge>
-          <ins ref={insRef} className="eas6a97888e20 absolute inset-0" data-zoneid={zoneId} style={{ display: 'block', width: '100%', height: '100%' }}></ins>
-        </div>
-        <CardContent className="p-3 flex flex-col flex-1">
-          <h3 className="text-xs font-bold text-foreground mb-1 line-clamp-1">
-            {adData?.title || 'Advertisement'}
-          </h3>
-          <div className="flex items-center justify-between mt-auto">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <div className="w-4 h-4 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                <Megaphone size={8} className="text-primary" />
-              </div>
-              <span className="text-[10px] font-bold text-foreground/70 truncate group-hover:text-primary transition-colors">
-                {adData?.brand || 'ExoClick'}
-              </span>
-            </div>
-            <span className="text-[9px] font-bold text-muted-foreground/40">Ad</span>
-          </div>
-        </CardContent>
-      </div>
-    );
+  const source: Source = emptyKey === rollKey ? 'exoclick' : rollSource(rollKey);
+
+  if (source === 'exoclick') {
+    return <ExoClickAd id={id} rating={rating} variant={variant} />;
   }
 
-  return (
-    <div className="native-ad-item group flex flex-col h-full bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-all duration-300 relative">
-      <div className="relative aspect-square overflow-hidden bg-muted shrink-0">
-        <Badge data-ad-badge="true" className="absolute top-3 left-3 backdrop-blur-md uppercase text-[10px] font-black tracking-widest px-2 py-0.5 border bg-blue-500/20 text-blue-400 border-blue-500/30 z-10 pointer-events-none">
-          Sponsored{isSafe ? "" : " (18+)"}
-        </Badge>
-        <ins ref={insRef} className="eas6a97888e20 absolute inset-0" data-zoneid={zoneId} style={{ display: 'block', width: '100%', height: '100%' }}></ins>
-      </div>
-      <CardContent className="p-4 flex flex-col flex-1">
-        <h3 className="text-sm font-bold text-foreground mb-1 line-clamp-1">
-          {adData?.title || 'Advertisement'}
-        </h3>
-        <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
-          {adData?.description || 'Discover amazing products and services.'}
-        </p>
-        <div className="flex items-center justify-between mt-auto">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-              <Megaphone size={10} className="text-primary" />
-            </div>
-            <span className="text-xs font-bold text-foreground/70 truncate group-hover:text-primary transition-colors">
-              {adData?.brand || 'ExoClick'}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 text-muted-foreground/40">
-            <span className="text-[10px] font-bold">Ad</span>
-          </div>
-        </div>
-      </CardContent>
-    </div>
-  );
+  return <SerikaNativeAd key={rollKey} variant={variant} onEmpty={handleSerikaEmpty} />;
 };
 
 export default NativeAd;
