@@ -107,7 +107,7 @@ export default function ContactPage() {
                   </div>
                 </a>
                 
-                <a href="https://discord.gg/serika" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 rounded-xl bg-background/50 hover:bg-primary/5 transition-colors group">
+                <a href="https://discord.gg/5s2zgwn35y" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 rounded-xl bg-background/50 hover:bg-primary/5 transition-colors group">
                   <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
                     <MessageSquare className="h-5 w-5 text-indigo-400" />
                   </div>

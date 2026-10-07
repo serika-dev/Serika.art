@@ -322,6 +322,6 @@ See the full [LICENSE](LICENSE) file for complete terms.
 
 **Built with ❤️ by the Serika team**
 
-[Website](https://serika.art) • [Twitter](https://twitter.com/serikaart) • [Discord](https://discord.gg/serika)
+[Website](https://serika.art) • [Twitter](https://twitter.com/serikaart) • [Discord](https://discord.gg/5s2zgwn35y)
 
 </div>

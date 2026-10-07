@@ -232,7 +232,7 @@ export default function HomePageClient({ imageCount, tagCount }: HomePageClientP
           <span>·</span>
           <Link href="/dmca" className="hover:text-foreground transition-colors">DMCA</Link>
           <span>·</span>
-          <a href="https://discord.gg/serika" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Discord</a>
+          <a href="https://discord.gg/5s2zgwn35y" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Discord</a>
         </div>
       </div>
     </div>

@@ -19,7 +19,7 @@ export default function StructuredData() {
     foundingDate: '2024',
     sameAs: [
       'https://twitter.com/serika_art',
-      'https://discord.gg/serika',
+      'https://discord.gg/5s2zgwn35y',
     ],
     contactPoint: {
       '@type': 'ContactPoint',
