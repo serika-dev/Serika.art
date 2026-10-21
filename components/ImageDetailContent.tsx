@@ -71,6 +71,8 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
   const canModerate = user && ['moderator', 'admin', 'owner'].includes(user.rank || '');
   const isAdmin = user && ['admin', 'owner'].includes(user.rank || '');
   const canEdit = user && (canModerate || (image?.userId && user.id === image.userId.toString()));
+  const provenance = (image as { aiProvenance?: { source: string; evidence: string } | null }).aiProvenance ?? null;
+  const aiLocked = !!provenance && !canModerate;
 
   const isMounted = React.useRef(false);
   React.useEffect(() => {
@@ -393,8 +395,6 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
     setSavingEdit(true);
     try {
       const response = await axios.patch(`/api/images/${imageId}`, {
-        userId: user.id,
-        userRank: user.rank,
         tags: editTags,
         description: editDescription,
         source: editSource,
@@ -990,14 +990,23 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
               </Select>
             </div>
 
-            {/* AI Generated */}
-            <div className="flex items-center gap-2">
-              <Switch
-                id="edit-ai"
-                checked={editIsAIGenerated}
-                onCheckedChange={setEditIsAIGenerated}
-              />
-              <Label htmlFor="edit-ai">AI Generated</Label>
+            {/* AI Generated – locked on when the file's metadata says so */}
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="edit-ai"
+                  checked={editIsAIGenerated}
+                  onCheckedChange={setEditIsAIGenerated}
+                  disabled={aiLocked}
+                />
+                <Label htmlFor="edit-ai">AI Generated</Label>
+              </div>
+              {provenance && (
+                <p className="text-xs text-muted-foreground">
+                  {provenance.evidence} in the file show it was made with {provenance.source}.
+                  {aiLocked ? ' It stays marked as AI-generated.' : ' (Moderators can override a false positive.)'}
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter>

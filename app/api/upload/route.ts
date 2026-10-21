@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { normalizeTagName } from '@/lib/tagName';
+import { detectAiProvenance } from '@/lib/aiProvenance';
 import { query, withTransaction } from '@/lib/db';
 import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
       tagsData = tagsString?.split(',').map(t => ({ name: t.trim(), type: 'general' })).filter(t => t.name) || [];
     }
     const rating = formData.get('rating') as 'safe' | 'questionable' | 'explicit';
-    const isAIGenerated = formData.get('isAIGenerated') === 'true';
+    let isAIGenerated = formData.get('isAIGenerated') === 'true';
     const postAnonymously = formData.get('postAnonymously') === 'true';
     const source = formData.get('source') as string || '';
     const description = formData.get('description') as string || '';
@@ -79,6 +80,11 @@ export async function POST(request: NextRequest) {
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
+    // AI provenance in the file (OpenAI/Google Content Credentials, SD/ComfyUI
+    // metadata…) makes the post AI-generated, whatever the form said
+    const aiProvenance = detectAiProvenance(buffer);
+    if (aiProvenance) isAIGenerated = true;
 
     // Get image metadata
     const metadata = await sharp(buffer).metadata();
@@ -155,9 +161,9 @@ export async function POST(request: NextRequest) {
         `INSERT INTO images (
           sequential_id, user_id, username, url, thumbnail_url,
           original_filename, file_size, width, height, content_type,
-          rating, is_ai_generated, source, description,
+          rating, is_ai_generated, source, description, metadata,
           upvotes, downvotes, favorites, views, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0, 0, 0, 0, NOW(), NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 0, 0, 0, 0, NOW(), NOW())
         RETURNING *`,
         [
           nextSequentialId,
@@ -167,6 +173,7 @@ export async function POST(request: NextRequest) {
           file.name, buffer.length,
           metadata.width || 0, metadata.height || 0,
           file.type, rating, isAIGenerated, source, description,
+          aiProvenance ? JSON.stringify({ aiProvenance }) : null,
         ]
       );
 

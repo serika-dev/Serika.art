@@ -31,6 +31,7 @@ const getImageData = cache(async (id: string) => {
             i.rating, i.is_ai_generated, i.source, i.description,
             i.upvotes, i.downvotes, i.favorites, i.views,
             i.deleted, i.unlisted, i.created_at, i.updated_at,
+            i.metadata->'aiProvenance' AS ai_provenance,
             u.username as u_username
      FROM images i
      LEFT JOIN users u ON u.id = i.user_id
@@ -64,6 +65,7 @@ const getImageData = cache(async (id: string) => {
     username: image.u_username || image.username || 'Anonymous',
     sequentialId: image.sequential_id,
     isAIGenerated: image.is_ai_generated,
+    aiProvenance: image.ai_provenance || null,
     thumbnailUrl: image.thumbnail_url,
     originalFilename: image.original_filename,
     fileSize: image.file_size,

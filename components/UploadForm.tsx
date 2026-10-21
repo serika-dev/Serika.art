@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { normalizeTagName } from '@/lib/tagName';
+import { detectAiProvenance, type AiProvenance } from '@/lib/aiProvenance';
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 type TagData = { name: string; type: TagType };
@@ -69,6 +70,9 @@ export default function UploadForm() {
   // A ref, not state: suggestions arrive asynchronously and must see the latest value
   const ratingTouchedRef = useRef(false);
   const [isAIGenerated, setIsAIGenerated] = useState(false);
+  // Set when the file itself says it was AI-made; locks the checkbox on
+  const [aiProvenance, setAiProvenance] = useState<AiProvenance | null>(null);
+  const provenanceCheckRef = useRef(0);
   const [postAnonymously, setPostAnonymously] = useState(false);
   const [source, setSource] = useState('');
   const [description, setDescription] = useState('');
@@ -147,6 +151,15 @@ export default function UploadForm() {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
+      // Read the original bytes (metadata intact) for AI provenance
+      setAiProvenance(null);
+      const check = ++provenanceCheckRef.current;
+      selectedFile.arrayBuffer().then((buf) => {
+        if (check !== provenanceCheckRef.current) return; // another file was picked meanwhile
+        const found = detectAiProvenance(new Uint8Array(buf));
+        setAiProvenance(found);
+        if (found) setIsAIGenerated(true);
+      }).catch(() => {});
       if (autotagEnabled) {
         requestSuggestions(selectedFile);
       }
@@ -331,6 +344,8 @@ export default function UploadForm() {
                       className="absolute top-4 right-4 rounded-xl shadow-lg"
                       onClick={() => {
                         setFile(null);
+                        setAiProvenance(null);
+                        provenanceCheckRef.current++;
                         setPreview(null);
                         clearSuggestions();
                       }}
@@ -569,21 +584,29 @@ export default function UploadForm() {
                 </div>
 
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-background/50 border border-border/50">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                  <div className={cn(
+                    "flex items-center justify-between gap-3 p-4 rounded-xl border",
+                    aiProvenance ? "bg-purple-500/5 border-purple-500/30" : "bg-background/50 border-border/50"
+                  )}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 shrink-0 rounded-xl bg-purple-500/10 flex items-center justify-center">
                         <Sparkles className="h-5 w-5 text-purple-500" />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-sm font-bold">AI Generated</p>
-                        <p className="text-xs text-muted-foreground font-medium">Mark if created by AI</p>
+                        <p className="text-xs text-muted-foreground font-medium">
+                          {aiProvenance
+                            ? `${aiProvenance.evidence} in this file show it was made with ${aiProvenance.source}, so it's marked as AI-generated.`
+                            : 'Mark if created by AI'}
+                        </p>
                       </div>
                     </div>
                     <Checkbox
                       id="ai"
                       checked={isAIGenerated}
-                      onCheckedChange={(checked) => setIsAIGenerated(checked as boolean)}
-                      className="h-5 w-5 rounded-md"
+                      onCheckedChange={(checked) => { if (!aiProvenance) setIsAIGenerated(checked as boolean); }}
+                      disabled={!!aiProvenance}
+                      className="h-5 w-5 shrink-0 rounded-md"
                     />
                   </div>
 

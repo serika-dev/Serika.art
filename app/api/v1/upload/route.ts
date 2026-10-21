@@ -5,6 +5,7 @@ import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
 import sharp from 'sharp';
 import { autotagImage, AutotaggerUnavailableError } from '@/lib/autotagger';
+import { detectAiProvenance } from '@/lib/aiProvenance';
 import { revalidateImagePage } from '@/lib/revalidate';
 import { autotagPost, MIN_TAGS } from '@/lib/autotagApply';
 import { isAutotaggerConfigured } from '@/lib/autotagger';
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
     const tagsString = formData.get('tags') as string;
     let rating = formData.get('rating') as 'safe' | 'questionable' | 'explicit';
     const autoTag = formData.get('auto_tag') === 'true';
-    const isAIGenerated = formData.get('is_ai_generated') === 'true' || formData.get('isAIGenerated') === 'true';
+    let isAIGenerated = formData.get('is_ai_generated') === 'true' || formData.get('isAIGenerated') === 'true';
     const source = formData.get('source') as string || '';
     const description = formData.get('description') as string || '';
 
@@ -91,6 +92,10 @@ export async function POST(request: NextRequest) {
     // Process image
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
+    // AI provenance metadata in the file forces is_ai_generated
+    const aiProvenance = detectAiProvenance(buffer);
+    if (aiProvenance) isAIGenerated = true;
 
     // auto_tag: merge the tagger's recommended tags (and rating, if none given)
     if (autoTag) {
@@ -187,10 +192,10 @@ export async function POST(request: NextRequest) {
         `INSERT INTO images (
           sequential_id, user_id, username, url, thumbnail_url,
           original_filename, file_size, width, height, content_type,
-          rating, is_ai_generated, source, description,
+          rating, is_ai_generated, source, description, metadata,
           upvotes, downvotes, favorites, views, deleted, unlisted,
           created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0, 0, 0, 0, FALSE, FALSE, NOW(), NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 0, 0, 0, 0, FALSE, FALSE, NOW(), NOW())
         RETURNING id`,
         [
           nextSequentialId,
@@ -207,6 +212,7 @@ export async function POST(request: NextRequest) {
           isAIGenerated,
           source,
           description,
+          aiProvenance ? JSON.stringify({ aiProvenance }) : null,
         ]
       );
 
@@ -256,6 +262,7 @@ export async function POST(request: NextRequest) {
       content_type: file.type,
       rating,
       is_ai_generated: isAIGenerated,
+      ...(aiProvenance && { ai_provenance: aiProvenance }),
       tags: tagDocsRes.rows.map((t) => ({ name: t.name, type: t.type })),
       created_at: new Date(),
     }, {

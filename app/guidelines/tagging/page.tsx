@@ -78,10 +78,17 @@ const sections: { id: string; title: string; body: React.ReactNode }[] = [
     id: 'ai',
     title: 'AI-generated images',
     body: (
+      <>
       <p>
         Tick <strong>AI Generated</strong> when an image was made or substantially edited with an image generator.
         People can hide AI posts, so leaving it unticked is treated like a wrong rating.
       </p>
+      <p>
+        Files that say they were AI-made – Content Credentials from OpenAI (ChatGPT, DALL·E), Google (Gemini, Imagen),
+        Adobe Firefly, Microsoft or Midjourney, or generation metadata from Stable Diffusion, ComfyUI or NovelAI – are
+        marked AI Generated automatically, and the mark can&apos;t be removed.
+      </p>
+      </>
     ),
   },
   {

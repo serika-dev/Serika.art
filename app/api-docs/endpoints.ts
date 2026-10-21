@@ -329,6 +329,7 @@ Response headers:
       'A 320×320 JPEG thumbnail is automatically generated.',
       'With auto_tag=true and the autotagger offline, the upload fails with 503 AUTOTAGGER_UNAVAILABLE unless you also sent tags and a rating.',
       'Uploads with fewer than 5 distinct tags are refused with 400 NOT_ENOUGH_TAGS. See https://serika.art/guidelines/tagging.',
+      'If the file carries AI provenance (C2PA / IPTC "trained algorithmic media" from OpenAI, Google, Adobe Firefly, Microsoft, Midjourney, or Stable Diffusion / ComfyUI / NovelAI metadata), is_ai_generated is forced to true and the response includes ai_provenance.',
       'Every new post is run through the autotagger after upload; confident tags it predicts are added (yours are never removed).',
     ],
   },

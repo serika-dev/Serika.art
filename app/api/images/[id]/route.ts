@@ -126,7 +126,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { userId, userRank, tags: newTags, description, source, rating, isAIGenerated } = body;
+    const { tags: newTags, description, source, rating, isAIGenerated } = body;
 
     const sequentialId = parseInt(id, 10);
     if (isNaN(sequentialId)) {
@@ -137,7 +137,8 @@ export async function PATCH(
     }
 
     const imgResult = await query(
-      `SELECT id, sequential_id, user_id, username FROM images WHERE sequential_id = $1`,
+      `SELECT id, sequential_id, user_id, username, is_ai_generated, metadata->'aiProvenance' AS ai_provenance
+       FROM images WHERE sequential_id = $1`,
       [sequentialId]
     );
 
@@ -150,9 +151,27 @@ export async function PATCH(
 
     const image = imgResult.rows[0];
 
-    // Check authorization
-    const isPoster = image.user_id && userId && image.user_id === userId;
-    const isModerator = userRank && ['moderator', 'admin', 'owner'].includes(userRank);
+    // Check authorization against the session – never trust ids/ranks sent by the client
+    const { getCurrentUser } = await import('@/lib/auth');
+    const user = await getCurrentUser().catch(() => null);
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'You must be logged in' }, { status: 401 });
+    }
+    const rank = (await query(`SELECT rank FROM users WHERE id = $1`, [user.id])).rows[0]?.rank;
+    const isPoster = !!image.user_id && image.user_id === user.id;
+    const isModerator = ['moderator', 'admin', 'owner'].includes(rank);
+
+    // AI provenance in the uploaded file locks the AI flag on (moderators may correct a false positive)
+    if (image.ai_provenance && isAIGenerated === false && image.is_ai_generated && !isModerator) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `This image's metadata (${image.ai_provenance.evidence}) shows it was made with ${image.ai_provenance.source}, so it stays marked as AI-generated.`,
+          code: 'AI_FLAG_LOCKED',
+        },
+        { status: 403 }
+      );
+    }
 
     if (!isPoster && !isModerator) {
       return NextResponse.json(
