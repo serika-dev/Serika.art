@@ -57,15 +57,27 @@ export async function autotagImage(input: Buffer): Promise<AutotagResult> {
 
   // Taggers work at 224–448px; sending a small JPEG keeps the request tiny.
   // flatten() puts transparent PNGs on white, which is what the models expect.
-  const small = await sharp(input, { animated: false })
-    .rotate()
-    .resize(768, 768, { fit: 'inside', withoutEnlargement: true })
-    .flatten({ background: '#ffffff' })
-    .jpeg({ quality: 90 })
-    .toBuffer();
+  // Some files libvips can't decode (e.g. "source: bad seek") – the tagger
+  // service decodes with Pillow, so send those as they are.
+  let small: Buffer;
+  let filename = 'image.jpg';
+  let type = 'image/jpeg';
+  try {
+    small = await sharp(input, { animated: false, failOn: 'none' })
+      .rotate()
+      .resize(768, 768, { fit: 'inside', withoutEnlargement: true })
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+  } catch (err: any) {
+    console.warn('[autotagger] sharp could not decode the image, sending the original:', err?.message || err);
+    small = input;
+    filename = 'image';
+    type = 'application/octet-stream';
+  }
 
   const form = new FormData();
-  form.append('file', new Blob([new Uint8Array(small)], { type: 'image/jpeg' }), 'image.jpg');
+  form.append('file', new Blob([new Uint8Array(small)], { type }), filename);
   form.append('threshold', String(MIN_SCORE));
   form.append('limit', '100');
   form.append('format', 'json');

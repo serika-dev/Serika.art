@@ -62,6 +62,6 @@ export async function POST(request: NextRequest) {
       );
     }
     console.error('Error suggesting tags:', error);
-    return NextResponse.json({ success: false, error: 'Could not read that image' }, { status: 400, headers: NO_STORE_HEADERS });
+    return NextResponse.json({ success: false, error: 'Could not read that image – try a JPEG, PNG or WebP' }, { status: 400, headers: NO_STORE_HEADERS });
   }
 }

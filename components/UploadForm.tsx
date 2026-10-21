@@ -22,6 +22,26 @@ type SuggestedTag = TagData & { score: number; recommended: boolean; isNew: bool
 
 const RATING_ORDER: Rating[] = ['safe', 'questionable', 'explicit'];
 
+/** Re-encode an image as a ≤768px JPEG on a white background, or null if the browser can't decode it. */
+async function shrinkForTagging(file: File): Promise<Blob | null> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 768 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    return await new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.9));
+  } catch {
+    return null;
+  }
+}
+
 const suggestionColors: Record<TagType, string> = {
   artist: 'border-red-500/30 text-red-400 hover:bg-red-500/10',
   copyright: 'border-purple-500/30 text-purple-400 hover:bg-purple-500/10',
@@ -82,7 +102,9 @@ export default function UploadForm() {
     setSuggestedRating(null);
     try {
       const formData = new FormData();
-      formData.append('file', image);
+      // Send a small copy decoded by the browser: much less to upload, and it
+      // works for any format the browser can show even if the server can't decode it.
+      formData.append('file', (await shrinkForTagging(image)) ?? image);
       const response = await axios.post('/api/autotag', formData);
       if (requestId !== suggestRequestRef.current || !response.data.success) return;
       setSuggestedTags(response.data.tags || []);
