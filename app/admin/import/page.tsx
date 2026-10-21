@@ -287,7 +287,7 @@ export default function ImportPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
+      <div className="flex justify-center items-center min-h-[50vh]">
         <Loader2 className="animate-spin text-primary" size={48} />
       </div>
     );
@@ -320,7 +320,7 @@ export default function ImportPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+    <div>
       <div className="mb-6 sm:mb-8">
         <h1 className="text-2xl sm:text-4xl font-bold mb-2 flex flex-wrap items-center gap-2 sm:gap-3">
           <div className="relative flex-shrink-0">
