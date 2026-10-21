@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Upload, X, Tag as TagIcon, Sparkles, Shield, AlertTriangle, Ban } from 'lucide-react';
+import { Upload, X, Tag as TagIcon, Sparkles, Shield, AlertTriangle, Ban, Wand2, Plus, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
@@ -17,6 +17,18 @@ import { cn } from '@/lib/utils';
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 type TagData = { name: string; type: TagType };
+type Rating = 'safe' | 'questionable' | 'explicit';
+type SuggestedTag = TagData & { score: number; recommended: boolean; isNew: boolean };
+
+const RATING_ORDER: Rating[] = ['safe', 'questionable', 'explicit'];
+
+const suggestionColors: Record<TagType, string> = {
+  artist: 'border-red-500/30 text-red-400 hover:bg-red-500/10',
+  copyright: 'border-purple-500/30 text-purple-400 hover:bg-purple-500/10',
+  character: 'border-green-500/30 text-green-400 hover:bg-green-500/10',
+  general: 'border-blue-500/30 text-blue-400 hover:bg-blue-500/10',
+  meta: 'border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10',
+};
 
 export default function UploadForm() {
   const { user } = useAuth();
@@ -30,7 +42,9 @@ export default function UploadForm() {
   const [tagInput, setTagInput] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<TagModel[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [rating, setRating] = useState<'safe' | 'questionable' | 'explicit'>('safe');
+  const [rating, setRating] = useState<Rating>('safe');
+  // A ref, not state: suggestions arrive asynchronously and must see the latest value
+  const ratingTouchedRef = useRef(false);
   const [isAIGenerated, setIsAIGenerated] = useState(false);
   const [postAnonymously, setPostAnonymously] = useState(false);
   const [source, setSource] = useState('');
@@ -38,10 +52,79 @@ export default function UploadForm() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
 
+  // Autotagger suggestions
+  const [autotagEnabled, setAutotagEnabled] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestedTags, setSuggestedTags] = useState<SuggestedTag[]>([]);
+  const [suggestedRating, setSuggestedRating] = useState<{ value: Rating; score: number } | null>(null);
+  const [suggestError, setSuggestError] = useState('');
+  const suggestRequestRef = useRef(0);
+
+  useEffect(() => {
+    axios.get('/api/autotag')
+      .then((res) => setAutotagEnabled(Boolean(res.data?.enabled)))
+      .catch(() => setAutotagEnabled(false));
+  }, []);
+
+  const clearSuggestions = () => {
+    suggestRequestRef.current++;
+    setSuggesting(false);
+    setSuggestedTags([]);
+    setSuggestedRating(null);
+    setSuggestError('');
+  };
+
+  const requestSuggestions = async (image: File) => {
+    const requestId = ++suggestRequestRef.current;
+    setSuggesting(true);
+    setSuggestError('');
+    setSuggestedTags([]);
+    setSuggestedRating(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', image);
+      const response = await axios.post('/api/autotag', formData);
+      if (requestId !== suggestRequestRef.current || !response.data.success) return;
+      setSuggestedTags(response.data.tags || []);
+      const predicted: { value: Rating; score: number } | null = response.data.rating;
+      setSuggestedRating(predicted);
+      // Only ever raise the rating on its own, and never override a manual pick
+      if (predicted && !ratingTouchedRef.current) {
+        setRating((current) =>
+          RATING_ORDER.indexOf(predicted.value) > RATING_ORDER.indexOf(current) ? predicted.value : current
+        );
+      }
+    } catch (err: any) {
+      if (requestId !== suggestRequestRef.current) return;
+      setSuggestError(err.response?.data?.error || 'Tag suggestions are unavailable right now');
+    } finally {
+      if (requestId === suggestRequestRef.current) setSuggesting(false);
+    }
+  };
+
+  const addSuggestedTag = (tag: SuggestedTag) => {
+    setTags((prev) => (prev.some((t) => t.name === tag.name) ? prev : [...prev, { name: tag.name, type: tag.type }]));
+  };
+
+  const pendingSuggestions = suggestedTags.filter((s) => !tags.some((t) => t.name === s.name));
+  const pendingRecommended = pendingSuggestions.filter((s) => s.recommended);
+
+  const addAllRecommended = () => {
+    setTags((prev) => [
+      ...prev,
+      ...pendingRecommended
+        .filter((s) => !prev.some((t) => t.name === s.name))
+        .map((s) => ({ name: s.name, type: s.type })),
+    ]);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
+      if (autotagEnabled) {
+        requestSuggestions(selectedFile);
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreview(reader.result as string);
@@ -51,20 +134,19 @@ export default function UploadForm() {
   };
 
   useEffect(() => {
-    if (tagInput.trim().length > 0) {
-      fetchTagSuggestions();
-    } else {
+    if (tagInput.trim().length === 0) {
       setTagSuggestions([]);
       setShowSuggestions(false);
+      return;
     }
+    // Debounce so we don't fire a request on every keystroke.
+    const t = setTimeout(() => fetchTagSuggestions(), 200);
+    return () => clearTimeout(t);
   }, [tagInput]);
 
   const fetchTagSuggestions = async () => {
     try {
-      const response = await axios.post('/api/tags', { 
-        query: tagInput.trim(), 
-        limit: 10 
-      });
+      const response = await axios.get('/api/tags', { params: { suggest: tagInput.trim(), limit: 10 } });
       if (response.data.success) {
         setTagSuggestions(response.data.suggestions);
         setShowSuggestions(true);
@@ -225,6 +307,7 @@ export default function UploadForm() {
                       onClick={() => {
                         setFile(null);
                         setPreview(null);
+                        clearSuggestions();
                       }}
                     >
                       <X className="h-5 w-5" />
@@ -355,6 +438,52 @@ export default function UploadForm() {
                     );
                   })}
                 </div>
+
+                {autotagEnabled && (suggesting || suggestError || pendingSuggestions.length > 0) && (
+                  <div className="space-y-2.5 rounded-xl border border-border/30 bg-background/30 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        <Wand2 className="h-3.5 w-3.5" />
+                        Suggested tags
+                      </p>
+                      {pendingRecommended.length > 0 && (
+                        <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs font-bold" onClick={addAllRecommended}>
+                          Add {pendingRecommended.length} suggested
+                        </Button>
+                      )}
+                    </div>
+                    {suggesting && (
+                      <p className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Looking at your image…
+                      </p>
+                    )}
+                    {suggestError && !suggesting && (
+                      <p className="text-xs text-muted-foreground font-medium">{suggestError}</p>
+                    )}
+                    {pendingSuggestions.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {pendingSuggestions.slice(0, 40).map((tag) => (
+                          <button
+                            key={tag.name}
+                            type="button"
+                            onClick={() => addSuggestedTag(tag)}
+                            title={`${Math.round(tag.score * 100)}% confidence${tag.isNew ? ' · new tag' : ''}`}
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-bold transition-colors',
+                              suggestionColors[tag.type] || suggestionColors.general,
+                              !tag.recommended && 'border-dashed opacity-60 hover:opacity-100'
+                            )}
+                          >
+                            <Plus className="h-3 w-3" />
+                            {tag.name}
+                            <span className="tabular-nums font-medium opacity-60">{Math.round(tag.score * 100)}%</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -372,7 +501,7 @@ export default function UploadForm() {
                       <button
                         key={r}
                         type="button"
-                        onClick={() => setRating(r)}
+                        onClick={() => { setRating(r); ratingTouchedRef.current = true; }}
                         className={cn(
                           "py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all",
                           rating === r 
@@ -384,6 +513,21 @@ export default function UploadForm() {
                       </button>
                     ))}
                   </div>
+                  {suggestedRating && (
+                    <p className="text-xs text-muted-foreground font-medium">
+                      Suggested: <span className="font-bold uppercase tracking-wider">{suggestedRating.value}</span>{' '}
+                      ({Math.round(suggestedRating.score * 100)}%)
+                      {rating !== suggestedRating.value && (
+                        <button
+                          type="button"
+                          className="ml-2 underline hover:text-foreground"
+                          onClick={() => { setRating(suggestedRating.value); ratingTouchedRef.current = true; }}
+                        >
+                          Use this
+                        </button>
+                      )}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-4">

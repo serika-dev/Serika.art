@@ -273,8 +273,9 @@ Response headers:
     auth: true, permission: 'upload',
     body: [
       { name: 'file', type: 'File', required: true, description: 'Image file. Supported: JPEG, PNG, GIF, WebP. Max: 50MB.' },
-      { name: 'tags', type: 'string', required: true, description: 'JSON array of tag objects or comma-separated string. Min 1, Max 100 tags.' },
-      { name: 'rating', type: 'string', required: true, description: 'Content rating: safe, questionable, or explicit.' },
+      { name: 'tags', type: 'string', required: true, description: 'JSON array of tag objects or comma-separated string. Min 1, Max 100 tags. Optional with auto_tag=true.' },
+      { name: 'rating', type: 'string', required: true, description: 'Content rating: safe, questionable, or explicit. With auto_tag=true it may be omitted and the predicted rating is used.' },
+      { name: 'auto_tag', type: 'boolean', default: 'false', description: 'Run the autotagger and add its confident tag predictions to the ones you send (see POST /api/v1/autotag).' },
       { name: 'is_ai_generated', type: 'boolean', default: 'false', description: 'Whether the image is AI-generated.' },
       { name: 'source', type: 'string', description: 'Original source URL.' },
       { name: 'description', type: 'string', description: 'Image description.' },
@@ -305,6 +306,42 @@ Response headers:
       'Tags can be a JSON array: [{"name":"tag","type":"general"}] or comma-separated: "tag1, tag2".',
       'Valid tag types: general, artist, character, copyright, meta.',
       'A 320×320 JPEG thumbnail is automatically generated.',
+      'With auto_tag=true and the autotagger offline, the upload fails with 503 AUTOTAGGER_UNAVAILABLE unless you also sent tags and a rating.',
+    ],
+  },
+  {
+    id: 'autotag', method: 'POST', path: '/api/v1/autotag', title: 'Predict Tags',
+    description: 'Predict Danbooru-style tags and a content rating for an image.',
+    longDescription: 'Runs the image through the Serika autotagger (a WD v3 tagger model, compatible with the Danbooru autotagger API). Every prediction comes with a confidence score; "recommended" marks the ones confident enough to apply automatically (general ≥ 0.35, character ≥ 0.75). Tag names and types are matched against existing Serika tags, and "is_new" marks predictions that do not exist on Serika yet.',
+    auth: true, permission: 'images:read',
+    body: [
+      { name: 'file', type: 'File', description: 'Image file (multipart/form-data). Max: 50MB.' },
+      { name: 'post_id', type: 'integer', description: 'Alternatively, a JSON body {"post_id": 123} to tag an existing post.' },
+    ],
+    responseExample: `{
+  "success": true,
+  "data": {
+    "tags": [
+      { "name": "1girl", "type": "general", "score": 0.996, "recommended": true, "isNew": false },
+      { "name": "hatsune_miku", "type": "character", "score": 0.981, "recommended": true, "isNew": false },
+      { "name": "twintails", "type": "general", "score": 0.93, "recommended": true, "isNew": false },
+      { "name": "headset", "type": "general", "score": 0.27, "recommended": false, "isNew": false }
+    ],
+    "rating": { "value": "safe", "score": 0.91 }
+  },
+  "meta": { "timestamp": "2026-10-20T12:00:00.000Z" }
+}`,
+    errorCodes: [
+      { code: 400, meaning: 'No file / unreadable image' },
+      { code: 404, meaning: 'post_id not found' },
+      { code: 503, meaning: 'Autotagger is offline' },
+    ],
+    curlExample: `curl -X POST "https://serika.art/api/v1/autotag" \\
+  -H "Authorization: Bearer sk_serika_YOUR_KEY" \\
+  -F "file=@image.jpg"`,
+    notes: [
+      'Predictions scoring below 0.2 are not returned.',
+      'Ratings map Danbooru general/sensitive → safe, questionable → questionable, explicit → explicit.',
     ],
   },
   {

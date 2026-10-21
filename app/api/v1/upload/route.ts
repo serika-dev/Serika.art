@@ -4,6 +4,8 @@ import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
 import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
 import sharp from 'sharp';
+import { autotagImage, AutotaggerUnavailableError } from '@/lib/autotagger';
+import { revalidateImagePage } from '@/lib/revalidate';
 
 const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === 'true';
 
@@ -18,7 +20,8 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const tagsString = formData.get('tags') as string;
-    const rating = formData.get('rating') as 'safe' | 'questionable' | 'explicit';
+    let rating = formData.get('rating') as 'safe' | 'questionable' | 'explicit';
+    const autoTag = formData.get('auto_tag') === 'true';
     const isAIGenerated = formData.get('is_ai_generated') === 'true' || formData.get('isAIGenerated') === 'true';
     const source = formData.get('source') as string || '';
     const description = formData.get('description') as string || '';
@@ -66,16 +69,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (tagsData.length === 0) {
-      return apiError('At least one tag is required', 400, 'MISSING_TAGS');
+    if (tagsData.length === 0 && !autoTag) {
+      return apiError('At least one tag is required (or pass auto_tag=true)', 400, 'MISSING_TAGS');
     }
 
     if (tagsData.length > 100) {
       return apiError('Maximum 100 tags allowed', 400, 'TOO_MANY_TAGS');
     }
 
-    // Validate rating
-    if (!['safe', 'questionable', 'explicit'].includes(rating)) {
+    // Validate rating (auto_tag uploads may leave it to the tagger)
+    if (!['safe', 'questionable', 'explicit'].includes(rating) && !(autoTag && !rating)) {
       return apiError(
         'Invalid rating. Must be: safe, questionable, or explicit',
         400,
@@ -86,6 +89,31 @@ export async function POST(request: NextRequest) {
     // Process image
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
+    // auto_tag: merge the tagger's recommended tags (and rating, if none given)
+    if (autoTag) {
+      try {
+        const suggestion = await autotagImage(buffer);
+        // Same normalization as the tag insert below, so "long hair" + "long_hair" can't collide
+        const norm = (name: string) => name.toLowerCase().replace(/\s+/g, '_');
+        const have = new Set(tagsData.map((t) => norm(t.name)));
+        for (const t of suggestion.tags) {
+          if (t.recommended && !have.has(norm(t.name)) && tagsData.length < 100) {
+            tagsData.push({ name: t.name, type: t.type });
+            have.add(norm(t.name));
+          }
+        }
+        if (!rating) rating = suggestion.rating?.value ?? 'safe';
+      } catch (err) {
+        if (!(err instanceof AutotaggerUnavailableError)) throw err;
+        if (tagsData.length === 0 || !rating) {
+          return apiError('Autotagger is unavailable; provide tags and rating manually', 503, 'AUTOTAGGER_UNAVAILABLE');
+        }
+      }
+      if (tagsData.length === 0) {
+        return apiError('No tags could be predicted for this image; provide them manually', 400, 'MISSING_TAGS');
+      }
+    }
 
     // Get metadata
     const sharpMetadata = await sharp(buffer).metadata();
@@ -134,7 +162,7 @@ export async function POST(request: NextRequest) {
             [normalizedName, tagType]
           );
         }
-        tagIds.push(tagRes.rows[0].id);
+        if (!tagIds.includes(tagRes.rows[0].id)) tagIds.push(tagRes.rows[0].id);
       }
 
       // Get next sequential ID from counters
@@ -193,6 +221,9 @@ export async function POST(request: NextRequest) {
 
       return { imageId: newImageId, nextSequentialId, tagIds };
     });
+
+    // A visit to this id before it existed may have cached a 404
+    revalidateImagePage(uploadResult.nextSequentialId);
 
     // Get tag details for response
     const tagDocsRes = await query(`SELECT name, type FROM tags WHERE id = ANY($1::int[])`, [uploadResult.tagIds]);
