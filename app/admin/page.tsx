@@ -58,7 +58,9 @@ export default function AdminDashboard() {
   const { overview, refresh } = useAdminOverview();
   const t = overview?.totals;
   const a = overview?.autotag;
-  const progress = a && a.maxImageId ? Math.min(100, (a.cursor / a.maxImageId) * 100) : 0;
+  // Between passes the cursor is back at 0: that means "all caught up", not 0%
+  const caughtUp = !!a?.lastPassCompletedAt && a.cursor === 0;
+  const progress = caughtUp ? 100 : a && a.maxImageId ? Math.min(100, (a.cursor / a.maxImageId) * 100) : 0;
 
   return (
     <div className="space-y-8">
@@ -106,7 +108,11 @@ export default function AdminDashboard() {
               <div className="mb-2 h-2 overflow-hidden rounded-full bg-muted">
                 <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500" style={{ width: `${progress}%` }} />
               </div>
-              <p className="mb-4 text-xs text-muted-foreground">{progress.toFixed(1)}% of posts scanned</p>
+              <p className="mb-4 text-xs text-muted-foreground">
+                {caughtUp
+                  ? `All posts checked ${timeAgo(a.lastPassCompletedAt!)} · rescans every 6 hours`
+                  : `${progress.toFixed(1)}% of posts scanned`}
+              </p>
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-xl bg-background/50 p-3">
                   <dt className="text-muted-foreground">Posts tagged</dt>

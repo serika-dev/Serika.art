@@ -12,6 +12,7 @@ const LOCK_KEY = 72419641777;
 const CURSOR = 'autotagBackfillCursor';
 const PROCESSED = 'autotagBackfillProcessed';
 const TAGS_ADDED = 'autotagBackfillTagsAdded';
+const COMPLETED_AT = 'autotagBackfillCompletedAt'; // unix seconds of the last full pass
 const BATCH = 25;
 const SCAN_WINDOW = 20000; // image ids examined per query
 const PAUSE_BETWEEN_POSTS_MS = parseInt(process.env.AUTOTAG_BACKFILL_DELAY_MS || '500', 10);
@@ -48,7 +49,7 @@ async function setCursor(value: number) {
 export async function getBackfillStatus() {
   const res = await importQuery<{ name: string; value: number }>(
     `SELECT name, value FROM counters WHERE name = ANY($1::text[])`,
-    [[CURSOR, PROCESSED, TAGS_ADDED]]
+    [[CURSOR, PROCESSED, TAGS_ADDED, COMPLETED_AT]]
   );
   const values = Object.fromEntries(res.rows.map((r) => [r.name, Number(r.value)]));
   const max = await importQuery(`SELECT COALESCE(MAX(id), 0) AS max FROM images`);
@@ -58,6 +59,7 @@ export async function getBackfillStatus() {
     maxImageId: Number(max.rows[0].max),
     processed: values[PROCESSED] ?? 0,
     tagsAdded: values[TAGS_ADDED] ?? 0,
+    lastPassCompletedAt: values[COMPLETED_AT] ? new Date(values[COMPLETED_AT] * 1000).toISOString() : null,
   };
 }
 
@@ -108,6 +110,10 @@ async function loop() {
         continue;
       }
       console.log('[autotag-backfill] Reached the end, rescanning later');
+      await importQuery(
+        `INSERT INTO counters (name, value) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value`,
+        [COMPLETED_AT, Math.floor(Date.now() / 1000)]
+      );
       await setCursor(0);
       await sleep(RESCAN_AFTER_MS);
       continue;

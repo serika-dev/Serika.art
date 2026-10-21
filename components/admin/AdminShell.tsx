@@ -11,7 +11,7 @@ export interface AdminOverview {
   totals: { images: number; tags: number; users: number; uploadsDay: number; uploadsWeek: number };
   pending: { dmca: number; claims: number; imports: number; importRunning: boolean };
   recentModeration: { id: number; action: string; target_id: number; performed_by_username: string; reason: string | null; created_at: string }[];
-  autotag: { enabled: boolean; cursor: number; maxImageId: number; processed: number; tagsAdded: number } | null;
+  autotag: { enabled: boolean; cursor: number; maxImageId: number; processed: number; tagsAdded: number; lastPassCompletedAt: string | null } | null;
   tagMigration: { enabled: boolean; done: boolean; renamed: number; merged: number; linksMoved: number } | null;
 }
 
