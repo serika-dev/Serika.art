@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { query } from '@/lib/db';
 import { randomRows } from '@/lib/imageSearch';
 import { swrCached } from '@/lib/swrCache';
 import { NO_STORE_HEADERS } from '@/lib/cacheHeaders';
@@ -26,30 +27,41 @@ const SITE_URL = 'https://serika.art';
 const WARM_WIDTHS = [1080, 1200, 1536, 1920];
 
 async function buildPool(): Promise<Art[]> {
-  const rows = await randomRows<{ sequential_id: number; url: string; thumbnail_url: string; width: number; height: number; artist: string }>({
-    select: `i.sequential_id, i.url, i.thumbnail_url, i.width, i.height,
-      (SELECT t.name FROM image_tags it JOIN tags t ON t.id = it.tag_id
-       WHERE it.image_id = i.id AND t.type = 'artist' ORDER BY t.count DESC LIMIT 1) AS artist`,
+  // 1. Candidates from a page sample, filtered on image columns only (cheap)
+  const candidates = await randomRows<{ id: number; sequential_id: number; url: string; thumbnail_url: string; width: number; height: number }>({
+    select: 'i.id, i.sequential_id, i.url, i.thumbnail_url, i.width, i.height',
     where: `i.deleted = FALSE AND i.unlisted = FALSE AND i.rating = 'safe' AND i.is_ai_generated = FALSE
       AND i.width >= 1200 AND i.height > 0
-      AND (i.width::float / i.height::float) BETWEEN 0.9 AND 2.2
-      AND EXISTS (SELECT 1 FROM image_tags it JOIN tags t ON t.id = it.tag_id WHERE it.image_id = i.id AND t.type = 'artist')`,
+      AND (i.width::float / i.height::float) BETWEEN 0.9 AND 2.2`,
     params: [],
-    limit: POOL_SIZE,
-    // Never sort the whole table: a handful of samples is plenty for a pool
-    samplePercent: 2,
+    limit: POOL_SIZE * 8,
     fullScanFallback: false,
   });
-  // The same post can come up in two samples
-  const unique = Array.from(new Map(rows.map((r) => [r.sequential_id, r])).values());
-  const pool = unique.map((r) => ({
-    post_id: r.sequential_id,
-    url: r.url,
-    thumbnail_url: r.thumbnail_url,
-    width: r.width,
-    height: r.height,
-    artist: (r.artist || 'Unknown artist').replace(/_/g, ' '),
-  }));
+  if (candidates.length === 0) return [];
+
+  // 2. Their artist tags by image id (index lookups only); keep posts with one
+  const artists = await query<{ image_id: number; name: string }>(
+    `SELECT DISTINCT ON (it.image_id) it.image_id, t.name
+     FROM image_tags it JOIN tags t ON t.id = it.tag_id
+     WHERE it.image_id = ANY($1::int[]) AND t.type = 'artist'
+     ORDER BY it.image_id, t.count DESC`,
+    [candidates.map((c) => c.id)]
+  );
+  const artistOf = new Map(artists.rows.map((r) => [r.image_id, r.name]));
+
+  // Separate samples can return the same post twice
+  const unique = Array.from(new Map(candidates.map((c) => [c.id, c])).values());
+  const pool = unique
+    .filter((c) => artistOf.has(c.id))
+    .slice(0, POOL_SIZE)
+    .map((c) => ({
+      post_id: c.sequential_id,
+      url: c.url,
+      thumbnail_url: c.thumbnail_url,
+      width: c.width,
+      height: c.height,
+      artist: artistOf.get(c.id)!.replace(/_/g, ' '),
+    }));
   warm(pool).catch(() => {});
   return pool;
 }
