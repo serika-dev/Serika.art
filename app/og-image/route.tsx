@@ -19,6 +19,7 @@ export async function GET() {
         AND (i.width::float / i.height::float) >= 1.7 AND (i.width::float / i.height::float) <= 1.85`,
       params: [],
       limit: 1,
+      fullScanFallback: false,
     });
     const imagesResult = { rows };
 

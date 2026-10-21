@@ -149,22 +149,36 @@ export async function textSearchSql(alias: string, search: string, p: SqlParams)
  * matching set is small anyway) does it fall back to ORDER BY RANDOM().
  */
 export async function randomRows<T extends Record<string, any> = any>(
-  { select, from = 'images i', joins = '', where, params, limit }: {
+  { select, from = 'images i', joins = '', where, params, limit, samplePercent = 1, fullScanFallback = true }: {
     select: string;
     from?: string;
     joins?: string;
     where: string;
     params: any[];
     limit: number;
+    /** Share of the table's pages to sample per attempt. */
+    samplePercent?: number;
+    /** Allow ORDER BY RANDOM() over the whole filtered set when samples come up short. */
+    fullScanFallback?: boolean;
   }
 ): Promise<T[]> {
   const n = params.length + 1;
-  const sampled = await query<T>(
-    `SELECT ${select} FROM ${from} TABLESAMPLE SYSTEM (1) ${joins}
-     WHERE ${where} ORDER BY RANDOM() LIMIT $${n}`,
-    [...params, limit]
-  );
-  if (sampled.rows.length >= limit) return sampled.rows;
+  const sampleOnce = () =>
+    query<T>(
+      `SELECT ${select} FROM ${from} TABLESAMPLE SYSTEM (${samplePercent}) ${joins}
+       WHERE ${where} ORDER BY RANDOM() LIMIT $${n}`,
+      [...params, limit]
+    ).then((r) => r.rows);
+
+  const sampled = await sampleOnce();
+  if (sampled.length >= limit) return sampled;
+
+  if (!fullScanFallback) {
+    // Broad but selective filters: a few more samples beat sorting millions of rows
+    const rows = [...sampled];
+    for (let attempt = 0; attempt < 4 && rows.length < limit; attempt++) rows.push(...(await sampleOnce()));
+    return rows.slice(0, limit);
+  }
 
   const full = await query<T>(
     `SELECT ${select} FROM ${from} ${joins}

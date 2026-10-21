@@ -36,8 +36,13 @@ async function buildPool(): Promise<Art[]> {
       AND EXISTS (SELECT 1 FROM image_tags it JOIN tags t ON t.id = it.tag_id WHERE it.image_id = i.id AND t.type = 'artist')`,
     params: [],
     limit: POOL_SIZE,
+    // Never sort the whole table: a handful of samples is plenty for a pool
+    samplePercent: 2,
+    fullScanFallback: false,
   });
-  const pool = rows.map((r) => ({
+  // The same post can come up in two samples
+  const unique = Array.from(new Map(rows.map((r) => [r.sequential_id, r])).values());
+  const pool = unique.map((r) => ({
     post_id: r.sequential_id,
     url: r.url,
     thumbnail_url: r.thumbnail_url,
