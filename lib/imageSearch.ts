@@ -294,6 +294,7 @@ const LIST_COLUMNS = `i.id, i.sequential_id, i.user_id, i.username, i.url, i.thu
   i.upvotes, i.downvotes, i.favorites, i.views, i.created_at`;
 
 const LIST_CACHE_TTL = 20;
+const UPLOADER_COUNT_CAP = 10000;
 
 export type ImageListResult =
   | {
@@ -330,9 +331,18 @@ export async function listImages(p: ImageListParams): Promise<ImageListResult> {
     conditions.push(p.userId === 'null' ? `i.user_id IS NULL` : `i.user_id = ${sql.add(p.userId)}`);
   }
 
+  // "-tag" excludes a tag (Danbooru-style); the rest must all be present
+  const includeNames = p.tags.filter((t) => !t.startsWith('-'));
+  const excludeNames = p.tags.filter((t) => t.startsWith('-')).map((t) => t.slice(1)).filter(Boolean);
+  if (excludeNames.length > 0) {
+    const { found } = await resolveTags(excludeNames); // unknown excluded tags exclude nothing
+    const clause = hasNoTagsSql('i', found, sql);
+    if (clause) conditions.push(clause);
+  }
+
   let tags: TagRef[] = [];
-  if (p.tags.length > 0) {
-    const resolved = await resolveTags(p.tags);
+  if (includeNames.length > 0) {
+    const resolved = await resolveTags(includeNames);
     if (resolved.found.length === 0) return emptyList(p);
     if (resolved.missing.length > 0) {
       return { success: false, error: 'One or more specified tags were not found', code: 'TAG_NOT_FOUND', status: 404 };
@@ -368,11 +378,19 @@ export async function listImages(p: ImageListParams): Promise<ImageListResult> {
     ...hasAllTagsSql('i', tags.filter((t) => t !== driving), listParams),
   ].join(' AND ');
 
-  // Fast estimate for broad listings; user/search listings are cheap or
-  // unpredictable, so those wait for the exact count.
+  // Fast estimate for broad listings. Uploader listings are usually small, but
+  // the "Anonymous" account owns millions of posts: count up to a cap first and
+  // only fall back to an estimate (exact count in the background) past it.
   let estimate: number | null = null;
   if (!p.q && !p.username && !p.userId) {
     estimate = tags.length > 0 ? Math.min(...tags.map((t) => t.count)) : totalImages;
+  } else if (!p.q && tags.length === 0) {
+    const capped = await query(
+      `SELECT COUNT(*) AS count FROM (SELECT 1 FROM images i WHERE ${countWhere} LIMIT ${UPLOADER_COUNT_CAP + 1}) s`,
+      countParams.values
+    );
+    const n = parseInt(capped.rows[0]?.count ?? '0', 10);
+    if (n > UPLOADER_COUNT_CAP) estimate = n;
   }
 
   const [rows, count] = await Promise.all([

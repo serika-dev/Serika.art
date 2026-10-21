@@ -5,7 +5,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import ImageCard from '@/components/ImageCard';
 import { Image, Tag } from '@/lib/models';
 import axios from 'axios';
-import { ChevronLeft, ChevronRight, Loader2, Hash, TrendingUp, X, Search, Shield, AlertTriangle, Ban, Filter, SlidersHorizontal, Sparkles, Bot, EyeOff, Eye, Palette, User } from 'lucide-react';
+import { Loader2, X, Search, Shield, AlertTriangle, Ban, SlidersHorizontal, Sparkles, Bot, EyeOff, Eye, Palette, User, Minus } from 'lucide-react';
+import { normalizeTagName } from '@/lib/tagName';
 import Link from 'next/link';
 import { getRatingsFromCookie, setRatingsCookie, toggleRating as toggleRatingUtil, Rating } from '@/lib/ratingPreferences';
 import { getBlacklistedTags, isBlacklistEnabled, setBlacklistEnabled, shouldHideImage } from '@/lib/blacklist';
@@ -83,6 +84,8 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [artistTagInfo, setArtistTagInfo] = useState<{ name: string; tagId: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Tag types seen so far (page results, suggestions) – colours the search chips
+  const tagTypes = useRef(new Map<string, TagType>());
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Get parameters from URL
@@ -205,7 +208,8 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   };
 
   useEffect(() => {
-    if (tagInput.trim().length === 0) {
+    // A leading "-" means exclude; suggest on the tag name after it
+    if (tagInput.trim().replace(/^-/, '').length === 0) {
       setTagSuggestions([]);
       setShowSuggestions(false);
       return;
@@ -256,7 +260,15 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
         extractTagsFromImages(response.data.images);
       }
     } catch (error) {
-      console.error('Error fetching images:', error);
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        // One of the searched tags doesn't exist
+        setImages([]);
+        setAllImages([]);
+        setTotalImages(0);
+        setTotalPages(1);
+      } else {
+        console.error('Error fetching images:', error);
+      }
     } finally {
       setLoading(false);
     }
@@ -272,6 +284,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
         const tagId = (tag && typeof tag === 'object') ? ((tag as any).id || (tag as any)._id) : null;
         const tagCount = (tag && typeof tag === 'object' && 'count' in tag) ? (tag as any).count : 0;
         
+        if (tagName) tagTypes.current.set(tagName, tagType || 'general');
         if (tagName && tagId && !tagMap[tagName]) {
           tagMap[tagName] = { count: tagCount, type: tagType || 'general', _id: tagId };
         }
@@ -305,7 +318,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
 
   const fetchTagSuggestions = async () => {
     try {
-      const response = await axios.get('/api/tags', { params: { suggest: tagInput.trim(), limit: 20 } });
+      const response = await axios.get('/api/tags', { params: { suggest: tagInput.trim().replace(/^-/, ''), limit: 20 } });
       if (response.data.success) {
         setTagSuggestions(response.data.suggestions);
         setShowSuggestions(true);
@@ -350,6 +363,53 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
     router.push('/posts');
   }, [router]);
 
+  /** Hide posts with this tag ("-tag"); drops it from the included tags if it was there. */
+  const excludeTag = useCallback((tagName: string) => {
+    const bare = normalizeTagName(tagName.replace(/^-/, ''));
+    const names = selectedTags.map(t => t.name).filter(n => n !== bare && n !== `-${bare}`);
+    updateUrl([...names, `-${bare}`], sort, 1);
+  }, [selectedTags, sort, updateUrl]);
+
+  /** Add from the search box: "-" in front excludes. */
+  const addSearchTag = useCallback((tag: Tag) => {
+    tagTypes.current.set(tag.name, tag.type);
+    const excluded = tagInput.trim().startsWith('-');
+    const name = excluded ? `-${tag.name}` : tag.name;
+    const names = selectedTags.map(t => t.name).filter(n => n !== tag.name && n !== `-${tag.name}`);
+    updateUrl([...names, name], sort, 1);
+    setTagInput('');
+    setShowSuggestions(false);
+  }, [selectedTags, sort, updateUrl, tagInput]);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && tagInput === '' && selectedTags.length > 0) {
+      removeTag(selectedTags[selectedTags.length - 1].name);
+      return;
+    }
+    if (e.key === 'Escape') {
+      setShowSuggestions(false);
+      return;
+    }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const words = tagInput.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return;
+    // One word: take the exact or best autocomplete match; several words: each is a tag
+    if (words.length === 1 && tagSuggestions.length > 0) {
+      const bare = normalizeTagName(words[0].replace(/^-/, ''));
+      addSearchTag(tagSuggestions.find(t => t.name === bare) ?? tagSuggestions[0]);
+      return;
+    }
+    const names = selectedTags.map(t => t.name);
+    for (const word of words) {
+      const name = word.startsWith('-') ? `-${normalizeTagName(word.slice(1))}` : normalizeTagName(word);
+      if (name !== '-' && !names.includes(name)) names.push(name);
+    }
+    updateUrl(names, sort, 1);
+    setTagInput('');
+    setShowSuggestions(false);
+  };
+
   const toggleTag = useCallback((tag: Tag | { name: string; type: TagType }) => {
     const newTags = selectedTags.map(t => t.name);
     const exists = newTags.includes(tag.name);
@@ -375,49 +435,18 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
     meta: 'text-yellow-400',
   };
 
+  const chipColors: Record<TagType, string> = {
+    artist: 'border-red-500/30 bg-red-500/10 text-red-300',
+    copyright: 'border-purple-500/30 bg-purple-500/10 text-purple-300',
+    character: 'border-green-500/30 bg-green-500/10 text-green-300',
+    general: 'border-blue-500/30 bg-blue-500/10 text-blue-300',
+    meta: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300',
+  };
+
+  const includedTags = selectedTags.filter((t) => !t.name.startsWith('-'));
+
   const SidebarContent = useMemo(() => (
     <div className="space-y-6">
-      <div className="space-y-3">
-        <h3 className="text-sm font-semibold flex items-center gap-2">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          Search Tags
-        </h3>
-        <div className="relative">
-          <input
-            type="text"
-            defaultValue=""
-            onChange={(e) => setTagInput(e.target.value)}
-            placeholder="Type to search..."
-            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          />
-          {showSuggestions && tagSuggestions.length > 0 && (
-            <Card className="absolute z-[110] w-full mt-1 max-h-64 overflow-hidden shadow-2xl border-primary/20">
-              <ScrollArea className="max-h-64">
-                <div className="p-1">
-                  {tagSuggestions.map((tag) => (
-                    <button
-                      key={tag.name}
-                      onClick={() => addTag(tag)}
-                      className="w-full px-3 py-2 text-left hover:bg-accent rounded-sm transition-colors flex items-center justify-between text-sm"
-                    >
-                      <span className="font-medium">{tag.name}</span>
-                      <div className="flex items-center gap-2">
-                        <span className={cn("text-xs font-medium", typeColors[tag.type || 'general'])}>
-                          {tag.type || 'general'}
-                        </span>
-                        <span className="text-xs text-muted-foreground">{tag.count}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </ScrollArea>
-            </Card>
-          )}
-        </div>
-      </div>
-
-      <Separator />
-
       <div className="space-y-3">
         <h3 className="text-sm font-semibold flex items-center gap-2">
           <User className="h-4 w-4 text-muted-foreground" />
@@ -520,33 +549,6 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
         </div>
       </div>
 
-      {selectedTags.length > 0 && (
-        <>
-          <Separator />
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Active Filters</h3>
-              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-auto py-1 px-2 text-xs text-muted-foreground hover:text-foreground">
-                Clear all
-              </Button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {selectedTags.map((tag) => (
-                <Badge
-                  key={tag.name}
-                  variant="secondary"
-                  className="pl-2 pr-1 py-1 gap-1 cursor-pointer bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
-                  onClick={() => removeTag(tag.name)}
-                >
-                  {tag.name}
-                  <X className="h-3 w-3" />
-                </Badge>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-
       <Separator />
 
       <div className="space-y-5">
@@ -563,18 +565,27 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
                 {tags.map((tag) => {
                   const isSelected = selectedTags.some(t => t.name === tag.name);
                   return (
-                    <div key={tag.name} className="space-y-0.5">
+                    <div key={tag.name} className="group flex items-center gap-1">
                       <button
                         onClick={() => toggleTag(tag)}
+                        title={isSelected ? `Remove ${tag.name}` : `Search ${tag.name}`}
                         className={cn(
-                          "w-full text-left px-2.5 py-1.5 rounded-md text-sm transition-all flex items-center justify-between group",
+                          "flex-1 min-w-0 text-left px-2.5 py-1.5 rounded-md text-sm transition-all flex items-center justify-between",
                           isSelected
                             ? "bg-primary/15 text-primary font-medium"
                             : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                         )}
                       >
                         <span className="truncate">{tag.name}</span>
-                        <span className="text-xs tabular-nums ml-2 opacity-50">{tag.count}</span>
+                        <span className="text-xs tabular-nums ml-2 opacity-50">{tag.count.toLocaleString()}</span>
+                      </button>
+                      <button
+                        onClick={() => excludeTag(tag.name)}
+                        title={`Hide posts tagged ${tag.name}`}
+                        aria-label={`Exclude ${tag.name}`}
+                        className="shrink-0 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-rose-500/10 hover:text-rose-400 focus:opacity-100 group-hover:opacity-100"
+                      >
+                        <Minus className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   );
@@ -585,7 +596,13 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
         })}
       </div>
     </div>
-  ), [tagSuggestions, showSuggestions, selectedRatings, hideAI, selectedTags, tagsByType, blacklistEnabled, blacklistedTags, uploaderParam, urlPage, addTag, removeTag, clearFilters, toggleTag, toggleRating, updateUrl]);
+  ), [selectedRatings, hideAI, selectedTags, tagsByType, blacklistEnabled, blacklistedTags, uploaderParam, urlPage, toggleTag, toggleRating, updateUrl, excludeTag]);
+
+  const hiddenByBlacklist = useMemo(() => {
+    if (!blacklistEnabled || blacklistedTags.length === 0) return 0;
+    const sourceImages = infiniteScroll && allImages.length > 0 ? allImages : images;
+    return sourceImages.filter(image => shouldHideImage(image.tags as unknown as (string | { name: string })[])).length;
+  }, [images, allImages, infiniteScroll, blacklistEnabled, blacklistedTags]);
 
   const filteredImages = useMemo(() => {
     const sourceImages = infiniteScroll && allImages.length > 0 ? allImages : images;
@@ -606,32 +623,33 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
       </aside>
 
       <div className="flex-1 min-w-0">
-        <div className="mb-6">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight mb-1">Posts</h1>
-              <p className="text-muted-foreground">
-                {totalImages > 0 ? `${totalImages.toLocaleString()} images` : 'Discover amazing artwork'}
-              </p>
-            </div>
-            {artistTagInfo && (
-              <Link href={`/artist/${encodeURIComponent(artistTagInfo.name.replace(/ /g, '_'))}`}>
-                <Button className="bg-red-600 hover:bg-red-700 gap-2">
-                  <Palette className="h-4 w-4" />
-                  View {artistTagInfo.name.replace(/_/g, ' ')}'s Artist Page
-                </Button>
-              </Link>
-            )}
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="mb-1 truncate text-3xl font-bold tracking-tight">
+              {includedTags.length > 0 ? includedTags.map((t) => t.name).join(' + ') : uploaderParam ? `Posts by ${uploaderParam}` : 'Posts'}
+            </h1>
+            <p className="text-muted-foreground">
+              {loading
+                ? 'Searching…'
+                : `${totalImages.toLocaleString()} ${totalImages === 1 ? 'post' : 'posts'}${selectedTags.length > 0 ? ' match your search' : ''}`}
+            </p>
           </div>
+          {artistTagInfo && (
+            <Link href={`/artist/${encodeURIComponent(artistTagInfo.name.replace(/ /g, '_'))}`}>
+              <Button className="bg-red-600 hover:bg-red-700 gap-2">
+                <Palette className="h-4 w-4" />
+                View {artistTagInfo.name.replace(/_/g, ' ')}&apos;s Artist Page
+              </Button>
+            </Link>
+          )}
         </div>
 
-        <div className="flex items-center justify-between gap-4 mb-6 sticky top-16 z-40 bg-background py-3 -mx-4 px-4 border-b border-border/40">
-          <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
+        <div className="sticky top-16 z-40 -mx-4 mb-6 border-b border-border/40 bg-background/95 px-4 py-3 backdrop-blur-xl">
+          <div className="flex items-start gap-2">
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="outline" size="sm" className="lg:hidden gap-2">
+                <Button variant="outline" size="sm" className="h-10 shrink-0 gap-2 lg:hidden" aria-label="Filters">
                   <SlidersHorizontal className="h-4 w-4" />
-                  Filters
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-80">
@@ -642,8 +660,81 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
               </SheetContent>
             </Sheet>
 
+            {/* Search: the active tags are chips inside the box */}
+            <div className="relative min-w-0 flex-1">
+              <div
+                className="flex min-h-10 cursor-text flex-wrap items-center gap-1.5 rounded-xl border border-border/60 bg-card/60 px-2.5 py-1.5 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20"
+                onClick={() => inputRef.current?.focus()}
+              >
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                {selectedTags.map((tag) => {
+                  const excluded = tag.name.startsWith('-');
+                  const bare = excluded ? tag.name.slice(1) : tag.name;
+                  const type = tagTypes.current.get(bare) || 'general';
+                  return (
+                    <span
+                      key={tag.name}
+                      className={cn(
+                        'inline-flex max-w-full items-center gap-1 rounded-lg border py-0.5 pl-2 pr-1 text-xs font-semibold',
+                        excluded ? 'border-rose-500/30 bg-rose-500/10 text-rose-300 line-through decoration-rose-400/60' : chipColors[type]
+                      )}
+                    >
+                      {excluded && <Minus className="h-3 w-3 shrink-0 no-underline" />}
+                      <span className="truncate">{bare}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); removeTag(tag.name); }}
+                        aria-label={`Remove ${bare}`}
+                        className="rounded p-0.5 hover:bg-white/10"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  onFocus={() => tagSuggestions.length > 0 && setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                  placeholder={selectedTags.length ? 'Add a tag…' : 'Search tags, e.g. 1girl long_hair -comic'}
+                  aria-label="Search tags"
+                  className="h-7 min-w-[9rem] flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
+                />
+              </div>
+
+              {showSuggestions && tagSuggestions.length > 0 && (
+                <div className="absolute z-[110] mt-1 w-full overflow-hidden rounded-xl border border-border/60 bg-popover shadow-2xl">
+                  <ScrollArea className="max-h-72">
+                    <div className="p-1">
+                      {tagSuggestions.map((tag, i) => (
+                        <button
+                          key={tag.name}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => addSearchTag(tag)}
+                          className={cn(
+                            'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-accent',
+                            i === 0 && 'bg-accent/50'
+                          )}
+                        >
+                          <span className="truncate font-medium">{tagInput.trim().startsWith('-') && <span className="text-rose-400">−</span>}{tag.name}</span>
+                          <span className="ml-3 flex shrink-0 items-center gap-2">
+                            <span className={cn('text-xs font-medium', typeColors[tag.type || 'general'])}>{tag.type || 'general'}</span>
+                            <span className="text-xs tabular-nums text-muted-foreground">{tag.count.toLocaleString()}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
+            </div>
+
             <Select value={sort} onValueChange={(value) => updateUrl(undefined, value, 1)}>
-              <SelectTrigger className="w-[180px] h-9">
+              <SelectTrigger className="h-10 w-[150px] shrink-0 sm:w-[170px]">
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
@@ -656,6 +747,59 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
                 <SelectItem value="random">Random</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Everything else that narrows the results, at a glance */}
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs">
+            {([
+              { rating: 'safe' as Rating, label: 'Safe', on: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' },
+              { rating: 'questionable' as Rating, label: 'Questionable', on: 'border-amber-500/40 bg-amber-500/10 text-amber-300' },
+              { rating: 'explicit' as Rating, label: 'Explicit', on: 'border-rose-500/40 bg-rose-500/10 text-rose-300' },
+            ]).map(({ rating, label, on }) => {
+              const active = selectedRatings.includes(rating);
+              return (
+                <button
+                  key={rating}
+                  onClick={() => toggleRating(rating)}
+                  aria-pressed={active}
+                  className={cn(
+                    'rounded-full border px-2.5 py-1 font-semibold transition-colors',
+                    active ? on : 'border-border/50 text-muted-foreground/60 line-through hover:text-muted-foreground'
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => { setHideAI(!hideAI); if (urlPage > 1) updateUrl(undefined, undefined, 1); }}
+              aria-pressed={hideAI}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold transition-colors',
+                hideAI ? 'border-purple-500/40 bg-purple-500/10 text-purple-300' : 'border-border/50 text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Bot className="h-3 w-3" />
+              {hideAI ? 'AI hidden' : 'AI shown'}
+            </button>
+            {uploaderParam && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 py-1 pl-2.5 pr-1 font-semibold text-sky-300">
+                <User className="h-3 w-3" /> by {uploaderParam}
+                <button onClick={() => updateUrl(undefined, undefined, 1, '')} aria-label="Remove uploader filter" className="rounded-full p-0.5 hover:bg-white/10">
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+            {blacklistEnabled && hiddenByBlacklist > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 px-2.5 py-1 font-semibold text-amber-300/90" title="Posts on this page hidden by your tag blacklist">
+                <EyeOff className="h-3 w-3" /> {hiddenByBlacklist} hidden by blacklist
+              </span>
+            )}
+            {(selectedTags.length > 0 || uploaderParam) && (
+              <button onClick={clearFilters} className="ml-1 font-semibold text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+                Clear all
+              </button>
+            )}
           </div>
         </div>
 
