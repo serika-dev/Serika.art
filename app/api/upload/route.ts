@@ -1,10 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { query, withTransaction } from '@/lib/db';
 import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
 import { requireAuth } from '@/lib/auth';
 import sharp from 'sharp';
 import { revalidateImagePage } from '@/lib/revalidate';
+import { autotagPost, MIN_TAGS, sameTagKey } from '@/lib/autotagApply';
+import { isAutotaggerConfigured } from '@/lib/autotagger';
 
 const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === 'true';
 
@@ -57,9 +59,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (tagsData.length === 0) {
+    // Same tag twice (or "long hair" + "long_hair") only counts once
+    const uniqueTags = new Set(tagsData.map((t: { name: string }) => sameTagKey(t.name || '')).filter(Boolean));
+    if (uniqueTags.size < MIN_TAGS) {
       return NextResponse.json(
-        { success: false, error: 'At least one tag is required' },
+        { success: false, error: `Add at least ${MIN_TAGS} tags (you have ${uniqueTags.size}). See the tagging guidelines.`, code: 'NOT_ENOUGH_TAGS' },
         { status: 400 }
       );
     }
@@ -190,6 +194,14 @@ export async function POST(request: NextRequest) {
     const { _nextSequentialId, ...imageData } = imageResult;
     // A visit to this id before it existed may have cached a 404
     revalidateImagePage(_nextSequentialId);
+
+    // Add the tagger's confident tags once the response is out
+    if (isAutotaggerConfigured()) {
+      after(() =>
+        autotagPost({ id: imageData.id, sequentialId: _nextSequentialId }, buffer)
+          .catch((err) => console.error('[autotag] New post', _nextSequentialId, err?.message || err))
+      );
+    }
     return NextResponse.json({
       success: true,
       image: {

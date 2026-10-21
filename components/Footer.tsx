@@ -16,6 +16,7 @@ export default function Footer() {
         <div className="flex items-center justify-center flex-wrap gap-x-4 gap-y-1 sm:gap-6 text-xs sm:text-sm text-muted-foreground">
           <Link href="/posts" className="hover:text-foreground transition-colors">Posts</Link>
           <Link href="/tags" className="hover:text-foreground transition-colors">Tags</Link>
+          <Link href="/guidelines/tagging" className="hover:text-foreground transition-colors">Tagging guidelines</Link>
           <Link href="/api-docs" className="hover:text-foreground transition-colors">API</Link>
           <a href="https://issues.serika.dev/issues/new?project=serika-art" className="hover:text-foreground transition-colors">Report a bug</a>
           <Link href="/contact" className="hover:text-foreground transition-colors">Contact</Link>

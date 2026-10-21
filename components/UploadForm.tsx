@@ -21,6 +21,8 @@ type Rating = 'safe' | 'questionable' | 'explicit';
 type SuggestedTag = TagData & { score: number; recommended: boolean; isNew: boolean };
 
 const RATING_ORDER: Rating[] = ['safe', 'questionable', 'explicit'];
+// Keep in sync with MIN_TAGS in lib/autotagApply.ts (the server enforces it)
+const MIN_TAGS = 5;
 
 /** Re-encode an image as a ≤768px JPEG on a white background, or null if the browser can't decode it. */
 async function shrinkForTagging(file: File): Promise<Blob | null> {
@@ -246,8 +248,8 @@ export default function UploadForm() {
       return;
     }
 
-    if (tags.length === 0) {
-      setError('Please add at least one tag');
+    if (tags.length < MIN_TAGS) {
+      setError(`Please add at least ${MIN_TAGS} tags (${tags.length} so far)`);
       return;
     }
 
@@ -381,8 +383,21 @@ export default function UploadForm() {
             {/* Tags Card */}
             <Card className="border-border/50 bg-card/50 backdrop-blur-sm rounded-2xl">
               <CardHeader>
-                <CardTitle className="text-lg font-bold">Tags</CardTitle>
-                <CardDescription className="font-medium">Add descriptive tags to help others find your post</CardDescription>
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-lg font-bold">Tags</CardTitle>
+                  <span className={cn(
+                    'text-xs font-bold tabular-nums rounded-lg px-2 py-0.5 border',
+                    tags.length >= MIN_TAGS
+                      ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                      : 'text-amber-400 border-amber-500/30 bg-amber-500/10'
+                  )}>
+                    {tags.length}/{MIN_TAGS} minimum
+                  </span>
+                </div>
+                <CardDescription className="font-medium">
+                  At least {MIN_TAGS} tags: artist, series, characters and what you see.{' '}
+                  <a href="/guidelines/tagging" target="_blank" className="underline hover:text-foreground">Tagging guidelines</a>
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="relative">

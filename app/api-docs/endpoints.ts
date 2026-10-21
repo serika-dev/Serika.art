@@ -273,7 +273,7 @@ Response headers:
     auth: true, permission: 'upload',
     body: [
       { name: 'file', type: 'File', required: true, description: 'Image file. Supported: JPEG, PNG, GIF, WebP. Max: 50MB.' },
-      { name: 'tags', type: 'string', required: true, description: 'JSON array of tag objects or comma-separated string. Min 1, Max 100 tags. Optional with auto_tag=true.' },
+      { name: 'tags', type: 'string', required: true, description: 'JSON array of tag objects or comma-separated string. Min 5, Max 100 tags (with auto_tag=true, predicted tags count towards the 5).' },
       { name: 'rating', type: 'string', required: true, description: 'Content rating: safe, questionable, or explicit. With auto_tag=true it may be omitted and the predicted rating is used.' },
       { name: 'auto_tag', type: 'boolean', default: 'false', description: 'Run the autotagger and add its confident tag predictions to the ones you send (see POST /api/v1/autotag).' },
       { name: 'is_ai_generated', type: 'boolean', default: 'false', description: 'Whether the image is AI-generated.' },
@@ -307,7 +307,39 @@ Response headers:
       'Valid tag types: general, artist, character, copyright, meta.',
       'A 320×320 JPEG thumbnail is automatically generated.',
       'With auto_tag=true and the autotagger offline, the upload fails with 503 AUTOTAGGER_UNAVAILABLE unless you also sent tags and a rating.',
+      'Uploads with fewer than 5 distinct tags are refused with 400 NOT_ENOUGH_TAGS. See https://serika.art/guidelines/tagging.',
+      'Every new post is run through the autotagger after upload; confident tags it predicts are added (yours are never removed).',
     ],
+  },
+  {
+    id: 'image-autotag', method: 'POST', path: '/api/v1/images/:id/autotag', title: 'Autotag a Post',
+    description: 'Predict tags for an existing post, and optionally add the confident ones it is missing.',
+    longDescription: 'Runs the post through the autotagger and returns every prediction plus missing_tags: the confident predictions the post does not have yet. With apply=true those are added to the post (tags are only ever added, never removed); that needs the images:write permission, and the key owner must be the uploader or a moderator.',
+    auth: true, permission: 'images:read (images:write with apply=true)',
+    params: [
+      { name: 'id', type: 'integer', required: true, description: 'Post ID (sequential).' },
+      { name: 'apply', type: 'boolean', default: 'false', description: 'Add the missing confident tags to the post. Also accepted as JSON body {"apply": true}.' },
+    ],
+    responseExample: `{
+  "success": true,
+  "data": {
+    "post_id": 3086270,
+    "tags": [{ "name": "1girl", "type": "general", "score": 0.993, "recommended": true, "isNew": false }],
+    "rating": { "value": "safe", "score": 0.97 },
+    "missing_tags": ["dragon_horns", "balloon"],
+    "applied": true,
+    "added_tags": ["dragon_horns", "balloon"]
+  },
+  "meta": { "timestamp": "2026-10-21T12:00:00.000Z" }
+}`,
+    errorCodes: [
+      { code: 403, meaning: 'apply=true by someone other than the uploader or a moderator' },
+      { code: 404, meaning: 'Post not found' },
+      { code: 422, meaning: 'The image could not be read' },
+      { code: 503, meaning: 'Autotagger is offline' },
+    ],
+    curlExample: `curl -X POST "https://serika.art/api/v1/images/3086270/autotag?apply=true" \\
+  -H "Authorization: Bearer sk_serika_YOUR_KEY"`,
   },
   {
     id: 'autotag', method: 'POST', path: '/api/v1/autotag', title: 'Predict Tags',

@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { query, withTransaction } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
 import { uploadToB2 } from '@/lib/b2';
@@ -6,6 +6,8 @@ import { uploadLocally } from '@/lib/localStorage';
 import sharp from 'sharp';
 import { autotagImage, AutotaggerUnavailableError } from '@/lib/autotagger';
 import { revalidateImagePage } from '@/lib/revalidate';
+import { autotagPost, MIN_TAGS } from '@/lib/autotagApply';
+import { isAutotaggerConfigured } from '@/lib/autotagger';
 
 const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === 'true';
 
@@ -110,9 +112,15 @@ export async function POST(request: NextRequest) {
           return apiError('Autotagger is unavailable; provide tags and rating manually', 503, 'AUTOTAGGER_UNAVAILABLE');
         }
       }
-      if (tagsData.length === 0) {
-        return apiError('No tags could be predicted for this image; provide them manually', 400, 'MISSING_TAGS');
-      }
+    }
+
+    const uniqueTags = new Set(tagsData.map((t) => t.name.toLowerCase().trim().replace(/\s+/g, '_')).filter(Boolean));
+    if (uniqueTags.size < MIN_TAGS) {
+      return apiError(
+        `At least ${MIN_TAGS} tags are required (got ${uniqueTags.size}${autoTag ? ' including predicted tags' : ''})`,
+        400,
+        'NOT_ENOUGH_TAGS'
+      );
     }
 
     // Get metadata
@@ -224,6 +232,14 @@ export async function POST(request: NextRequest) {
 
     // A visit to this id before it existed may have cached a 404
     revalidateImagePage(uploadResult.nextSequentialId);
+
+    // Every new post gets the tagger's confident tags (already merged with auto_tag=true)
+    if (!autoTag && isAutotaggerConfigured()) {
+      after(() =>
+        autotagPost({ id: uploadResult.imageId, sequentialId: uploadResult.nextSequentialId }, buffer)
+          .catch((err) => console.error('[autotag] New post', uploadResult.nextSequentialId, err?.message || err))
+      );
+    }
 
     // Get tag details for response
     const tagDocsRes = await query(`SELECT name, type FROM tags WHERE id = ANY($1::int[])`, [uploadResult.tagIds]);
