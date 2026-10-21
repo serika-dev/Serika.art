@@ -38,6 +38,8 @@ export interface AutotagResult {
 }
 
 export class AutotaggerUnavailableError extends Error {}
+/** The tagger was reachable but could not decode the image. */
+export class UnreadableImageError extends Error {}
 
 export function isAutotaggerConfigured(): boolean {
   return AUTOTAGGER_URL.length > 0;
@@ -90,11 +92,15 @@ export async function autotagImage(input: Buffer): Promise<AutotagResult> {
       headers: AUTOTAGGER_API_KEY ? { Authorization: `Bearer ${AUTOTAGGER_API_KEY}` } : undefined,
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+    if (res.status === 400 || res.status === 413) {
+      throw new UnreadableImageError(`Autotagger could not read the image (HTTP ${res.status})`);
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     raw = Array.isArray(json) ? json[0] : json;
     if (!raw || typeof raw.tags !== 'object') throw new Error('Unexpected response');
   } catch (err: any) {
+    if (err instanceof UnreadableImageError) throw err;
     throw new AutotaggerUnavailableError(`Autotagger request failed: ${err?.message || err}`);
   }
 
