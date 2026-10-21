@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { publicCacheHeaders } from '@/lib/cacheHeaders';
 
 // Get a tag by name
 export async function GET(
@@ -39,7 +40,7 @@ export async function GET(
         count: tag.count,
         createdAt: tag.created_at,
       },
-    });
+    }, { headers: publicCacheHeaders(300) });
   } catch (error: any) {
     console.error('Error fetching tag:', error);
     return NextResponse.json(

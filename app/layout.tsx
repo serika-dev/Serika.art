@@ -108,6 +108,9 @@ export default function RootLayout({
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#09090b" />
+        {/* Thumbnails and full images come from the CDN – open that connection early */}
+        <link rel="preconnect" href="https://cdn.serika.art" />
+        <link rel="dns-prefetch" href="https://cdn.serika.art" />
         <script async type="application/javascript" src="https://a.magsrv.com/ad-provider.js"></script>
       </head>
       <body className={cn("min-h-screen bg-background font-sans antialiased flex flex-col", inter.className)}>

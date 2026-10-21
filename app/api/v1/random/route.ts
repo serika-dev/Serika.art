@@ -2,6 +2,11 @@ import { NextRequest } from 'next/server';
 import { query } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
 import { publicImageFilter, ratingFilter } from '@/lib/contentFilters';
+import { SqlParams, resolveTags, hasAllTagsSql, hasNoTagsSql, randomRows } from '@/lib/imageSearch';
+
+const RANDOM_COLUMNS = `i.id, i.sequential_id, i.user_id, i.username, i.url, i.thumbnail_url,
+  i.width, i.height, i.file_size, i.content_type, i.rating, i.is_ai_generated,
+  i.source, i.description, i.upvotes, i.downvotes, i.favorites, i.views, i.created_at`;
 
 // GET /api/v1/random - Get random image(s) with metadata
 export async function GET(request: NextRequest) {
@@ -23,87 +28,40 @@ export async function GET(request: NextRequest) {
     const aiOnly = searchParams.get('ai') === 'true';
     const noAi = searchParams.get('no_ai') === 'true';
 
+    const sql = new SqlParams();
     const whereClauses: string[] = [publicImageFilter()];
-    const queryParams: any[] = [];
-    let paramIndex = 1;
 
     // Filter by tags
     if (tagNames.length > 0) {
-      const tagDocsResult = await query(
-        `SELECT id FROM tags WHERE LOWER(name) = ANY($1)`,
-        [tagNames.map(t => t.toLowerCase())]
-      );
-      if (tagDocsResult.rows.length === 0) {
+      const { found, missing } = await resolveTags(tagNames);
+      if (found.length === 0) {
         return apiResponse([], { message: 'No images match the specified tags' });
       }
-      if (tagDocsResult.rows.length < tagNames.length) {
+      if (missing.length > 0) {
         return apiError('One or more specified tags were not found', 404, 'TAG_NOT_FOUND');
       }
-      const tagIds = tagDocsResult.rows.map(r => r.id);
-      
-      const imageIdsRes = await query(
-        `SELECT image_id FROM image_tags WHERE tag_id = ANY($1) GROUP BY image_id HAVING COUNT(DISTINCT tag_id) = $2`,
-        [tagIds, tagIds.length]
-      );
-      if (imageIdsRes.rows.length === 0) {
-        return apiResponse([], { message: 'No images match the specified tags' });
-      }
-      const matchingImageIds = imageIdsRes.rows.map(r => r.image_id);
-      whereClauses.push(`i.id = ANY($${paramIndex})`);
-      queryParams.push(matchingImageIds);
-      paramIndex++;
+      whereClauses.push(...hasAllTagsSql('i', found, sql));
     }
 
     // Exclude tags
     if (excludeTags.length > 0) {
-      const excludeTagDocsResult = await query(
-        `SELECT id FROM tags WHERE LOWER(name) = ANY($1)`,
-        [excludeTags.map(t => t.toLowerCase())]
-      );
-      if (excludeTagDocsResult.rows.length > 0) {
-        const excludeTagIds = excludeTagDocsResult.rows.map(r => r.id);
-        const excludeImageIdsRes = await query(
-          `SELECT DISTINCT image_id FROM image_tags WHERE tag_id = ANY($1)`,
-          [excludeTagIds]
-        );
-        if (excludeImageIdsRes.rows.length > 0) {
-          const excludeImageIds = excludeImageIdsRes.rows.map(r => r.image_id);
-          whereClauses.push(`NOT (i.id = ANY($${paramIndex}))`);
-          queryParams.push(excludeImageIds);
-          paramIndex++;
-        }
-      }
+      const { found } = await resolveTags(excludeTags);
+      const clause = hasNoTagsSql('i', found, sql);
+      if (clause) whereClauses.push(clause);
     }
 
     // Ratings filter
-    const rFilter = ratingFilter(ratings, paramIndex);
+    const rFilter = ratingFilter(ratings, sql.next);
     if (rFilter) {
       whereClauses.push(`i.${rFilter.clause}`);
-      queryParams.push(...rFilter.params);
-      paramIndex += rFilter.params.length;
+      sql.values.push(...rFilter.params);
     }
 
     // Dimension filters
-    if (minWidth > 0) {
-      whereClauses.push(`i.width >= $${paramIndex}`);
-      queryParams.push(minWidth);
-      paramIndex++;
-    }
-    if (minHeight > 0) {
-      whereClauses.push(`i.height >= $${paramIndex}`);
-      queryParams.push(minHeight);
-      paramIndex++;
-    }
-    if (maxWidth > 0) {
-      whereClauses.push(`i.width <= $${paramIndex}`);
-      queryParams.push(maxWidth);
-      paramIndex++;
-    }
-    if (maxHeight > 0) {
-      whereClauses.push(`i.height <= $${paramIndex}`);
-      queryParams.push(maxHeight);
-      paramIndex++;
-    }
+    if (minWidth > 0) whereClauses.push(`i.width >= ${sql.add(minWidth)}`);
+    if (minHeight > 0) whereClauses.push(`i.height >= ${sql.add(minHeight)}`);
+    if (maxWidth > 0) whereClauses.push(`i.width <= ${sql.add(maxWidth)}`);
+    if (maxHeight > 0) whereClauses.push(`i.height <= ${sql.add(maxHeight)}`);
 
     // AI filters
     if (aiOnly) {
@@ -112,16 +70,16 @@ export async function GET(request: NextRequest) {
       whereClauses.push(`i.is_ai_generated = FALSE`);
     }
 
-    // Query images
-    const imagesResult = await query(
-      `SELECT i.*, u.username as u_username
-       FROM images i
-       LEFT JOIN users u ON u.id = i.user_id
-       WHERE ${whereClauses.join(' AND ')}
-       ORDER BY RANDOM()
-       LIMIT $${paramIndex}`,
-      [...queryParams, count]
-    );
+    // Query images (sampled – never sorts the whole table)
+    const imagesResult = {
+      rows: await randomRows({
+        select: `${RANDOM_COLUMNS}, u.username as u_username`,
+        joins: 'LEFT JOIN users u ON u.id = i.user_id',
+        where: whereClauses.join(' AND '),
+        params: sql.values,
+        limit: count,
+      }),
+    };
 
     const images = imagesResult.rows;
 

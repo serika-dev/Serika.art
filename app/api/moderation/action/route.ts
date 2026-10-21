@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { revalidateImagePage } from '@/lib/revalidate';
 
 export async function POST(request: NextRequest) {
   try {
@@ -85,6 +86,7 @@ export async function POST(request: NextRequest) {
       ]
     );
 
+    revalidateImagePage(sequentialId);
     return NextResponse.json({ success: true, message: `Image ${normalizedAction}d successfully` });
   } catch (error) {
     console.error('Moderation error:', error);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query as dbQuery } from '@/lib/db';
 import { publicImageFilter, ratingFilter } from '@/lib/contentFilters';
+import { SqlParams, resolveTags, hasAllTagsSql, hasNoTagsSql, randomRows } from '@/lib/imageSearch';
 import sharp from 'sharp';
 
 const RANDOM_IMAGE_CACHE_CONTROL = 'public, max-age=60, s-maxage=120, stale-while-revalidate=300';
@@ -48,62 +49,32 @@ export async function GET(
     const aspectTolerance = parseFloat(searchParams.get('aspect_tolerance') || '0.2'); // 20% tolerance
     
     // Build dynamic query
+    const sql = new SqlParams();
     const whereClauses: string[] = [publicImageFilter()];
-    const queryParams: any[] = [];
-    let paramIndex = 1;
+    let noMatch = false;
 
-    // Filter by tags
+    // Filter by tags (not all tags found → no match, so a placeholder is returned)
     if (tagNames.length > 0) {
-      const tagDocsResult = await dbQuery(
-        `SELECT id FROM tags WHERE LOWER(name) = ANY($1)`,
-        [tagNames.map(t => t.toLowerCase())]
-      );
-      if (tagDocsResult.rows.length < tagNames.length) {
-        // Not all tags found; treat as no match so a placeholder is returned
-        tagDocsResult.rows = [];
-      }
-      if (tagDocsResult.rows.length > 0) {
-        const tagIds = tagDocsResult.rows.map(r => r.id);
-        const imageIdsRes = await dbQuery(
-          `SELECT image_id FROM image_tags WHERE tag_id = ANY($1) GROUP BY image_id HAVING COUNT(DISTINCT tag_id) = $2`,
-          [tagIds, tagIds.length]
-        );
-        if (imageIdsRes.rows.length > 0) {
-          const matchingImageIds = imageIdsRes.rows.map(r => r.image_id);
-          whereClauses.push(`i.id = ANY($${paramIndex})`);
-          queryParams.push(matchingImageIds);
-          paramIndex++;
-        }
+      const { found, missing } = await resolveTags(tagNames);
+      if (found.length === 0 || missing.length > 0) {
+        noMatch = true;
+      } else {
+        whereClauses.push(...hasAllTagsSql('i', found, sql));
       }
     }
 
     // Exclude tags
     if (excludeTags.length > 0) {
-      const excludeTagDocsResult = await dbQuery(
-        `SELECT id FROM tags WHERE LOWER(name) = ANY($1)`,
-        [excludeTags.map(t => t.toLowerCase())]
-      );
-      if (excludeTagDocsResult.rows.length > 0) {
-        const excludeTagIds = excludeTagDocsResult.rows.map(r => r.id);
-        const excludeImageIdsRes = await dbQuery(
-          `SELECT DISTINCT image_id FROM image_tags WHERE tag_id = ANY($1)`,
-          [excludeTagIds]
-        );
-        if (excludeImageIdsRes.rows.length > 0) {
-          const excludeImageIds = excludeImageIdsRes.rows.map(r => r.image_id);
-          whereClauses.push(`NOT (i.id = ANY($${paramIndex}))`);
-          queryParams.push(excludeImageIds);
-          paramIndex++;
-        }
-      }
+      const { found } = await resolveTags(excludeTags);
+      const clause = hasNoTagsSql('i', found, sql);
+      if (clause) whereClauses.push(clause);
     }
 
     // Ratings filter
-    const rFilter = ratingFilter(ratings, paramIndex);
+    const rFilter = ratingFilter(ratings, sql.next);
     if (rFilter) {
       whereClauses.push(`i.${rFilter.clause}`);
-      queryParams.push(...rFilter.params);
-      paramIndex += rFilter.params.length;
+      sql.values.push(...rFilter.params);
     }
 
     // AI filters
@@ -117,37 +88,32 @@ export async function GET(
     const requestedAspect = width / height;
     let images: any[] = [];
 
-    if (matchSize) {
+    if (matchSize && !noMatch) {
       // Find candidate images that match or exceed the requested dimensions and are close to aspect ratio
+      const sizeParams = new SqlParams();
+      sizeParams.values = [...sql.values];
       const matchSizeClauses = [
         ...whereClauses,
-        `i.width >= $${paramIndex}`,
-        `i.height >= $${paramIndex + 1}`,
-        `ABS((i.width::float / i.height::float) - $${paramIndex + 2}) <= $${paramIndex + 3}`
+        `i.width >= ${sizeParams.add(Math.min(width, 400))}`,
+        `i.height >= ${sizeParams.add(Math.min(height, 400))}`,
+        `ABS((i.width::float / NULLIF(i.height, 0)::float) - ${sizeParams.add(requestedAspect)}) <= ${sizeParams.add(aspectTolerance)}`,
       ];
-
-      const candidatesResult = await dbQuery(
-        `SELECT i.*
-         FROM images i
-         WHERE ${matchSizeClauses.join(' AND ')}
-         ORDER BY RANDOM()
-         LIMIT 1`,
-        [...queryParams, Math.min(width, 400), Math.min(height, 400), requestedAspect, aspectTolerance]
-      );
-      images = candidatesResult.rows;
+      images = await randomRows({
+        select: 'i.id, i.sequential_id, i.url, i.width, i.height, i.rating',
+        where: matchSizeClauses.join(' AND '),
+        params: sizeParams.values,
+        limit: 1,
+      });
     }
 
     // Fallback to completely random image matching criteria
-    if (images.length === 0) {
-      const randomResult = await dbQuery(
-        `SELECT i.*
-         FROM images i
-         WHERE ${whereClauses.join(' AND ')}
-         ORDER BY RANDOM()
-         LIMIT 1`,
-        queryParams
-      );
-      images = randomResult.rows;
+    if (images.length === 0 && !noMatch) {
+      images = await randomRows({
+        select: 'i.id, i.sequential_id, i.url, i.width, i.height, i.rating',
+        where: whereClauses.join(' AND '),
+        params: sql.values,
+        limit: 1,
+      });
     }
 
     if (images.length === 0) {

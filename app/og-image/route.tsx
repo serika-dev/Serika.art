@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { query } from "@/lib/db";
+import { randomRows } from "@/lib/imageSearch";
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -13,13 +13,14 @@ export async function GET() {
     let backgroundImage: string | null = null;
 
     // Get a random safe 16:9 image
-    const imagesResult = await query(
-      `SELECT url FROM images
-       WHERE rating = 'safe' AND deleted = FALSE AND width > 0 AND height > 0
-         AND (width::float / height::float) >= 1.7 AND (width::float / height::float) <= 1.85
-       ORDER BY RANDOM()
-       LIMIT 1`
-    );
+    const rows = await randomRows<{ url: string }>({
+      select: 'i.url',
+      where: `i.rating = 'safe' AND i.deleted = FALSE AND i.width > 0 AND i.height > 0
+        AND (i.width::float / i.height::float) >= 1.7 AND (i.width::float / i.height::float) <= 1.85`,
+      params: [],
+      limit: 1,
+    });
+    const imagesResult = { rows };
 
     if (imagesResult.rows.length > 0) {
       backgroundImage = imagesResult.rows[0].url;

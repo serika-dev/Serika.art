@@ -1,7 +1,18 @@
 import { NextRequest } from 'next/server';
+import { createHash } from 'crypto';
 import { query as dbQuery } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
 import { publicImageFilter, ratingFilter } from '@/lib/contentFilters';
+import {
+  SqlParams, TagRef, resolveTags, hasAllTagsSql, textSearchSql,
+  randomRows, cachedCount, approximateImageCount,
+} from '@/lib/imageSearch';
+
+// Everything the response uses – skips the metadata JSONB and moderation columns
+const V1_COLUMNS = `i.id, i.sequential_id, i.user_id, i.username, i.url, i.thumbnail_url,
+  i.width, i.height, i.file_size, i.content_type, i.rating, i.is_ai_generated,
+  i.source, i.description, i.upvotes, i.downvotes, i.favorites, i.views,
+  i.created_at, i.updated_at`;
 
 // GET /api/v1/images - List images with pagination and filters
 export async function GET(request: NextRequest) {
@@ -27,52 +38,33 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Build query
+    const sql = new SqlParams();
     const whereClauses: string[] = [publicImageFilter()];
-    const queryParams: any[] = [];
-    let paramIndex = 1;
 
     if (userId) {
-      whereClauses.push(`i.user_id = $${paramIndex}`);
-      queryParams.push(userId);
-      paramIndex++;
+      whereClauses.push(`i.user_id = ${sql.add(userId)}`);
     }
 
-    // Resolve tag names to IDs
+    // Resolve tag names to IDs; every tag becomes an indexed EXISTS probe
+    let tagRefs: TagRef[] = [];
     if (tagNames.length > 0) {
-      const tagDocsResult = await dbQuery(
-        `SELECT id FROM tags WHERE LOWER(name) = ANY($1)`,
-        [tagNames.map((t) => t.toLowerCase())]
-      );
-      if (tagDocsResult.rows.length === 0) {
+      const { found, missing } = await resolveTags(tagNames);
+      if (found.length === 0) {
         return apiResponse([], {
           pagination: { page, limit, total: 0, pages: 0 },
         });
       }
-      if (tagDocsResult.rows.length < tagNames.length) {
+      if (missing.length > 0) {
         return apiError('One or more specified tags were not found', 404, 'TAG_NOT_FOUND');
       }
-      const tagIds = tagDocsResult.rows.map((t) => t.id);
-
-      const imageIdsRes = await dbQuery(
-        `SELECT image_id FROM image_tags WHERE tag_id = ANY($1) GROUP BY image_id HAVING COUNT(DISTINCT tag_id) = $2`,
-        [tagIds, tagIds.length]
-      );
-      if (imageIdsRes.rows.length === 0) {
-        return apiResponse([], {
-          pagination: { page, limit, total: 0, pages: 0 },
-        });
-      }
-      const matchingImageIds = imageIdsRes.rows.map(r => r.image_id);
-      whereClauses.push(`i.id = ANY($${paramIndex})`);
-      queryParams.push(matchingImageIds);
-      paramIndex++;
+      tagRefs = found;
+      whereClauses.push(...hasAllTagsSql('i', found, sql));
     }
 
-    const rFilter = ratingFilter(ratings, paramIndex);
+    const rFilter = ratingFilter(ratings, sql.next);
     if (rFilter) {
       whereClauses.push(`i.${rFilter.clause}`);
-      queryParams.push(...rFilter.params);
-      paramIndex += rFilter.params.length;
+      sql.values.push(...rFilter.params);
     }
 
     if (aiOnly) {
@@ -80,28 +72,15 @@ export async function GET(request: NextRequest) {
     }
 
     if (minWidth > 0) {
-      whereClauses.push(`i.width >= $${paramIndex}`);
-      queryParams.push(minWidth);
-      paramIndex++;
+      whereClauses.push(`i.width >= ${sql.add(minWidth)}`);
     }
 
     if (minHeight > 0) {
-      whereClauses.push(`i.height >= $${paramIndex}`);
-      queryParams.push(minHeight);
-      paramIndex++;
+      whereClauses.push(`i.height >= ${sql.add(minHeight)}`);
     }
 
     if (search) {
-      const searchPattern = `%${search}%`;
-      const searchParamIdx = paramIndex;
-      paramIndex++;
-      
-      whereClauses.push(
-        `(i.id IN (SELECT image_id FROM image_tags WHERE tag_id IN (SELECT id FROM tags WHERE name ILIKE $${searchParamIdx}))
-          OR i.description ILIKE $${searchParamIdx}
-          OR i.username ILIKE $${searchParamIdx})`
-      );
-      queryParams.push(searchPattern);
+      whereClauses.push(await textSearchSql('i', search, sql));
     }
 
     // Determine sort
@@ -114,26 +93,44 @@ export async function GET(request: NextRequest) {
       sortClause = 'i.views DESC';
     } else if (sort === 'oldest') {
       sortClause = 'i.created_at ASC';
-    } else if (sort === 'random') {
-      sortClause = 'RANDOM()';
     }
 
-    // Get count and results
-    const countResult = await dbQuery(
-      `SELECT COUNT(*) as count FROM images i WHERE ${whereClauses.join(' AND ')}`,
-      queryParams
-    );
-    const total = parseInt(countResult.rows[0].count, 10);
+    const where = whereClauses.join(' AND ');
+    const queryParams = sql.values;
 
-    const imagesResult = await dbQuery(
-      `SELECT i.*, u.username as u_username
-       FROM images i
-       LEFT JOIN users u ON u.id = i.user_id
-       WHERE ${whereClauses.join(' AND ')}
-       ORDER BY ${sortClause}
-       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-      [...queryParams, limit, skip]
-    );
+    // Broad listings answer with an estimate while the exact count is cached in the background
+    let estimate: number | null = null;
+    if (!search && !userId && !minWidth && !minHeight) {
+      estimate = tagRefs.length > 0 ? Math.min(...tagRefs.map((t) => t.count)) : await approximateImageCount();
+    }
+
+    // Get count and results in parallel
+    const [{ total }, rows] = await Promise.all([
+      cachedCount(
+        `count:v1images:${createHash('sha1').update(where + JSON.stringify(queryParams)).digest('hex')}`,
+        `SELECT COUNT(*) as count FROM images i WHERE ${where}`,
+        queryParams,
+        { estimate }
+      ),
+      sort === 'random'
+        ? randomRows({
+            select: `${V1_COLUMNS}, u.username as u_username`,
+            joins: 'LEFT JOIN users u ON u.id = i.user_id',
+            where,
+            params: queryParams,
+            limit,
+          })
+        : dbQuery(
+            `SELECT ${V1_COLUMNS}, u.username as u_username
+             FROM images i
+             LEFT JOIN users u ON u.id = i.user_id
+             WHERE ${where}
+             ORDER BY ${sortClause}
+             LIMIT $${sql.next} OFFSET $${sql.next + 1}`,
+            [...queryParams, limit, skip]
+          ).then((r) => r.rows),
+    ]);
+    const imagesResult = { rows };
 
     const images = imagesResult.rows;
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, withTransaction } from '@/lib/db';
+import { revalidateImagePage } from '@/lib/revalidate';
 
 export async function GET(
   request: NextRequest,
@@ -251,6 +252,7 @@ export async function PATCH(
       }
     });
 
+    revalidateImagePage(sequentialId);
     return NextResponse.json({
       success: true,
       message: 'Image updated successfully',
@@ -324,6 +326,7 @@ export async function DELETE(
       // as they still exist in the database and might be restored.
     });
 
+    revalidateImagePage(sequentialId);
     return NextResponse.json({
       success: true,
       message: 'Image deleted successfully',

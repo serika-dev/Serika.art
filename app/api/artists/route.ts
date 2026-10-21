@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { publicCacheHeaders } from '@/lib/cacheHeaders';
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
         createdAt: a.created_at,
       })),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-    });
+    }, { headers: publicCacheHeaders(120) });
   } catch (error) {
     console.error('Error fetching artists:', error);
     return NextResponse.json(

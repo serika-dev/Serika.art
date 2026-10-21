@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, withTransaction } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { revalidateImagePage } from '@/lib/revalidate';
 
 // PATCH /api/dmca/[id] - Update DMCA request status (admin only)
 export async function PATCH(
@@ -30,6 +31,7 @@ export async function PATCH(
     }
     const dmcaReq = existing.rows[0];
 
+    const takenDown: number[] = [];
     await withTransaction(async (client) => {
       const setClauses: string[] = ['updated_at = NOW()'];
       const params: any[] = [];
@@ -109,11 +111,14 @@ export async function PATCH(
                WHERE id = $4`,
               [user.id, user.username, requestId, dbImage.id]
             );
+            takenDown.push(dbImage.sequential_id);
           }
         }
       }
     });
 
+    // Taken-down images must disappear from the ISR cache right away
+    takenDown.forEach(revalidateImagePage);
     return NextResponse.json({ success: true, message: 'Request updated' });
   } catch (error) {
     console.error('DMCA update error:', error);

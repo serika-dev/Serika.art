@@ -21,6 +21,9 @@ const nextConfig: NextConfig = {
     root: path.resolve(__dirname),
   },
   compress: true,
+  // ISR pages (/, /image/:id) are cached by Cloudflare too; cap how long the
+  // edge may serve them stale so a deploy is picked up within the hour.
+  expireTime: 3600,
   poweredByHeader: false,
   reactStrictMode: true,
   async headers() {
@@ -35,8 +38,11 @@ const nextConfig: NextConfig = {
     ];
   },
   images: {
-    // Thumbnails are pre-generated & CDN-cached; keep modern formats + sane device sizes
-    formats: ['image/avif', 'image/webp'],
+    // Thumbnails are pre-generated & CDN-cached. WebP only: the optimizer now
+    // resizes full-size posts on the image page, and AVIF encodes several times
+    // slower – that would show up as first-view latency.
+    formats: ['image/webp'],
+    qualities: [75],
     minimumCacheTTL: 31536000,
     // Tuned to the grid layout breakpoints: 50vw mobile, 33vw tablet, 25vw desktop, 20vw 2xl
     deviceSizes: [640, 750, 828, 1080, 1200, 1536, 1920],

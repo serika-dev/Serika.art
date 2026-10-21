@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import NativeAd from '@/components/NativeAd';
+import { buildImagesQuery } from '@/lib/postsQuery';
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 
@@ -37,13 +38,27 @@ const gridSizeClasses = {
   large: 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4',
 };
 
-function PostsPageContent() {
+interface InitialPosts {
+  images: Image[];
+  pagination: { pages: number; total: number };
+}
+
+interface PostsPageProps {
+  /** Query string the server used for `initialData` (see lib/postsQuery). */
+  initialQuery?: string;
+  /** First page rendered on the server, so thumbnails load with the HTML. */
+  initialData?: InitialPosts;
+}
+
+function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [images, setImages] = useState<Image[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalImages, setTotalImages] = useState(0);
+  const [images, setImages] = useState<Image[]>(initialData?.images ?? []);
+  const [loading, setLoading] = useState(!initialData);
+  const [totalPages, setTotalPages] = useState(initialData?.pagination.pages ?? 1);
+  const [totalImages, setTotalImages] = useState(initialData?.pagination.total ?? 0);
+  // Which server-rendered payload has already been applied (one per navigation)
+  const consumedInitialRef = useRef<InitialPosts | null>(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [tagsByType, setTagsByType] = useState<Record<TagType, Tag[]>>({
     general: [],
@@ -175,16 +190,11 @@ function PostsPageContent() {
     setLoadingMore(true);
     try {
       const nextPage = currentPage + 1;
-      const tagsQueryParam = selectedTags.length
-        ? `&tags=${selectedTags.map(t => encodeURIComponent(t.name)).join(',')}`
-        : '';
-      const ratingsQueryParam = `&ratings=${selectedRatings.join(',')}`;
-      const hideAIParam = hideAI ? '&hideAI=true' : '';
-      const uploaderQueryParam = uploaderParam ? `&username=${encodeURIComponent(uploaderParam)}` : '';
-      const response = await axios.get(`/api/images?page=${nextPage}&limit=${postsPerPage}&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}${uploaderQueryParam}`);
+      const response = await axios.get(`/api/images?${imagesQuery(nextPage)}`);
       
       if (response.data.success) {
-        setAllImages(prev => [...prev, ...response.data.images]);
+        // allImages is still empty when page 1 came from the server render
+        setAllImages(prev => [...(prev.length ? prev : images), ...response.data.images]);
         setCurrentPage(nextPage);
       }
     } catch (error) {
@@ -205,16 +215,33 @@ function PostsPageContent() {
     return () => clearTimeout(t);
   }, [tagInput]);
 
+  const imagesQuery = (forPage: number) => buildImagesQuery({
+    page: forPage,
+    limit: postsPerPage,
+    sort,
+    tags: selectedTags.map(t => t.name),
+    ratings: selectedRatings,
+    hideAI,
+    uploader: uploaderParam,
+  });
+
   const fetchImages = async () => {
+    const queryString = imagesQuery(page);
+
+    // The server already rendered exactly this page – use it instead of refetching
+    if (initialData && initialQuery === queryString && consumedInitialRef.current !== initialData) {
+      consumedInitialRef.current = initialData;
+      setImages(initialData.images);
+      setTotalPages(initialData.pagination.pages);
+      setTotalImages(initialData.pagination.total);
+      extractTagsFromImages(initialData.images);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      const tagsQueryParam = selectedTags.length
-        ? `&tags=${selectedTags.map(t => encodeURIComponent(t.name)).join(',')}`
-        : '';
-      const ratingsQueryParam = `&ratings=${selectedRatings.join(',')}`;
-      const hideAIParam = hideAI ? '&hideAI=true' : '';
-      const uploaderQueryParam = uploaderParam ? `&username=${encodeURIComponent(uploaderParam)}` : '';
-      const response = await axios.get(`/api/images?page=${page}&limit=${postsPerPage}&sort=${sort}${tagsQueryParam}${ratingsQueryParam}${hideAIParam}${uploaderQueryParam}`);
+      const response = await axios.get(`/api/images?${queryString}`);
       if (response.data.success) {
         setImages(response.data.images);
         // For infinite scroll, set allImages on initial load
@@ -278,10 +305,7 @@ function PostsPageContent() {
 
   const fetchTagSuggestions = async () => {
     try {
-      const response = await axios.post('/api/tags', { 
-        query: tagInput.trim(), 
-        limit: 20 
-      });
+      const response = await axios.get('/api/tags', { params: { suggest: tagInput.trim(), limit: 20 } });
       if (response.data.success) {
         setTagSuggestions(response.data.suggestions);
         setShowSuggestions(true);
@@ -700,10 +724,10 @@ function PostsPageContent() {
   );
 }
 
-export default function PostsPage() {
+export default function PostsPage(props: PostsPageProps) {
   return (
     <Suspense fallback={<div className="w-full h-screen flex items-center justify-center"><Loader2 className="animate-spin h-10 w-10 text-primary" /></div>}>
-      <PostsPageContent />
+      <PostsPageContent {...props} />
     </Suspense>
   );
 }

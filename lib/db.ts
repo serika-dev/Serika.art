@@ -144,6 +144,26 @@ export async function cacheGet(key: string): Promise<string | null> {
   return null;
 }
 
+/** Batch get – one Redis round-trip (MGET) instead of one per key. */
+export async function cacheGetMany(keys: string[]): Promise<(string | null)[]> {
+  if (keys.length === 0) return [];
+  const r = getRedis();
+  if (r) {
+    try {
+      return await r.mget(...keys);
+    } catch {
+      // fall through to memory
+    }
+  }
+  const now = Date.now();
+  return keys.map((key) => {
+    const entry = memoryCache.get(key);
+    if (entry && now < entry.expiresAt) return entry.value;
+    memoryCache.delete(key);
+    return null;
+  });
+}
+
 export async function cacheSet(
   key: string,
   value: string,
@@ -180,8 +200,14 @@ export async function cacheDelPattern(pattern: string): Promise<void> {
   const r = getRedis();
   if (r) {
     try {
-      const keys = await r.keys(pattern);
-      if (keys.length > 0) await r.del(...keys);
+      // SCAN instead of KEYS – KEYS blocks Redis for every client while it
+      // walks the whole keyspace.
+      let cursor = '0';
+      do {
+        const [next, keys] = await r.scan(cursor, 'MATCH', pattern, 'COUNT', 500);
+        cursor = next;
+        if (keys.length > 0) await r.del(...keys);
+      } while (cursor !== '0');
     } catch {
       // ignore
     }

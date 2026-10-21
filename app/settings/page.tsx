@@ -95,10 +95,7 @@ export default function SettingsPage() {
 
   const fetchTagSuggestions = async () => {
     try {
-      const response = await axios.post('/api/tags', { 
-        query: tagInput.trim(), 
-        limit: 8 
-      });
+      const response = await axios.get('/api/tags', { params: { suggest: tagInput.trim(), limit: 8 } });
       if (response.data.success) {
         setTagSuggestions(response.data.suggestions);
         setShowSuggestions(true);

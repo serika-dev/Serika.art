@@ -8,6 +8,16 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+// ISR: each image page is rendered on first visit, then served from cache and
+// regenerated in the background at most every 5 minutes (and immediately via
+// revalidatePath when the image is edited or moderated). Views are counted by
+// the client (POST /api/images/:id/view), not during render.
+export const revalidate = 300;
+
+export async function generateStaticParams() {
+  return [];
+}
+
 // React cache() deduplicates calls within the same request so
 // generateMetadata + ImagePage share one DB round-trip instead of two.
 const getImageData = cache(async (id: string) => {
@@ -45,9 +55,6 @@ const getImageData = cache(async (id: string) => {
     type: t.type,
   }));
 
-  // Increment views in background (fire-and-forget)
-  query(`UPDATE images SET views = views + 1 WHERE id = $1`, [image.id]).catch(console.error);
-
   // Return compatible object structure
   return {
     ...image,
@@ -64,7 +71,6 @@ const getImageData = cache(async (id: string) => {
     createdAt: image.created_at,
     updatedAt: image.updated_at,
     tags: populatedTags,
-    views: image.views + 1
   };
 });
 
@@ -105,6 +111,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title,
     description,
     keywords,
+    authors: artistTags.length > 0 ? artistTags.map((a: string) => ({ name: a })) : undefined,
+    creator: artistTags[0] || 'Unknown Artist',
+    publisher: 'Serika.art',
     alternates: {
       canonical: `https://serika.art/image/${id}`,
     },
@@ -134,6 +143,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title,
       description,
       images: [image.url],
+    },
+    other: {
+      // Discord embed accent colour + article metadata
+      'theme-color': image.rating === 'safe' ? '#22c55e' : image.rating === 'questionable' ? '#eab308' : '#ef4444',
+      'og:locale': 'en_US',
+      'article:published_time': new Date(image.createdAt).toISOString(),
+      'article:author': artistTags[0] || 'Anonymous',
+      'article:section': 'Artwork',
+      'article:tag': tagNames.slice(0, 8).join(','),
     },
   };
 }

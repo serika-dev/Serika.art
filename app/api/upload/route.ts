@@ -4,6 +4,7 @@ import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
 import { requireAuth } from '@/lib/auth';
 import sharp from 'sharp';
+import { revalidateImagePage } from '@/lib/revalidate';
 
 const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === 'true';
 
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
             [tagName, tagInfo.type || 'general']
           );
         }
-        tagIds.push(tagResult.rows[0].id);
+        if (!tagIds.includes(tagResult.rows[0].id)) tagIds.push(tagResult.rows[0].id);
       }
 
       // Insert image
@@ -187,6 +188,8 @@ export async function POST(request: NextRequest) {
     });
 
     const { _nextSequentialId, ...imageData } = imageResult;
+    // A visit to this id before it existed may have cached a 404
+    revalidateImagePage(_nextSequentialId);
     return NextResponse.json({
       success: true,
       image: {

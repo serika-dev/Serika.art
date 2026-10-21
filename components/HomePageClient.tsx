@@ -71,10 +71,7 @@ export default function HomePageClient({ imageCount, tagCount }: HomePageClientP
     const fetchSuggestions = async () => {
       if (searchQuery.trim().length > 1) {
         try {
-          const response = await axios.post('/api/tags', { 
-            query: searchQuery.trim(), 
-            limit: 10 
-          });
+          const response = await axios.get('/api/tags', { params: { suggest: searchQuery.trim(), limit: 10 } });
           if (response.data.success) {
             setTagSuggestions(response.data.suggestions);
             setShowSuggestions(true);

@@ -7,6 +7,7 @@ import axios from 'axios';
 import { Image as ImageType, Comment, Tag as TagModel } from '@/lib/models';
 import { Heart, ThumbsUp, ThumbsDown, Eye, Download, Trash2, Sparkles, ExternalLink, Calendar, User, Maximize2, Minimize2, MessageCircle, Send, Shield, EyeOff, RotateCcw, History, Loader2, Palette, Search, Edit2, X } from 'lucide-react';
 import Link from 'next/link';
+import NextImage from 'next/image';
 import { Button } from '@/components/ui/button';
 import NativeAd from '@/components/NativeAd';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -75,6 +76,11 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
     isMounted.current = true;
     return () => { isMounted.current = false; };
   }, []);
+
+  // The page itself is served from cache, so count the view from here
+  useEffect(() => {
+    fetch(`/api/images/${imageId}/view`, { method: 'POST', keepalive: true }).catch(() => {});
+  }, [imageId]);
 
   useEffect(() => {
     fetchComments();
@@ -329,10 +335,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
 
   const fetchEditTagSuggestions = async () => {
     try {
-      const response = await axios.post('/api/tags', { 
-        query: editTagInput.trim(), 
-        limit: 10 
-      });
+      const response = await axios.get('/api/tags', { params: { suggest: editTagInput.trim(), limit: 10 } });
       if (response.data.success) {
         setEditTagSuggestions(response.data.suggestions);
         setShowEditTagSuggestions(true);
@@ -688,13 +691,28 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
             <div className={cn(
               imageSize === 'fit' ? 'flex justify-center items-center bg-zinc-950/40 p-4' : 'overflow-auto bg-zinc-950/40'
             )}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={image.url}
-                alt={(image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
-                className={imageSize === 'fit' ? 'max-w-full max-h-[85vh] object-contain shadow-2xl rounded-sm' : 'w-auto h-auto'}
-                fetchPriority="high"
-              />
+              {imageSize === 'fit' && image.width > 0 && image.height > 0 ? (
+                // Fit mode never needs the multi-MB original: serve a resized
+                // AVIF/WebP from the image optimizer (cached for a year).
+                <NextImage
+                  src={image.url}
+                  alt={(image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
+                  width={image.width}
+                  height={image.height}
+                  sizes="(max-width: 1024px) 100vw, 66vw"
+                  className="w-auto h-auto max-w-full max-h-[85vh] object-contain shadow-2xl rounded-sm"
+                  preload
+                  fetchPriority="high"
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={image.url}
+                  alt={(image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
+                  className={imageSize === 'fit' ? 'max-w-full max-h-[85vh] object-contain shadow-2xl rounded-sm' : 'w-auto h-auto'}
+                  fetchPriority="high"
+                />
+              )}
             </div>
           </Card>
 

@@ -1,5 +1,12 @@
 import { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import PostsPageClient from '@/components/PostsPageClient';
+import { listImages, parseImageListParams } from '@/lib/imageSearch';
+import { buildImagesQuery, parseRatingsCookie, DEFAULT_POSTS_PER_PAGE, RATINGS_COOKIE } from '@/lib/postsQuery';
+
+// Don't hold the HTML back for a slow listing – the client fetches it instead
+// (by then the server-side query has usually warmed the cache).
+const INITIAL_DATA_BUDGET_MS = 800;
 
 interface Props {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -63,12 +70,46 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   };
 }
 
-export default function PostsPage({ searchParams }: Props) {
+async function getInitialPosts(params: { [key: string]: string | string[] | undefined }) {
+  const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || '';
+  const cookieStore = await cookies();
+
+  // Mirror the client's first request (default per-page/AI settings; the
+  // client refetches if its local settings differ).
+  const initialQuery = buildImagesQuery({
+    page: parseInt(first(params.page) || '1', 10) || 1,
+    limit: DEFAULT_POSTS_PER_PAGE,
+    sort: first(params.sort) || 'newest',
+    tags: first(params.tags) ? first(params.tags).split(',').map((t) => t.trim()) : [],
+    ratings: parseRatingsCookie(cookieStore.get(RATINGS_COOKIE)?.value),
+    hideAI: false,
+    uploader: first(params.uploader),
+  });
+  if (initialQuery.includes('sort=random')) return null;
+
+  try {
+    const pending = listImages(parseImageListParams(new URLSearchParams(initialQuery)));
+    pending.catch(() => {});
+    const result = await Promise.race([
+      pending,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), INITIAL_DATA_BUDGET_MS)),
+    ]);
+    if (!result || !result.success) return null;
+    return { initialQuery, initialData: { images: result.images, pagination: result.pagination } };
+  } catch (error) {
+    console.error('Error pre-rendering posts:', error);
+    return null;
+  }
+}
+
+export default async function PostsPage({ searchParams }: Props) {
+  const initial = await getInitialPosts(await searchParams);
+
   // We render CollectionPage JSON-LD inline for tag-based searches
   return (
     <>
       <PostsSearchStructuredData searchParams={searchParams} />
-      <PostsPageClient />
+      <PostsPageClient initialQuery={initial?.initialQuery} initialData={initial?.initialData} />
     </>
   );
 }
