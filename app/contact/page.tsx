@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Mail, MessageSquare, AlertCircle, Bug, HelpCircle, Send, CheckCircle } from 'lucide-react';
+import { Mail, MessageSquare, AlertCircle, HelpCircle, Send, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,8 +17,6 @@ import {
 
 const contactReasons = [
   { value: 'general', label: 'General Inquiry', icon: HelpCircle },
-  { value: 'bug', label: 'Bug Report', icon: Bug },
-  { value: 'feature', label: 'Feature Request', icon: MessageSquare },
   { value: 'abuse', label: 'Report Abuse', icon: AlertCircle },
   { value: 'other', label: 'Other', icon: Mail },
 ];
@@ -138,6 +136,7 @@ export default function ContactPage() {
           <Card className="lg:col-span-2 border-border/50 bg-card/50 backdrop-blur-sm rounded-2xl">
             <CardHeader>
               <CardTitle className="text-lg font-bold">Send a Message</CardTitle>
+              <p className="text-sm text-muted-foreground"><a className="underline" href="https://issues.serika.dev/issues/new?project=serika-art&kind=bug">Report a bug</a> or <a className="underline" href="https://issues.serika.dev/issues/new?project=serika-art&kind=feature">request a feature</a> in Serika Issues.</p>
               <CardDescription>Fill out the form below and we'll get back to you.</CardDescription>
             </CardHeader>
             <CardContent>
