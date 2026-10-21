@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
@@ -616,9 +615,9 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
     <div className="flex gap-6 px-4 sm:px-6 lg:px-8 py-8 max-w-[1800px] mx-auto">
       <aside className="hidden lg:block w-60 xl:w-64 2xl:w-72 shrink-0">
         <div className="sticky top-[4.5rem]">
-          <ScrollArea className="h-[calc(100vh-6rem)] pr-4">
+          <div className="h-[calc(100vh-6rem)] overflow-y-auto overflow-x-hidden overscroll-contain pr-3 [scrollbar-width:thin]">
             {SidebarContent}
-          </ScrollArea>
+          </div>
         </div>
       </aside>
 
@@ -654,9 +653,9 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
               </SheetTrigger>
               <SheetContent side="left" className="w-80">
                 <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
-                <ScrollArea className="h-[calc(100vh-100px)] mt-6 pr-4">
+                <div className="mt-6 h-[calc(100vh-100px)] overflow-y-auto overflow-x-hidden overscroll-contain pr-3">
                   {SidebarContent}
-                </ScrollArea>
+                </div>
               </SheetContent>
             </Sheet>
 
@@ -708,7 +707,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
 
               {showSuggestions && tagSuggestions.length > 0 && (
                 <div className="absolute z-[110] mt-1 w-full overflow-hidden rounded-xl border border-border/60 bg-popover shadow-2xl">
-                  <ScrollArea className="max-h-72">
+                  <div className="max-h-72 overflow-y-auto overflow-x-hidden">
                     <div className="p-1">
                       {tagSuggestions.map((tag, i) => (
                         <button
@@ -728,7 +727,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
                         </button>
                       ))}
                     </div>
-                  </ScrollArea>
+                  </div>
                 </div>
               )}
             </div>
