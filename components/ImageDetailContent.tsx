@@ -22,6 +22,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+import { normalizeTagName } from '@/lib/tagName';
 
 interface ImageDetailContentProps {
   initialImage: ImageType;
@@ -360,7 +361,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
   const handleEditTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const normalizedInput = editTagInput.trim().toLowerCase();
+      const normalizedInput = normalizeTagName(editTagInput);
       
       if (!normalizedInput) return;
       

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { normalizeTagName } from '@/lib/tagName';
 import { query, withTransaction } from '@/lib/db';
 import { revalidateImagePage } from '@/lib/revalidate';
 
@@ -171,7 +172,7 @@ export async function PATCH(
         const oldTagIds = new Set<number>(currentTagsResult.rows.map(r => r.tag_id));
 
         // BATCH resolve all tag names to IDs in one query, creating missing ones
-        const tagNames = newTags.map((t: any) => t.name.toLowerCase());
+        const tagNames = newTags.map((t: any) => normalizeTagName(t.name));
         const tagTypes = newTags.map((t: any) => t.type || 'general');
 
         // Insert any missing tags in bulk, then fetch all IDs

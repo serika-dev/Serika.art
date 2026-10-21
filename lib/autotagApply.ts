@@ -1,4 +1,5 @@
 import { importQuery, withImportTransaction } from '@/lib/db';
+import { normalizeTagName } from '@/lib/tagName';
 import { autotagImage, type SuggestedTag } from '@/lib/autotagger';
 import { revalidateImagePage } from '@/lib/revalidate';
 
@@ -14,7 +15,7 @@ export const MIN_TAGS = 5;
 const MAX_ADDED_TAGS = 40;
 
 /** "long hair" and "long_hair" are the same tag for de-duplication purposes. */
-export const sameTagKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '_');
+export const sameTagKey = normalizeTagName;
 
 /** Add the recommended suggestions a post doesn't have yet. Returns the added tag names. */
 export async function applySuggestedTags(imageId: number, suggestions: SuggestedTag[]): Promise<string[]> {

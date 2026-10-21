@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import { query } from '@/lib/db';
+import { normalizeTagName } from '@/lib/tagName';
 
 // Client for an autotagger service speaking the Danbooru autotagger API
 // (https://github.com/danbooru/autotagger):
@@ -131,8 +132,9 @@ async function mapPredictions(raw: EvaluateResponse): Promise<AutotagResult> {
     }
   }
 
-  // Serika has both "long hair" and "long_hair" style tags – reuse whichever
-  // spelling already has more posts, otherwise keep Danbooru's underscores.
+  // Suggestions always use underscores (lib/tagName.ts). Older tags may still
+  // be stored with spaces until the migration merges them, so look up both
+  // spellings for the type and "already exists" check.
   const variants = predictions.flatMap((p) => [p.name, p.name.replace(/_/g, ' ')]);
   const existing = variants.length
     ? await query<{ name: string; type: TagType; count: number }>(
@@ -148,7 +150,7 @@ async function mapPredictions(raw: EvaluateResponse): Promise<AutotagResult> {
     const match = [byName.get(p.name), byName.get(p.name.replace(/_/g, ' '))]
       .filter(Boolean)
       .sort((a, b) => b!.count - a!.count)[0];
-    const name = match?.name ?? p.name;
+    const name = normalizeTagName(p.name);
     if (seen.has(name)) continue;
     seen.add(name);
 

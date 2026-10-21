@@ -1,4 +1,5 @@
 // Client-side blacklist management
+import { normalizeTagName } from '@/lib/tagName';
 
 const BLACKLIST_KEY = 'serika_tag_blacklist';
 const BLACKLIST_ENABLED_KEY = 'serika_blacklist_enabled';
@@ -22,7 +23,7 @@ export function setBlacklistedTags(tags: string[]): void {
 
 export function addBlacklistedTag(tag: string): void {
   const tags = getBlacklistedTags();
-  const normalizedTag = tag.toLowerCase().trim();
+  const normalizedTag = normalizeTagName(tag);
   
   if (!tags.includes(normalizedTag)) {
     tags.push(normalizedTag);
@@ -32,14 +33,14 @@ export function addBlacklistedTag(tag: string): void {
 
 export function removeBlacklistedTag(tag: string): void {
   const tags = getBlacklistedTags();
-  const normalizedTag = tag.toLowerCase().trim();
-  const filtered = tags.filter(t => t !== normalizedTag);
+  const normalizedTag = normalizeTagName(tag);
+  const filtered = tags.filter(t => normalizeTagName(t) !== normalizedTag);
   setBlacklistedTags(filtered);
 }
 
 export function isTagBlacklisted(tag: string): boolean {
   const tags = getBlacklistedTags();
-  return tags.includes(tag.toLowerCase().trim());
+  return tags.map(normalizeTagName).includes(normalizeTagName(tag));
 }
 
 export function isBlacklistEnabled(): boolean {
@@ -65,12 +66,7 @@ export function shouldHideImage(imageTags: (string | { name: string })[]): boole
   const blacklist = getBlacklistedTags();
   if (blacklist.length === 0) return false;
   
-  const normalizedImageTags = imageTags.map(t => {
-    if (typeof t === 'string') return t.toLowerCase();
-    return t.name?.toLowerCase() || '';
-  });
-  
-  return blacklist.some(blacklistedTag => 
-    normalizedImageTags.includes(blacklistedTag)
-  );
+  // "long hair" and "long_hair" are the same tag (older blacklists used spaces)
+  const normalizedImageTags = new Set(imageTags.map(t => normalizeTagName(typeof t === 'string' ? t : t.name || '')));
+  return blacklist.some(blacklistedTag => normalizedImageTags.has(normalizeTagName(blacklistedTag)));
 }

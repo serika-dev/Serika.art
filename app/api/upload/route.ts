@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from 'next/server';
+import { normalizeTagName } from '@/lib/tagName';
 import { query, withTransaction } from '@/lib/db';
 import { uploadToB2 } from '@/lib/b2';
 import { uploadLocally } from '@/lib/localStorage';
@@ -134,7 +135,7 @@ export async function POST(request: NextRequest) {
       // Resolve tags
       const tagIds: number[] = [];
       for (const tagInfo of tagsData) {
-        const tagName = tagInfo.name.toLowerCase();
+        const tagName = normalizeTagName(tagInfo.name);
         let tagResult = await client.query(
           `SELECT id FROM tags WHERE name = $1`,
           [tagName]

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { normalizeTagName } from '@/lib/tagName';
 
 const DANBOORU_API = 'https://danbooru.donmai.us';
 const DANBOORU_USERNAME = process.env.DANBOORU_USERNAME || 'serika-dev';
@@ -282,7 +283,8 @@ export function extractDanbooruTags(post: DanbooruPost) {
   const tags: Array<{ name: string; type: 'general' | 'artist' | 'character' | 'copyright' | 'meta' }> = [];
   
   // Helper to normalize tag names (replace underscores with spaces)
-  const normalizeName = (name: string) => name.replace(/_/g, ' ');
+  // Keep Danbooru's names as they are (underscores) – see lib/tagName.ts
+  const normalizeName = (name: string) => normalizeTagName(name);
   
   // General tags
   if (post.tag_string_general) {

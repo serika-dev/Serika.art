@@ -14,6 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { normalizeTagName } from '@/lib/tagName';
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 type TagData = { name: string; type: TagType };
@@ -190,7 +191,7 @@ export default function UploadForm() {
   };
 
   const addManualTag = () => {
-    const newTag = tagInput.trim().toLowerCase();
+    const newTag = normalizeTagName(tagInput);
     if (newTag && !tags.some(t => t.name === newTag)) {
       setTags([...tags, { name: newTag, type: 'general' }]);
       setTagInput('');
@@ -200,7 +201,7 @@ export default function UploadForm() {
   const handleTagAdd = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const normalizedInput = tagInput.trim().toLowerCase();
+      const normalizedInput = normalizeTagName(tagInput);
       const hasSuggestions = tagSuggestions.length > 0 && showSuggestions;
       const topSuggestion = hasSuggestions ? tagSuggestions[0] : null;
 

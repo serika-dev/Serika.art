@@ -106,6 +106,11 @@ let activeJobCount = 0;
 // Tag cache to reduce DB lookups
 const tagCache = new Map<string, number>();
 
+/** Drop cached tag ids (the tag migration deletes and renames tags). */
+export function clearImportTagCache(): void {
+  tagCache.clear();
+}
+
 // Batch check for existing posts - much faster than checking one by one
 async function filterAlreadyImported(postIds: number[]): Promise<Set<number>> {
   if (postIds.length === 0) return new Set();
