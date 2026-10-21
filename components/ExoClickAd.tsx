@@ -33,8 +33,9 @@ const EXOCLICK_FILL_TIMEOUT_MS = 6000;
 /** Only `safe` counts as SFW: questionable and explicit pages get the NSFW zone. */
 export const isSafeAdRating = (rating: AdRating = 'safe') => rating === 'safe';
 
-const SFW_ZONE_ID = process.env.NEXT_PUBLIC_SFW_AD_ZONE_ID || '5897078';
-const NSFW_ZONE_ID = process.env.NEXT_PUBLIC_NSFW_AD_ZONE_ID || SFW_ZONE_ID;
+// Defaults are the production zones. The SFW default must never be the NSFW zone.
+const SFW_ZONE_ID = process.env.NEXT_PUBLIC_SFW_AD_ZONE_ID || '5897178';
+const NSFW_ZONE_ID = process.env.NEXT_PUBLIC_NSFW_AD_ZONE_ID || '5897078';
 
 interface AdData {
   title: string;
@@ -42,6 +43,27 @@ interface AdData {
   brand: string;
   image: string;
   url: string;
+}
+
+/**
+ * ExoClick renders its native creative as a widget next to our <ins>
+ * (.exo-native-widget-item: an <a> with image, title, text and brand). Read it
+ * so the card caption shows the real ad instead of placeholder text.
+ */
+function readExoCreative(container: Element): AdData | null {
+  const item = container.querySelector<HTMLAnchorElement>('a.exo-native-widget-item, .exo-native-widget-item');
+  if (!item) return null;
+  const text = (selector: string) => item.querySelector(selector)?.textContent?.trim() || '';
+  const title = text('.exo-native-widget-item-title');
+  if (!title) return null;
+  const background = item.querySelector<HTMLElement>('.exo-native-widget-item-image')?.style.backgroundImage || '';
+  return {
+    title,
+    description: text('.exo-native-widget-item-text'),
+    brand: text('.exo-native-widget-item-brand'),
+    image: background.match(/url\(["']?(.*?)["']?\)/)?.[1] || '',
+    url: item instanceof HTMLAnchorElement ? item.href : '',
+  };
 }
 
 /** ExoClick native ad (SFW or NSFW zone). Used by NativeAd for its ExoClick share. */
@@ -120,6 +142,32 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
     }
   }, [pathname, searchParams]);
 
+  // Pick up the creative's title/text/brand once ExoClick has injected it
+  useEffect(() => {
+    const container = insRef.current?.parentElement;
+    if (!container) return;
+    setAdData(null);
+    const found = readExoCreative(container);
+    if (found) {
+      setAdData(found);
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      const creative = readExoCreative(container);
+      if (creative) {
+        observer.disconnect();
+        if (isMounted.current) setAdData(creative);
+      }
+    });
+    observer.observe(container, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [zoneId, pathname, searchParams]);
+
+  // Clicks on our caption go through ExoClick's own link, so they are tracked
+  const openAd = () => {
+    insRef.current?.parentElement?.querySelector<HTMLAnchorElement>('a.exo-native-widget-item')?.click();
+  };
+
   // Trigger ad render when script is ready, zoneId exists, and the element is in the DOM
   useEffect(() => {
     if (!zoneId || !scriptLoaded || typeof window === 'undefined') return;
@@ -185,7 +233,11 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
           </Badge>
           <ins ref={insRef} className="eas6a97888e20 absolute inset-0" data-zoneid={zoneId} style={{ display: 'block', width: '100%', height: '100%' }}></ins>
         </div>
-        <CardContent className="p-3 flex flex-col flex-1">
+        <CardContent
+          className={`p-3 flex flex-col flex-1 ${adData ? 'cursor-pointer' : ''}`}
+          onClick={adData ? openAd : undefined}
+          title={adData?.title}
+        >
           <h3 className="text-xs font-bold text-foreground mb-1 line-clamp-1">
             {adData?.title || 'Advertisement'}
           </h3>
@@ -195,7 +247,7 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
                 <Megaphone size={8} className="text-primary" />
               </div>
               <span className="text-[10px] font-bold text-foreground/70 truncate group-hover:text-primary transition-colors">
-                {adData?.brand || 'ExoClick'}
+                {adData?.brand || 'Sponsored'}
               </span>
             </div>
             <span className="text-[9px] font-bold text-muted-foreground/40">Ad</span>
@@ -213,12 +265,16 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
         </Badge>
         <ins ref={insRef} className="eas6a97888e20 absolute inset-0" data-zoneid={zoneId} style={{ display: 'block', width: '100%', height: '100%' }}></ins>
       </div>
-      <CardContent className="p-4 flex flex-col flex-1">
+      <CardContent
+        className={`p-4 flex flex-col flex-1 ${adData ? 'cursor-pointer' : ''}`}
+        onClick={adData ? openAd : undefined}
+        title={adData?.title}
+      >
         <h3 className="text-sm font-bold text-foreground mb-1 line-clamp-1">
           {adData?.title || 'Advertisement'}
         </h3>
         <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
-          {adData?.description || 'Discover amazing products and services.'}
+          {adData ? adData.description : 'Discover amazing products and services.'}
         </p>
         <div className="flex items-center justify-between mt-auto">
           <div className="flex items-center gap-2 min-w-0">
@@ -226,7 +282,7 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
               <Megaphone size={10} className="text-primary" />
             </div>
             <span className="text-xs font-bold text-foreground/70 truncate group-hover:text-primary transition-colors">
-              {adData?.brand || 'ExoClick'}
+              {adData?.brand || 'Sponsored'}
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-muted-foreground/40">
