@@ -1,10 +1,24 @@
 import { query } from '@/lib/db';
 import { apiResponse, apiError } from '@/lib/apiAuth';
 import { publicImageFilter } from '@/lib/contentFilters';
+import { swrCached } from '@/lib/swrCache';
+import { publicCacheHeaders } from '@/lib/cacheHeaders';
 
 // GET /api/v1/stats - Get platform statistics (public endpoint, no auth required)
+// Six full-table counts took ~10 s: computed in the background every 10 minutes instead.
 export async function GET() {
   try {
+    const stats = await swrCached('stats:v1', { freshSeconds: 600, maxAgeSeconds: 86400 }, computeStats);
+    const res = apiResponse(stats);
+    for (const [k, v] of Object.entries(publicCacheHeaders(300, { swr: 3600 }))) res.headers.set(k, v);
+    return res;
+  } catch (error) {
+    console.error('API v1 stats error:', error);
+    return apiError('Internal server error', 500, 'INTERNAL_ERROR');
+  }
+}
+
+async function computeStats() {
     // Run stats queries in parallel
     const [
       totalImagesRes,
@@ -48,7 +62,7 @@ export async function GET() {
       }
     });
 
-    return apiResponse({
+    return {
       totals: {
         images: totalImages,
         tags: totalTags,
@@ -62,9 +76,5 @@ export async function GET() {
       activity: {
         uploads_last_24h: recentUploads,
       },
-    });
-  } catch (error) {
-    console.error('API v1 stats error:', error);
-    return apiError('Internal server error', 500, 'INTERNAL_ERROR');
-  }
+    };
 }

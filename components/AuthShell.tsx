@@ -18,6 +18,15 @@ interface Art {
 }
 
 const NEXT_ART_KEY = 'serika_auth_next_art';
+const ART_WIDTHS = [640, 750, 828, 1080, 1200, 1536, 1920]; // next.config deviceSizes
+
+/** The srcset width the browser will pick for the art pane on this screen. */
+function artWidth(): number {
+  // Mirrors the <NextImage sizes> below
+  const paneCss = window.innerWidth >= 768 ? window.innerWidth - 520 : window.innerWidth;
+  const needed = paneCss * (window.devicePixelRatio || 1);
+  return ART_WIDTHS.find((w) => w >= needed) ?? 1920;
+}
 
 async function fetchArt(): Promise<Art | null> {
   try {
@@ -69,6 +78,7 @@ export function AuthShell({
         // storage unavailable – fine
       }
       new Image().src = next.thumbnail_url;
+      new Image().src = `/_next/image?url=${encodeURIComponent(next.url)}&w=${artWidth()}&q=75`;
     });
     return () => {
       cancelled = true;
@@ -113,14 +123,6 @@ export function AuthShell({
           wide ? 'md:w-[520px] lg:w-[640px] lg:px-14' : 'md:w-[440px] lg:w-[520px] lg:px-16'
         )}
       >
-        <div className="mb-8 hidden flex-col items-center text-center md:flex">
-          <Link href="/">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.svg" alt="Serika Booru" className="h-10" />
-          </Link>
-          <p className="mt-2 text-sm text-gray-400">The modern anime art image board</p>
-        </div>
-
         <div
           className={cn(
             'mx-auto w-full animate-in fade-in slide-in-from-bottom-2 duration-300 md:my-auto',
