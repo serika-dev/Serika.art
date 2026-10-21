@@ -246,6 +246,27 @@ Response headers:
   "https://serika.art/api/v1/tags?q=land&type=general&sort=count&limit=50"`,
   },
   {
+    id: 'list-users', method: 'GET', path: '/api/v1/users', title: 'List Users',
+    description: 'Browse the public user directory, with search and sorting.',
+    longDescription: 'Returns registered members with their number of public uploads. System accounts (the shared "Anonymous" uploader and auto-generated placeholder accounts) are not listed. Results are cached for up to a minute.',
+    auth: false,
+    params: [
+      { name: 'page', type: 'integer', default: '1', description: 'Page number.' },
+      { name: 'limit', type: 'integer', default: '50', description: 'Results per page. Min: 1, Max: 100.' },
+      { name: 'sort', type: 'string', default: 'newest', description: 'newest, oldest, alphabetical, alphabetical-reverse, uploads, uploads-asc.' },
+      { name: 'q', type: 'string', description: 'Case-insensitive username search.' },
+      { name: 'contributors', type: 'boolean', default: 'false', description: 'Only people with at least one public upload.' },
+    ],
+    responseExample: `{
+  "success": true,
+  "users": [
+    { "id": "abc123", "username": "artist", "avatarUrl": "https://…", "rank": "user", "createdAt": "2025-01-01T00:00:00.000Z", "uploadCount": 108 }
+  ],
+  "pagination": { "page": 1, "limit": 50, "total": 312, "pages": 7 }
+}`,
+    curlExample: `curl "https://serika.art/api/v1/users?sort=uploads&contributors=true"`,
+  },
+  {
     id: 'get-user', method: 'GET', path: '/api/v1/users/:identifier', title: 'Get User Profile',
     description: 'Fetch a user\'s public profile and statistics by ID or username.',
     auth: true, permission: 'users:read',
