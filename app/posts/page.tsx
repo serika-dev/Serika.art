@@ -90,6 +90,29 @@ async function tagType(name: string): Promise<string | null> {
   return r?.rows[0]?.type ?? null;
 }
 
+// The first page is serialized into the HTML for hydration. The API rows carry
+// snake_case and camelCase copies of every field and two ids per tag; the grid
+// needs only these (about half the bytes).
+function slimImage(img: any): any {
+  return {
+    id: img.id,
+    _id: img._id,
+    sequentialId: img.sequentialId,
+    url: img.url,
+    thumbnailUrl: img.thumbnailUrl,
+    width: img.width,
+    height: img.height,
+    rating: img.rating,
+    isAIGenerated: img.isAIGenerated,
+    username: img.username,
+    favorites: img.favorites,
+    views: img.views,
+    upvotes: img.upvotes,
+    createdAt: img.createdAt,
+    tags: (img.tags || []).map((t: any) => ({ id: t.id, name: t.name, type: t.type, count: t.count })),
+  };
+}
+
 async function getInitialPosts(params: { [key: string]: string | string[] | undefined }) {
   const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || '';
   const cookieStore = await cookies();
@@ -116,7 +139,7 @@ async function getInitialPosts(params: { [key: string]: string | string[] | unde
       new Promise<null>((resolve) => setTimeout(() => resolve(null), budget)),
     ]);
     if (!result || !result.success) return null;
-    return { initialQuery, initialData: { images: result.images, pagination: result.pagination } };
+    return { initialQuery, initialData: { images: result.images.map(slimImage), pagination: result.pagination } };
   } catch (error) {
     console.error('Error pre-rendering posts:', error);
     return null;
