@@ -4,7 +4,9 @@ import { randomRows } from "@/lib/imageSearch";
 /* eslint-disable @next/next/no-img-element */
 
 export const runtime = "nodejs";
-export const revalidate = 300;
+// Rendered on request (Cloudflare caches it), not prerendered at build: a
+// random pick at build time could be a huge original and fail the deploy.
+export const dynamic = "force-dynamic";
 
 const OG_CACHE_CONTROL = "public, max-age=300, s-maxage=600, stale-while-revalidate=1800";
 
@@ -15,7 +17,9 @@ export async function GET() {
     // Get a random safe 16:9 image
     const rows = await randomRows<{ url: string }>({
       select: 'i.url',
+      // Under 3 MB: the renderer inlines the whole file and chokes on huge originals
       where: `i.rating = 'safe' AND i.deleted = FALSE AND i.width > 0 AND i.height > 0
+        AND i.file_size > 0 AND i.file_size < 3000000
         AND (i.width::float / i.height::float) >= 1.7 AND (i.width::float / i.height::float) <= 1.85`,
       params: [],
       limit: 1,
