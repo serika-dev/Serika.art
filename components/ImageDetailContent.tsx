@@ -24,16 +24,34 @@ import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { normalizeTagName } from '@/lib/tagName';
 
+const TAG_GROUPS = [
+  { type: 'artist', label: 'Artist' },
+  { type: 'copyright', label: 'Copyright' },
+  { type: 'character', label: 'Character' },
+  { type: 'general', label: 'General' },
+  { type: 'meta', label: 'Meta' },
+] as const;
+
+const TAG_COLORS: Record<string, string> = {
+  artist: 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20',
+  copyright: 'bg-purple-500/10 text-purple-400 border-purple-500/20 hover:bg-purple-500/20',
+  character: 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20',
+  general: 'bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20',
+  meta: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20',
+};
+
 interface ImageDetailContentProps {
   initialImage: ImageType;
   imageId: string;
   /** "hatsune miku (vocaloid) drawn by kuroi" – the page's h1 */
   headline?: string;
+  /** Plain-sentence description of the post, rendered under the h1 */
+  summary?: string;
   /** Descriptive alt text for the image */
   imageAlt?: string;
 }
 
-export default function ImageDetailContent({ initialImage, imageId, headline, imageAlt }: ImageDetailContentProps) {
+export default function ImageDetailContent({ initialImage, imageId, headline, summary, imageAlt }: ImageDetailContentProps) {
   const router = useRouter();
   const { user } = useAuth();
   const [image, setImage] = useState<ImageType>(initialImage);
@@ -682,6 +700,12 @@ export default function ImageDetailContent({ initialImage, imageId, headline, im
           {headline}
         </h1>
       )}
+      {(summary || image.description) && (
+        <div className="mb-6 max-w-3xl space-y-2 text-sm leading-relaxed text-muted-foreground">
+          {image.description && <p className="whitespace-pre-line text-foreground/80">{image.description}</p>}
+          {summary && <p>{summary}</p>}
+        </div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           <Card className="overflow-hidden">
@@ -890,21 +914,33 @@ export default function ImageDetailContent({ initialImage, imageId, headline, im
           <Card>
             <CardHeader><CardTitle>Tags</CardTitle></CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-1.5">
-                {(image.tags || []).map((tag: any) => {
-                  const tagName = typeof tag === 'string' ? tag : tag.name;
-                  const tagType = typeof tag === 'object' ? tag.type : 'general';
-                  const typeColors = {
-                    artist: 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20',
-                    copyright: 'bg-purple-500/10 text-purple-400 border-purple-500/20 hover:bg-purple-500/20',
-                    character: 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20',
-                    general: 'bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20',
-                    meta: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20',
-                  };
+              {/* Grouped like a booru: who drew it, what it's from, who's in it, what's in it */}
+              <div className="space-y-4">
+                {TAG_GROUPS.map(({ type, label }) => {
+                  const group = (image.tags || [])
+                    .map((tag: any) => ({
+                      name: typeof tag === 'string' ? tag : tag.name,
+                      type: (typeof tag === 'object' && tag.type) || 'general',
+                    }))
+                    .filter((t: { type: string }) => (type === 'general' ? !TAG_GROUPS.some((g) => g.type === t.type && g.type !== 'general') : t.type === type))
+                    .sort((x: { name: string }, y: { name: string }) => x.name.localeCompare(y.name));
+                  if (group.length === 0) return null;
                   return (
-                    <Link key={tagName} href={`/posts?tags=${encodeURIComponent(tagName)}`} className={cn("px-2.5 py-1 rounded-md border text-xs font-bold transition-all hover:scale-105 inline-block", typeColors[tagType as keyof typeof typeColors])}>
-                      {tagName}
-                    </Link>
+                    <div key={type}>
+                      <h3 className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{label}</h3>
+                      <ul className="flex flex-wrap gap-1.5">
+                        {group.map(({ name }: { name: string }) => {
+                          const slug = normalizeTagName(name);
+                          return (
+                            <li key={slug}>
+                              <Link href={`/posts?tags=${encodeURIComponent(slug)}`} className={cn("px-2.5 py-1 rounded-md border text-xs font-bold transition-all hover:scale-105 inline-block", TAG_COLORS[type])}>
+                                {slug.replace(/_/g, ' ')}
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
                   );
                 })}
               </div>

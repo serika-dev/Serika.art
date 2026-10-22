@@ -1,31 +1,27 @@
 import { NextResponse } from "next/server";
 import { getCachedCount } from "@/lib/db";
-import { BASE_URL, SITEMAP_SIZE, wrapInSitemapIndex } from "@/lib/sitemap-utils";
+import { ARTIST_SITEMAP_MIN_POSTS, BASE_URL, SITEMAP_SIZE, getImageChunks, wrapInSitemapIndex } from "@/lib/sitemap-utils";
 
 export async function GET() {
   try {
-    const [totalImages, totalArtists] = await Promise.all([
-      getCachedCount("images", "deleted = FALSE AND unlisted = FALSE"),
-      getCachedCount("tags", "type = $1", ["artist"])
+    const [imageChunks, totalArtists] = await Promise.all([
+      getImageChunks(),
+      getCachedCount("tags", "type = $1 AND count >= $2", ["artist", ARTIST_SITEMAP_MIN_POSTS]),
     ]);
-
-    const imageChunks = Math.ceil(totalImages / SITEMAP_SIZE);
     const artistChunks = Math.ceil(totalArtists / SITEMAP_SIZE);
-    
-    const urls = [
-      `${BASE_URL}/sitemap/misc.xml`,
-      `${BASE_URL}/sitemap/tags.xml`,
+
+    const entries: { url: string; lastmod?: string }[] = [
+      { url: `${BASE_URL}/sitemap/misc.xml` },
+      { url: `${BASE_URL}/sitemap/tags.xml` },
     ];
-
     for (let i = 0; i < artistChunks; i++) {
-        urls.push(`${BASE_URL}/sitemap/artists/${i}.xml`);
+      entries.push({ url: `${BASE_URL}/sitemap/artists/${i}.xml` });
+    }
+    for (const { chunk, lastmod } of imageChunks) {
+      entries.push({ url: `${BASE_URL}/sitemap/images/${chunk}.xml`, lastmod });
     }
 
-    for (let i = 0; i < imageChunks; i++) {
-        urls.push(`${BASE_URL}/sitemap/images/${i}.xml`);
-    }
-
-    const xml = wrapInSitemapIndex(urls);
+    const xml = wrapInSitemapIndex(entries);
 
     return new NextResponse(xml, {
       headers: {

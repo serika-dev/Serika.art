@@ -217,7 +217,7 @@ export default async function ImagePage({ params }: PageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLdHtml(jsonLd) }}
       />
-      <ImageDetailContent initialImage={image} imageId={id} headline={seo.headline} imageAlt={seo.alt} />
+      <ImageDetailContent initialImage={image} imageId={id} headline={seo.headline} summary={seo.summary} imageAlt={seo.alt} />
       <RelatedPosts post={image} artist={artistTags[0]} character={characterTags[0]} series={copyrightTags[0]} />
     </>
   );

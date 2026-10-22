@@ -8,12 +8,12 @@ export async function GET() {
     const routes = [
       { url: BASE_URL, lastModified: new Date(), changeFrequency: "daily", priority: 1 },
       { url: `${BASE_URL}/posts`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.95 },
-      { url: `${BASE_URL}/tags`, lastModified: new Date(), changeFrequency: "daily", priority: 0.9 },
-      { url: `${BASE_URL}/artists`, lastModified: new Date(), changeFrequency: "daily", priority: 0.8 },
-      { url: `${BASE_URL}/users`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.7 },
-      { url: `${BASE_URL}/contact`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.4 },
-      { url: `${BASE_URL}/dmca`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.3 },
-      { url: `${BASE_URL}/api-docs`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.6 },
+      { url: `${BASE_URL}/tags`, changeFrequency: "daily", priority: 0.9 },
+      { url: `${BASE_URL}/artists`, changeFrequency: "daily", priority: 0.8 },
+      { url: `${BASE_URL}/users`, changeFrequency: "weekly", priority: 0.7 },
+      { url: `${BASE_URL}/contact`, changeFrequency: "monthly", priority: 0.4 },
+      { url: `${BASE_URL}/dmca`, changeFrequency: "monthly", priority: 0.3 },
+      { url: `${BASE_URL}/api-docs`, changeFrequency: "weekly", priority: 0.6 },
     ];
 
     // Profiles of people who have uploaded (empty profiles are thin pages)
@@ -22,13 +22,12 @@ export async function GET() {
       for (const user of users) {
         routes.push({
           url: `${BASE_URL}/user/${encodeURIComponent(user.username.trim())}`,
-          lastModified: new Date(),
           changeFrequency: "weekly",
           priority: 0.5,
         });
       }
     } catch {}
-    routes.push({ url: `${BASE_URL}/guidelines/tagging`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.4 });
+    routes.push({ url: `${BASE_URL}/guidelines/tagging`, changeFrequency: "monthly", priority: 0.4 });
 
     const xml = wrapInUrlset(routes);
 
