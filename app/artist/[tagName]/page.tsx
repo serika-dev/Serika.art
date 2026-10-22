@@ -575,10 +575,10 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
       setTag(data.tag);
       setSampleImages(data.sampleImages || []);
       setImageCount(data.imageCount || 0);
-      setEditBio(data.artist.bio || '');
-      setEditSocials(data.artist.socials || {});
-      setEditAvatarUrl(data.artist.avatarUrl || '');
-      setEditBannerUrl(data.artist.bannerUrl || '');
+      setEditBio(data.artist?.bio || '');
+      setEditSocials(data.artist?.socials || {});
+      setEditAvatarUrl(data.artist?.avatarUrl || '');
+      setEditBannerUrl(data.artist?.bannerUrl || '');
     } catch (err: any) {
       setError(err.message);
     } finally {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { listImages } from '@/lib/imageSearch';
 
 export async function GET(
   request: NextRequest,
@@ -51,6 +52,15 @@ export async function GET(
 
     const reviewSummary = reviewsResult.rows[0];
 
+    // A few recent safe works for the profile page (the page always expected these)
+    const recent = await listImages({
+      page: 1, limit: 6, tags: [tag.name], ratings: ['safe'], sort: 'newest',
+      aiOnly: false, hideAI: false, q: '', userId: null, username: null,
+    }).catch(() => null);
+    const sampleImages = recent && recent.success
+      ? recent.images.map((img) => ({ _id: String(img.id), sequentialId: img.sequential_id, thumbnailUrl: img.thumbnail_url || img.url }))
+      : [];
+
     return NextResponse.json({
       success: true,
       tag: {
@@ -72,7 +82,23 @@ export async function GET(
         bio: artist.bio,
         socials: artist.socials || {},
         createdAt: artist.created_at,
-      } : null,
+      } : {
+        // Nobody has claimed or edited this artist yet: an empty, unclaimed profile
+        _id: '',
+        tagId: String(tag.id),
+        tagName: tag.name,
+        claimedByUserId: null,
+        claimedByUsername: null,
+        verified: false,
+        avatarUrl: '',
+        bannerUrl: '',
+        bio: '',
+        socials: {},
+        createdAt: tag.created_at,
+        unclaimed: true,
+      },
+      sampleImages,
+      imageCount: tag.count,
       reviews: {
         count: parseInt(reviewSummary?.review_count || '0'),
         averages: {
