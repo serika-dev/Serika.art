@@ -1,4 +1,8 @@
 import { Metadata } from 'next';
+import RelatedPosts from '@/components/RelatedPosts';
+import { resolveTags } from '@/lib/imageSearch';
+import { normalizeTagName } from '@/lib/tagName';
+import { displayTag } from '@/lib/seo';
 
 interface Props {
   params: Promise<{ tagName: string }>;
@@ -7,22 +11,23 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { tagName } = await params;
-  const decodedName = decodeURIComponent(tagName).replace(/_/g, ' ');
+  const slug = normalizeTagName(decodeURIComponent(tagName));
+  const decodedName = displayTag(slug);
+  const { found } = await resolveTags([slug]).catch(() => ({ found: [] as { count: number }[] }));
+  const count = found[0]?.count ?? 0;
 
-  const title = `${decodedName} | Artist Profile & Artwork | Serika.art`;
-  const description = `View the artist profile for ${decodedName} on Serika.art. Explore their illustrations, fan art, and digital creations from our 1.5M+ image collection. Browse, favorite, and discover ${decodedName}'s complete portfolio.`;
-  const keywords = [
-    decodedName, `${decodedName} art`, `${decodedName} artist`, `${decodedName} artwork`,
-    `${decodedName} illustrations`, `${decodedName} fan art`, `${decodedName} portfolio`,
-    'anime artist', 'digital art', 'illustration', 'serika.art',
-  ];
+  const title = `${decodedName} art${count > 0 ? ` (${count.toLocaleString()} illustrations)` : ''} | Serika.art`;
+  const description = count > 0
+    ? `${count.toLocaleString()} illustrations and fan art drawn by ${decodedName} on Serika.art. See their popular works, links, wiki and reviews.`
+    : `Artist profile for ${decodedName} on Serika.art: illustrations, links, wiki and reviews.`;
+  const keywords = [decodedName, `${decodedName} art`, `${decodedName} artist`, `${decodedName} illustrations`, `${decodedName} fan art`];
 
   return {
-    title,
+    title: { absolute: title },
     description,
     keywords,
     alternates: {
-      canonical: `https://serika.art/artist/${tagName}`,
+      canonical: `https://serika.art/artist/${encodeURIComponent(slug)}`,
     },
     robots: {
       index: true,
@@ -34,7 +39,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title,
       description,
       type: 'profile',
-      url: `https://serika.art/artist/${tagName}`,
+      url: `https://serika.art/artist/${encodeURIComponent(slug)}`,
       siteName: 'Serika.art',
     },
     twitter: {
@@ -45,6 +50,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default function ArtistLayout({ children }: Props) {
-  return children;
+export default async function ArtistLayout({ children, params }: Props) {
+  const { tagName } = await params;
+  const slug = normalizeTagName(decodeURIComponent(tagName));
+  return (
+    <>
+      {children}
+      {/* Server-rendered so the artist's work is in the HTML crawlers read */}
+      <RelatedPosts post={{ sequentialId: -1, rating: 'safe' }} artist={slug} variant="artist" />
+    </>
+  );
 }

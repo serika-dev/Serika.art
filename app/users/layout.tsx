@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Community Members | Serika.art",
-  description: "Browse the Serika.art community. Find artists, uploaders, and art enthusiasts on the largest modern art image board with 1.5M+ artworks.",
+  title: "Users & Artists",
+  description: "Browse the Serika.art community. Find artists, uploaders, and art enthusiasts on the largest modern art image board with 4M+ artworks.",
   keywords: ["serika users", "art community", "anime artists", "digital artists", "art uploaders", "art community members"],
   alternates: {
     canonical: "https://serika.art/users",

@@ -1,4 +1,5 @@
 import { Metadata } from 'next';
+import { uploadCountFor } from '@/lib/userDirectory';
 
 interface Props {
   params: Promise<{ username: string }>;
@@ -8,23 +9,28 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username } = await params;
   const decodedName = decodeURIComponent(username);
+  const uploads = await uploadCountFor(decodedName).catch(() => 0);
 
-  const title = `${decodedName} | User Profile | Serika.art`;
-  const description = `Check out ${decodedName}'s profile on Serika.art. Browse their uploads, favorites, and activity in our art community of 1.5M+ images.`;
+  const title = `${decodedName}${uploads > 0 ? ` – ${uploads.toLocaleString()} uploads` : ''} | Serika.art`;
+  const description = uploads > 0
+    ? `${uploads.toLocaleString()} artworks uploaded by ${decodedName} on Serika.art, plus their favorites and activity.`
+    : `${decodedName}'s profile on Serika.art.`;
   const keywords = [
     decodedName, `${decodedName} profile`, `${decodedName} art uploads`,
     'art community', 'serika artist', 'art uploader', 'serika.art',
   ];
 
   return {
-    title,
+    title: { absolute: title },
     description,
     keywords,
     alternates: {
       canonical: `https://serika.art/user/${username}`,
     },
+    // Only profiles with uploads are worth indexing (empty ones are thin pages;
+    // the shared "Anonymous" account would just duplicate /posts)
     robots: {
-      index: true,
+      index: uploads > 0,
       follow: true,
     },
     openGraph: {

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Contact Us | Serika.art",
-  description: "Get in touch with the Serika.art team. Report bugs, request features, or ask questions about our art image board with over 1.5 million artworks.",
+  title: "Contact Us",
+  description: "Get in touch with the Serika.art team. Report bugs, request features, or ask questions about our art image board with over 4 million artworks.",
   keywords: ["contact serika", "serika support", "art image board contact", "report bug", "feature request"],
   alternates: {
     canonical: "https://serika.art/contact",

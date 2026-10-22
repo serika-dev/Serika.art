@@ -13,17 +13,20 @@ ${urls.map(url => `  <sitemap>
 </sitemapindex>`;
 }
 
+const xmlEscape = (v: string) =>
+  v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+
 export function wrapInUrlset(routes: any[]) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 ${routes.map(r => `  <url>
-    <loc>${r.url}</loc>
+    <loc>${xmlEscape(r.url)}</loc>
     ${r.lastModified ? `<lastmod>${new Date(r.lastModified).toISOString()}</lastmod>` : ''}
     ${r.changeFrequency ? `<changefreq>${r.changeFrequency}</changefreq>` : ''}
     ${r.priority ? `<priority>${r.priority}</priority>` : ''}
     ${r.images && r.images.length > 0 ? r.images.map((img: string) => `    <image:image>
-      <image:loc>${img}</image:loc>
+      <image:loc>${xmlEscape(img)}</image:loc>
     </image:image>`).join("\n") : ''}
   </url>`).join("\n")}
 </urlset>`;

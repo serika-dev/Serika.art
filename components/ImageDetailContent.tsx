@@ -27,9 +27,13 @@ import { normalizeTagName } from '@/lib/tagName';
 interface ImageDetailContentProps {
   initialImage: ImageType;
   imageId: string;
+  /** "hatsune miku (vocaloid) drawn by kuroi" – the page's h1 */
+  headline?: string;
+  /** Descriptive alt text for the image */
+  imageAlt?: string;
 }
 
-export default function ImageDetailContent({ initialImage, imageId }: ImageDetailContentProps) {
+export default function ImageDetailContent({ initialImage, imageId, headline, imageAlt }: ImageDetailContentProps) {
   const router = useRouter();
   const { user } = useAuth();
   const [image, setImage] = useState<ImageType>(initialImage);
@@ -673,6 +677,11 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {headline && (
+        <h1 className="mb-4 text-xl font-bold capitalize leading-snug tracking-tight text-foreground/90 sm:text-2xl">
+          {headline}
+        </h1>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           <Card className="overflow-hidden">
@@ -697,7 +706,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
                 // AVIF/WebP from the image optimizer (cached for a year).
                 <NextImage
                   src={image.url}
-                  alt={(image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
+                  alt={imageAlt || (image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
                   width={image.width}
                   height={image.height}
                   sizes="(max-width: 1024px) 100vw, 66vw"
@@ -709,7 +718,7 @@ export default function ImageDetailContent({ initialImage, imageId }: ImageDetai
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={image.url}
-                  alt={(image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
+                  alt={imageAlt || (image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
                   className={imageSize === 'fit' ? 'max-w-full max-h-[85vh] object-contain shadow-2xl rounded-sm' : 'w-auto h-auto'}
                   fetchPriority="high"
                 />

@@ -454,6 +454,14 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
 
   const includedTags = selectedTags.filter((t) => !t.name.startsWith('-'));
 
+  /** Same URL updateUrl() would push, as a crawlable link */
+  const pageHref = (n: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (n > 1) params.set('page', String(n)); else params.delete('page');
+    const qs = params.toString();
+    return `/posts${qs ? `?${qs}` : ''}`;
+  };
+
   const renderSort = (triggerClassName: string) => (
     <Select value={sort} onValueChange={(value) => updateUrl(undefined, value, 1)}>
       <SelectTrigger className={triggerClassName} aria-label="Sort posts">
@@ -594,8 +602,13 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
                   const isSelected = selectedTags.some(t => t.name === tag.name);
                   return (
                     <div key={tag.name} className="group flex items-center gap-1">
-                      <button
-                        onClick={() => toggleTag(tag)}
+                      <a
+                        href={`/posts?tags=${encodeURIComponent(tag.name)}`}
+                        onClick={(e) => {
+                          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; // new tab etc.
+                          e.preventDefault();
+                          toggleTag(tag);
+                        }}
                         title={isSelected ? `Remove ${tag.name}` : `Search ${tag.name}`}
                         className={cn(
                           "flex-1 min-w-0 text-left px-2.5 py-1.5 rounded-md text-sm transition-all flex items-center justify-between",
@@ -606,7 +619,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
                       >
                         <span className="truncate">{tag.name}</span>
                         <span className="text-xs tabular-nums ml-2 opacity-50">{tag.count.toLocaleString()}</span>
-                      </button>
+                      </a>
                       <button
                         onClick={() => excludeTag(tag.name)}
                         title={`Hide posts tagged ${tag.name}`}
@@ -690,7 +703,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
             <h1 className="mb-1 line-clamp-2 break-words text-2xl font-bold tracking-tight sm:line-clamp-1 sm:text-3xl">
-              {includedTags.length > 0 ? includedTags.map((t) => t.name).join(' + ') : uploaderParam ? `Posts by ${uploaderParam}` : 'Posts'}
+              {includedTags.length > 0 ? includedTags.map((t) => t.name.replace(/_/g, ' ')).join(' + ') : uploaderParam ? `Posts by ${uploaderParam}` : 'Posts'}
             </h1>
             <p className="text-muted-foreground">
               {loading
@@ -924,9 +937,21 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
             ) : (
               totalPages > 1 && (
                 <div className="flex justify-center items-center gap-4">
-                  <Button variant="outline" size="sm" onClick={() => updateUrl(undefined, undefined, urlPage - 1)} disabled={urlPage === 1}>Previous</Button>
+                  {urlPage > 1 ? (
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={pageHref(urlPage - 1)} rel="prev">Previous</Link>
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" disabled>Previous</Button>
+                  )}
                   <span className="text-sm">Page {urlPage} of {totalPages}</span>
-                  <Button variant="outline" size="sm" onClick={() => updateUrl(undefined, undefined, urlPage + 1)} disabled={urlPage === totalPages}>Next</Button>
+                  {urlPage < totalPages ? (
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={pageHref(urlPage + 1)} rel="next">Next</Link>
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" disabled>Next</Button>
+                  )}
                 </div>
               )
             )}

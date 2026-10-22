@@ -78,6 +78,13 @@ const compare: Record<DirectorySort, (a: DirectoryUser, b: DirectoryUser) => num
   'uploads-asc': (a, b) => a.uploadCount - b.uploadCount || b.createdAt.localeCompare(a.createdAt),
 };
 
+/** Public upload count for a username (case-insensitive), or 0 for unknown/system accounts. */
+export async function uploadCountFor(username: string): Promise<number> {
+  const needle = username.trim().toLowerCase();
+  const user = (await getDirectory()).find((u) => u.username.trim().toLowerCase() === needle);
+  return user?.uploadCount ?? 0;
+}
+
 export function isDirectorySort(value: string | null | undefined): value is DirectorySort {
   return !!value && value in compare;
 }

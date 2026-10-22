@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "DMCA Takedown Request | Serika.art",
+  title: "DMCA Takedown Request",
   description: "Submit a DMCA copyright takedown request on Serika.art. We take intellectual property rights seriously and respond within 24-48 hours.",
   keywords: ["DMCA", "copyright takedown", "intellectual property", "serika DMCA", "art copyright"],
   alternates: {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { BASE_URL, wrapInUrlset } from "@/lib/sitemap-utils";
+import { listDirectory } from "@/lib/userDirectory";
 
 export async function GET() {
   try {
@@ -14,19 +15,19 @@ export async function GET() {
       { url: `${BASE_URL}/api-docs`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.6 },
     ];
 
-    // Fetch users
+    // Profiles of people who have uploaded (empty profiles are thin pages)
     try {
-      const usersResult = await query("SELECT username, updated_at FROM users");
-      const users = usersResult.rows;
-      users.forEach(user => {
+      const { users } = await listDirectory({ contributorsOnly: true, limit: 50000, sort: 'uploads' });
+      for (const user of users) {
         routes.push({
-          url: `${BASE_URL}/user/${encodeURIComponent(user.username)}`,
-          lastModified: user.updated_at || new Date(),
+          url: `${BASE_URL}/user/${encodeURIComponent(user.username.trim())}`,
+          lastModified: new Date(),
           changeFrequency: "weekly",
           priority: 0.5,
         });
-      });
-    } catch (e) {}
+      }
+    } catch {}
+    routes.push({ url: `${BASE_URL}/guidelines/tagging`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.4 });
 
     const xml = wrapInUrlset(routes);
 

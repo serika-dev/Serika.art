@@ -3,6 +3,9 @@ import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { query } from '@/lib/db';
 import ImageDetailContent from '@/components/ImageDetailContent';
+import RelatedPosts from '@/components/RelatedPosts';
+import { postSeo, displayTag, shareImageUrl } from '@/lib/seo';
+import { jsonLdHtml } from '@/lib/jsonLd';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -87,37 +90,22 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     };
   }
 
+  const seo = postSeo(image);
   const tagNames = image.tags.map((t: any) => t.name);
-  const artistTags = image.tags.filter((t: any) => t.type === 'artist').map((t: any) => t.name);
-  const characterTags = image.tags.filter((t: any) => t.type === 'character').map((t: any) => t.name);
-  const copyrightTags = image.tags.filter((t: any) => t.type === 'copyright').map((t: any) => t.name);
-  
-  const tags = tagNames.join(', ');
-  const artistStr = artistTags.length > 0 ? ` by ${artistTags.join(', ')}` : '';
-  const charStr = characterTags.length > 0 ? ` featuring ${characterTags.join(', ')}` : '';
-  const seriesStr = copyrightTags.length > 0 ? ` from ${copyrightTags.join(', ')}` : '';
-  
-  const title = `${artistStr ? artistTags[0] + ' - ' : ''}${characterTags[0] || 'Artwork'} #${image.sequentialId}${seriesStr} | Serika Booru`;
-  const description = `High-quality artwork${artistStr}${charStr}${seriesStr}. ${image.width}x${image.height}, ${image.rating} rated. Tags: ${tags}. Discover 1.5M+ artworks on Serika Booru (Serika Art).`;
-  
-  // Build expanded keywords: original tags + variants
-  const keywords: string[] = [
-    ...tagNames,
-    ...artistTags.map((a: string) => `${a} art`),
-    ...characterTags.map((c: string) => `${c} fan art`),
-    ...copyrightTags.map((c: string) => `${c} fan art`),
-    'serika booru', 'serika art', 'anime art', 'illustration', 'digital art', 'fan art',
-  ];
+  const artistTags = image.tags.filter((t: any) => t.type === 'artist').map((t: any) => displayTag(t.name));
+  const shareImage = shareImageUrl(image.url);
+  const shareHeight = image.width > 0 ? Math.round((image.height / image.width) * 1200) : 630;
 
   return {
-    title,
-    description,
-    keywords,
+    // absolute: the root layout's "%s | Serika Booru" template would add the site name twice
+    title: { absolute: seo.title },
+    description: seo.description,
+    keywords: tagNames.slice(0, 25).map(displayTag),
     authors: artistTags.length > 0 ? artistTags.map((a: string) => ({ name: a })) : undefined,
-    creator: artistTags[0] || 'Unknown Artist',
+    creator: artistTags[0],
     publisher: 'Serika.art',
     alternates: {
-      canonical: `https://serika.art/image/${id}`,
+      canonical: `https://serika.art/image/${image.sequentialId}`,
     },
     robots: {
       index: true,
@@ -126,34 +114,29 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       'max-snippet': -1,
     },
     openGraph: {
-      title,
-      description,
-      images: [
-        {
-          url: image.url,
-          width: image.width,
-          height: image.height,
-          alt: tags,
-        },
-      ],
+      title: seo.title,
+      description: seo.description,
+      images: [{ url: shareImage, width: 1200, height: shareHeight, alt: seo.alt }],
       type: 'article',
-      url: `https://serika.art/image/${id}`,
-      siteName: 'Serika Booru',
+      url: `https://serika.art/image/${image.sequentialId}`,
+      siteName: 'Serika.art',
     },
     twitter: {
       card: 'summary_large_image',
-      title,
-      description,
-      images: [image.url],
+      title: seo.title,
+      description: seo.description,
+      images: [shareImage],
     },
     other: {
+      // SafeSearch: label adult posts individually so the rest of the site isn't filtered
+      ...(seo.isAdult && { rating: 'adult' }),
       // Discord embed accent colour + article metadata
       'theme-color': image.rating === 'safe' ? '#22c55e' : image.rating === 'questionable' ? '#eab308' : '#ef4444',
       'og:locale': 'en_US',
       'article:published_time': new Date(image.createdAt).toISOString(),
       'article:author': artistTags[0] || 'Anonymous',
       'article:section': 'Artwork',
-      'article:tag': tagNames.slice(0, 8).join(','),
+      'article:tag': tagNames.slice(0, 8).map(displayTag).join(','),
     },
   };
 }
@@ -166,87 +149,61 @@ export default async function ImagePage({ params }: PageProps) {
     notFound();
   }
 
-  const artistTags = image.tags.filter((t: any) => t.type === 'artist').map((t: any) => t.name);
-  const characterTags = image.tags.filter((t: any) => t.type === 'character').map((t: any) => t.name);
-  const copyrightTags = image.tags.filter((t: any) => t.type === 'copyright').map((t: any) => t.name);
-  
-  // BreadcrumbList schema
+  const seo = postSeo(image);
+  const byType = (type: string) => image.tags.filter((t: any) => t.type === type).map((t: any) => t.name as string);
+  const artistTags = byType('artist');
+  const characterTags = byType('character');
+  const copyrightTags = byType('copyright');
+  // The tag page this post belongs to most: series, else artist, else character
+  const parentTag = copyrightTags[0] ?? artistTags[0] ?? characterTags[0];
+
   const breadcrumbSchema = {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
-    'itemListElement': [
-      {
-        '@type': 'ListItem',
-        'position': 1,
-        'name': 'Home',
-        'item': 'https://serika.art',
-      },
-      {
-        '@type': 'ListItem',
-        'position': 2,
-        'name': 'Posts',
-        'item': 'https://serika.art/posts',
-      },
-      {
-        '@type': 'ListItem',
-        'position': 3,
-        'name': `Image #${image.sequentialId}`,
-        'item': `https://serika.art/image/${image.sequentialId}`,
-      },
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Serika.art', item: 'https://serika.art' },
+      parentTag
+        ? { '@type': 'ListItem', position: 2, name: displayTag(parentTag), item: `https://serika.art/posts?tags=${encodeURIComponent(parentTag)}` }
+        : { '@type': 'ListItem', position: 2, name: 'Posts', item: 'https://serika.art/posts' },
+      { '@type': 'ListItem', position: 3, name: seo.headline, item: `https://serika.art/image/${image.sequentialId}` },
     ],
   };
 
-  // Structured Data for Google Images & Rich Results
+  // Structured data for Google Images (creator / credit) and rich results
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'ImageObject',
     '@id': `https://serika.art/image/${image.sequentialId}`,
-    name: `${artistTags.length > 0 ? `${artistTags[0]} - ` : ''}${characterTags[0] || 'Artwork'} #${image.sequentialId}${copyrightTags.length > 0 ? ` from ${copyrightTags[0]}` : ''}`,
-    description: image.description || `Illustration (Serika Booru) shared on Serika Art with tags: ${image.tags.map((t: any) => t.name).join(', ')}`,
+    name: seo.headline,
+    caption: seo.alt,
+    description: image.description || seo.description,
     contentUrl: image.url,
     url: `https://serika.art/image/${image.sequentialId}`,
     thumbnailUrl: image.thumbnailUrl || image.url,
     width: { '@type': 'QuantitativeValue', value: image.width, unitCode: 'E37' },
     height: { '@type': 'QuantitativeValue', value: image.height, unitCode: 'E37' },
+    encodingFormat: image.contentType || undefined,
     uploadDate: image.createdAt,
     datePublished: image.createdAt,
-    author: {
-      '@type': 'Person',
-      name: image.username,
-      url: `https://serika.art/user/${encodeURIComponent(image.username.trim())}`,
-    },
-    ...(artistTags.length > 0 && {
-      creator: artistTags.map((a: string) => ({
-        '@type': 'Person',
-        name: a.replace(/_/g, ' '),
-        url: `https://serika.art/artist/${encodeURIComponent(a)}`,
-      })),
-    }),
-    ...(copyrightTags.length > 0 && {
-      copyrightHolder: copyrightTags.map((c: string) => ({
-        '@type': 'Organization',
-        name: c.replace(/_/g, ' '),
-      })),
-    }),
-    keywords: image.tags.map((t: any) => t.name).join(', '),
+    ...(artistTags.length > 0
+      ? {
+          creator: artistTags.map((a: string) => ({
+            '@type': 'Person',
+            name: displayTag(a),
+            url: `https://serika.art/artist/${encodeURIComponent(a)}`,
+          })),
+          creditText: artistTags.map(displayTag).join(', '),
+        }
+      : {}),
+    ...(image.source && /^https?:\/\//.test(image.source) ? { isBasedOn: image.source } : {}),
+    keywords: image.tags.map((t: any) => displayTag(t.name)).join(', '),
     genre: 'Illustration',
     contentRating: image.rating,
-    isPartOf: {
-      '@type': 'WebSite',
-      name: 'Serika Booru',
-      url: 'https://serika.art',
-    },
+    isFamilyFriendly: image.rating === 'safe',
+    isPartOf: { '@type': 'WebSite', name: 'Serika.art', url: 'https://serika.art' },
     interactionStatistic: [
-      {
-        '@type': 'InteractionCounter',
-        interactionType: 'https://schema.org/ViewAction',
-        userInteractionCount: image.views,
-      },
-      {
-        '@type': 'InteractionCounter',
-        interactionType: 'https://schema.org/LikeAction',
-        userInteractionCount: image.favorites,
-      },
+      { '@type': 'InteractionCounter', interactionType: 'https://schema.org/ViewAction', userInteractionCount: image.views },
+      { '@type': 'InteractionCounter', interactionType: 'https://schema.org/LikeAction', userInteractionCount: image.favorites },
     ],
   };
 
@@ -254,13 +211,14 @@ export default async function ImagePage({ params }: PageProps) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdHtml(breadcrumbSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdHtml(jsonLd) }}
       />
-      <ImageDetailContent initialImage={image} imageId={id} />
+      <ImageDetailContent initialImage={image} imageId={id} headline={seo.headline} imageAlt={seo.alt} />
+      <RelatedPosts post={image} artist={artistTags[0]} character={characterTags[0]} series={copyrightTags[0]} />
     </>
   );
 }

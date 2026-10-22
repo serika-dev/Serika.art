@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useId, useState, useSyncExternalStore } from 'react';
+import React, { Suspense, useCallback, useId, useState, useSyncExternalStore } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
 import ExoClickAd, { isSafeAdRating, type AdSlotProps } from '@/components/ExoClickAd';
@@ -46,7 +46,7 @@ const rollSource = (key: string): Source => {
 
 const noopSubscribe = () => () => {};
 
-const NativeAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inline' }) => {
+const NativeAdSlot: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inline' }) => {
   const serikaEligible = isSafeAdRating(rating) && EXOCLICK_SHARE < 1;
 
   const pathname = usePathname();
@@ -87,5 +87,17 @@ const NativeAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inlin
 
   return <SerikaNativeAd key={rollKey} variant={variant} onEmpty={handleSerikaEmpty} />;
 };
+
+/**
+ * The slot reads the URL (useSearchParams), which on a cached/ISR page makes
+ * React render everything up to the nearest Suspense boundary in the browser
+ * only. Its own boundary keeps that to the ad: the rest of the page (the post,
+ * its tags…) stays in the server-rendered HTML that search engines read.
+ */
+const NativeAd: React.FC<AdSlotProps> = (props) => (
+  <Suspense fallback={<AdPlaceholder variant={props.variant ?? 'inline'} />}>
+    <NativeAdSlot {...props} />
+  </Suspense>
+);
 
 export default NativeAd;

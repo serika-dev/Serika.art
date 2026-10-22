@@ -1,7 +1,10 @@
 import { Metadata } from 'next';
+import { jsonLdHtml } from '@/lib/jsonLd';
 import { cookies } from 'next/headers';
 import PostsPageClient from '@/components/PostsPageClient';
-import { listImages, parseImageListParams } from '@/lib/imageSearch';
+import { listImages, parseImageListParams, resolveTags } from '@/lib/imageSearch';
+import { query } from '@/lib/db';
+import { displayTag } from '@/lib/seo';
 import { buildImagesQuery, parseRatingsCookie, DEFAULT_POSTS_PER_PAGE, RATINGS_COOKIE } from '@/lib/postsQuery';
 
 // Don't hold the HTML back for a slow listing – the client fetches it instead
@@ -12,62 +15,76 @@ interface Props {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
+const TYPE_PHRASE: Record<string, string> = {
+  artist: 'art',
+  character: 'art & images',
+  copyright: 'art & fan art',
+  meta: 'images',
+  general: 'anime art',
+};
+
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const params = await searchParams;
-  const tags = params.tags as string | undefined;
-  const page = params.page as string | undefined;
-  
-  let title = 'Browse Artwork | Serika.art - 1.5M+ Images';
-  let description = 'Discover over 1.5 million artworks on Serika.art. Filter by tags, ratings, artists, characters & more.';
-  let canonicalUrl = 'https://serika.art/posts';
+  const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || '';
+  const tagsParam = first(params.tags).trim();
+  const page = Math.max(1, parseInt(first(params.page) || '1', 10) || 1);
+  const pageSuffix = page > 1 ? ` – page ${page}` : '';
 
-  const keywords: string[] = [
-    'anime art', 'illustrations', 'digital art', 'art gallery', 'image board',
-    'booru', 'fan art', 'anime wallpapers', 'manga art', 'serika.art',
-  ];
+  const tagList = tagsParam ? tagsParam.split(',').map((t) => t.trim()).filter(Boolean) : [];
+  const included = tagList.filter((t) => !t.startsWith('-'));
 
-  if (tags) {
-    const tagList = tags.split(',').map(t => t.trim());
-    const displayTags = tagList.map(t => t.replace(/_/g, ' ')).join(', ');
-    title = `${displayTags} | Serika.art - Art & Illustrations`;
-    description = `Browse ${displayTags} artworks on Serika.art. Explore high-quality illustrations, fan art, and digital art from our collection of 1.5M+ images.`;
-    canonicalUrl = `https://serika.art/posts?tags=${encodeURIComponent(tags)}`;
-    
-    // Add tag-derived keywords
-    tagList.forEach(t => {
-      keywords.push(t, `${t} art`, `${t} fan art`, `${t} illustration`, `${t} wallpaper`);
-    });
-  } else if (page) {
-    title = `Browse Artwork - Page ${page} | Serika.art`;
-    canonicalUrl = `https://serika.art/posts?page=${page}`;
+  // Only clean single-tag pages (and plain /posts) are worth indexing; tag
+  // combinations, exclusions, sorts and uploader filters are endless
+  // near-duplicates that would eat the crawl budget.
+  const indexable =
+    included.length <= 1 &&
+    included.length === tagList.length &&
+    !first(params.sort) &&
+    !first(params.uploader) &&
+    page <= 50;
+
+  let title = `Anime Art & Illustrations${pageSuffix} | Serika.art`;
+  let description =
+    'Browse millions of anime artworks, illustrations and fan art on Serika.art, tagged by artist, character, series and more.';
+  let canonicalUrl = `https://serika.art/posts${page > 1 ? `?page=${page}` : ''}`;
+  let exists = true;
+
+  if (included.length > 0) {
+    const names = included.map(displayTag);
+    const { found } = await resolveTags(included).catch(() => ({ found: [] as { name: string; count: number; type?: string }[] }));
+    const main = found[0] as { name: string; count: number; type?: string } | undefined;
+    exists = found.length === included.length;
+    const count = main?.count ?? 0;
+    const type = (main && (await tagType(main.name))) || 'general';
+
+    const subject = names.join(' + ');
+    const Subject = subject.replace(/\b\w/g, (c) => c.toUpperCase());
+    title = `${Subject} ${TYPE_PHRASE[type] ?? 'art'}${count > 0 && included.length === 1 ? ` (${count.toLocaleString()})` : ''}${pageSuffix} | Serika.art`;
+    description =
+      included.length === 1 && count > 0
+        ? `Browse ${count.toLocaleString()} ${subject} images on Serika.art${type === 'artist' ? `: illustrations and fan art drawn by ${subject}` : type === 'character' ? `: fan art and illustrations of ${subject}` : type === 'copyright' ? `: fan art of ${subject} characters` : ''}. Sorted by newest, filter by rating and tags.`
+        : `Browse ${subject} images on Serika.art – anime art and illustrations tagged ${names.join(' and ')}.`;
+    canonicalUrl = `https://serika.art/posts?tags=${encodeURIComponent(included.join(','))}${page > 1 ? `&page=${page}` : ''}`;
   }
 
   return {
-    title,
+    title: { absolute: title },
     description,
-    keywords,
-    alternates: {
-      canonical: canonicalUrl,
-    },
+    alternates: { canonical: canonicalUrl },
     robots: {
-      index: true,
+      index: indexable && exists,
       follow: true,
       'max-image-preview': 'large',
       'max-snippet': -1,
     },
-    openGraph: {
-      title,
-      description,
-      type: 'website',
-      url: canonicalUrl,
-      siteName: 'Serika.art',
-    },
-    twitter: {
-      card: 'summary_large_image',
-      title,
-      description,
-    },
+    openGraph: { title, description, type: 'website', url: canonicalUrl, siteName: 'Serika.art' },
+    twitter: { card: 'summary_large_image', title, description },
   };
+}
+
+async function tagType(name: string): Promise<string | null> {
+  const r = await query<{ type: string }>(`SELECT type FROM tags WHERE name = $1`, [name]).catch(() => null);
+  return r?.rows[0]?.type ?? null;
 }
 
 async function getInitialPosts(params: { [key: string]: string | string[] | undefined }) {
@@ -148,7 +165,7 @@ async function PostsSearchStructuredData({ searchParams }: { searchParams: Promi
   return (
     <script
       type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      dangerouslySetInnerHTML={{ __html: jsonLdHtml(jsonLd) }}
     />
   );
 }

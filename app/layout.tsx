@@ -4,7 +4,6 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import StructuredData from "@/components/StructuredData";
 import ChristmasSnow from "@/components/ChristmasSnow";
 import { cn } from "@/lib/utils";
 
@@ -12,10 +11,10 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: {
-    default: "Serika.art - Modern Art Image Board & Serika Booru | 1.5M+ Artworks",
-    template: "%s | Serika Booru",
+    default: "Serika.art - Modern Art Image Board & Serika Booru | 4M+ Artworks",
+    template: "%s | Serika.art",
   },
-  description: "Serika.art (Serika Booru) is a high-performance image board for artists and art enthusiasts. Discover over 1.5 million anime artworks, illustrations, and digital art with advanced tagging, ratings, and community features.",
+  description: "Serika.art (Serika Booru) is a high-performance image board for artists and art enthusiasts. Discover over 4 million anime artworks, illustrations, and digital art with advanced tagging, ratings, and community features.",
   keywords: [
     "serika booru", "serika art", "image board", "art sharing", "booru", "anime art", "community", "tags", "artwork",
     "illustration", "digital art", "fan art", "artists", "characters", "anime", "manga",
@@ -38,8 +37,8 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
     url: "https://serika.art",
-    title: "Serika.art - Modern Art Image Board | 1.5M+ Artworks",
-    description: "Discover and share over 1.5 million artworks. A modern, clean image board with powerful tagging, ratings, and community features.",
+    title: "Serika.art - Modern Art Image Board | 4M+ Artworks",
+    description: "Discover and share over 4 million artworks. A modern, clean image board with powerful tagging, ratings, and community features.",
     siteName: "Serika.art",
     images: [
       {
@@ -56,7 +55,7 @@ export const metadata: Metadata = {
     site: "@serika_art",
     creator: "@serika_art",
     title: "Serika.art - Modern Art Image Board",
-    description: "Discover and share over 1.5 million artworks",
+    description: "Discover and share over 4 million artworks",
     images: {
       url: "https://serika.art/og-image",
       alt: "Serika.art - Modern Art Image Board",
@@ -115,7 +114,6 @@ export default function RootLayout({
       </head>
       <body className={cn("min-h-screen bg-background font-sans antialiased flex flex-col", inter.className)}>
         <ChristmasSnow />
-        <StructuredData />
         <AuthProvider>
           <Navbar />
           <main className="flex-1">

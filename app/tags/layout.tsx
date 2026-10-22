@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Browse Tags | Serika.art - Artists, Characters & More",
+  title: "Tags – Artists, Characters & Series",
   description: "Explore thousands of tags on Serika.art. Find your favorite artists, characters, series, and general tags. Discover new artwork through our comprehensive tagging system.",
   keywords: ["tags", "artists", "characters", "anime series", "copyrights", "art tags", "image tags", "booru tags", "search tags"],
   alternates: {

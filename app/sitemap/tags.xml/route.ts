@@ -5,15 +5,16 @@ import { BASE_URL, wrapInUrlset } from "@/lib/sitemap-utils";
 export async function GET() {
   try {
     const tagsResult = await query(
-      `SELECT name, created_at FROM tags WHERE count > 50 AND type != 'artist' ORDER BY count DESC LIMIT 1000`
+      // Every tag page with real content (artists have their own sitemaps);
+      // 50,000 is the per-file sitemap limit
+      `SELECT name, count FROM tags WHERE count >= 20 AND type != 'artist' ORDER BY count DESC LIMIT 50000`
     );
-    const topTags = tagsResult.rows;
 
-    const routes = topTags.map(tag => ({
+    const routes = tagsResult.rows.map((tag) => ({
       url: `${BASE_URL}/posts?tags=${encodeURIComponent(tag.name)}`,
-      lastModified: tag.created_at || new Date(),
       changeFrequency: "daily",
-      priority: 0.7,
+      // Bigger tags first: Google treats priority as a relative hint
+      priority: tag.count >= 10000 ? 0.8 : tag.count >= 1000 ? 0.7 : 0.6,
     }));
 
     const xml = wrapInUrlset(routes);
