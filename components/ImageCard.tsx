@@ -52,9 +52,10 @@ export default function ImageCard({ image, priority = false, preload = false }: 
             fetchPriority={preload ? 'high' : 'auto'}
             decoding={preload ? 'sync' : 'async'}
             // Thumbnails are already generated at 320px and served from the CDN with a
-            // 1-year cache. Skip the Next.js image optimizer so the browser fetches them
-            // straight from the CDN instead of round-tripping through /_next/image.
-            unoptimized
+            // 1-year cache, so most skip the optimizer. The first one or two (the
+            // LCP) go through it anyway: same origin as the page, so no second
+            // connection to wait for, and a smaller WebP.
+            unoptimized={!preload}
             preload={preload}
           />
           
