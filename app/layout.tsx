@@ -6,7 +6,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ChristmasSnow from "@/components/ChristmasSnow";
 import { cn } from "@/lib/utils";
-import Script from "next/script";
+import AdScript from "@/components/AdScript";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -113,8 +113,8 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://cdn.serika.art" />
       </head>
       <body className={cn("min-h-screen bg-background font-sans antialiased flex flex-col", inter.className)}>
-        {/* ExoClick: after the page has loaded, so ads never delay content */}
-        <Script src="https://a.magsrv.com/ad-provider.js" strategy="lazyOnload" />
+        {/* ExoClick: after first interaction or a few idle seconds, so ads never delay content */}
+        <AdScript />
         <ChristmasSnow />
         <AuthProvider>
           <Navbar />

@@ -19,6 +19,11 @@ const nextConfig: NextConfig = {
   ...(allowedDevOrigins.length > 0 && { allowedDevOrigins }),
   turbopack: {
     root: path.resolve(__dirname),
+    resolveAlias: {
+      // Browser bundles get a ~2 KB fetch-based axios (see lib/axiosLite.ts);
+      // server code keeps the real one.
+      axios: { browser: './lib/axiosLite.ts' },
+    },
   },
   compress: true,
   // ISR pages (/, /image/:id) are cached by Cloudflare too; cap how long the

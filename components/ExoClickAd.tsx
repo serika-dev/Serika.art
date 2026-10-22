@@ -96,16 +96,17 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
       return;
     }
 
-    // Poll for script load (max 10 seconds: it is loaded after window.onload)
+    // Poll for script load (max 15 seconds: AdScript loads it on the first
+    // interaction or ~3 s after window.onload)
     let attempts = 0;
     const interval = setInterval(() => {
       attempts++;
       if (window.AdProvider) {
         if (isMounted.current) setScriptLoaded(true);
         clearInterval(interval);
-      } else if (attempts >= 40) {
+      } else if (attempts >= 60) {
         clearInterval(interval);
-        // Ten seconds and still no ExoClick script: it was blocked.
+        // Fifteen seconds and still no ExoClick script: it was blocked.
         onEmptyRef.current?.();
       }
     }, 250);
@@ -114,15 +115,16 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
   }, []);
 
   // No creative in the slot after a while: unfilled (or its requests were blocked).
+  // Counted from when the script is there (it loads late on purpose, see AdScript).
   useEffect(() => {
-    if (!onEmptyRef.current) return;
+    if (!onEmptyRef.current || !scriptLoaded) return;
     const timer = setTimeout(() => {
       const el = insRef.current;
       const filled = !!el && (el.querySelector('iframe, img, a') || (el.parentElement?.querySelector('[id^="exo-native-widget"]')));
       if (!filled) onEmptyRef.current?.();
     }, EXOCLICK_FILL_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [pathname, searchParams]);
+  }, [pathname, searchParams, scriptLoaded]);
 
   // Clean up and reset the ad container whenever pathname or search params change
   useEffect(() => {

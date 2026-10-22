@@ -46,9 +46,11 @@ export default function ImageCard({ image, priority = false, preload = false }: 
             height={400}
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1536px) 25vw, 20vw"
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+            // First row: eager. Only the first one or two get high priority, so
+            // they don't share the connection with every other thumbnail.
             loading={priority ? 'eager' : 'lazy'}
-            fetchPriority={priority ? 'high' : 'auto'}
-            decoding={priority ? 'sync' : 'async'}
+            fetchPriority={preload ? 'high' : 'auto'}
+            decoding={preload ? 'sync' : 'async'}
             // Thumbnails are already generated at 320px and served from the CDN with a
             // 1-year cache. Skip the Next.js image optimizer so the browser fetches them
             // straight from the CDN instead of round-tripping through /_next/image.
