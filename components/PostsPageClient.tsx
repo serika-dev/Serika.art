@@ -917,7 +917,7 @@ function PostsPageContent({ initialQuery, initialData, initialPrefs = DEFAULT_VI
                         rating={adRating}
                       />
                     )}
-                    <ImageCard image={image} priority={index < 4} preload={index < 2} />
+                    <ImageCard image={image} priority={index < 6} preload={index < 2} />
                   </Fragment>
                 ));
               })()}
