@@ -41,10 +41,6 @@ function cardTags(image: Image): CardTag[] {
   );
 }
 
-/** Same-origin, resized WebP of the CDN thumbnail (no second connection for the LCP image). */
-function optimizedThumb(url: string): string {
-  return `/_next/image?url=${encodeURIComponent(url)}&w=320&q=75`;
-}
 
 export default function ImageCard({ image, priority = false, preload = false }: ImageCardProps) {
   const tags = cardTags(image);
@@ -58,20 +54,24 @@ export default function ImageCard({ image, priority = false, preload = false }: 
       <div className="overflow-hidden rounded-2xl border border-border/40 bg-card/50 text-card-foreground shadow-sm transition-all duration-300 hover:border-primary/30 hover:bg-card hover:shadow-2xl hover:shadow-primary/5">
         <div className="relative aspect-square overflow-hidden bg-muted">
           <NextImage
-            // Thumbnails are pre-generated at 320px and CDN-cached for a year, so
-            // most load straight from the CDN. The first one or two (the LCP) go
-            // through the optimizer instead: same origin as the page, and WebP.
-            src={preload ? optimizedThumb(thumb) : thumb}
+            // Thumbnails are pre-generated at ~320px and CDN-cached for a year,
+            // and cdn.serika.art is preconnected in <head>, so every card loads
+            // straight from the CDN. The optimizer is skipped even for the LCP
+            // card: it re-encodes the already-small thumbnail up to ~35 KB (vs
+            // the CDN's ~9 KB) and adds a server hop on a cold cache.
+            src={thumb}
             unoptimized
             alt={cardAlt}
             title={cardAlt}
             width={320}
             height={320}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-            loading={priority ? 'eager' : 'lazy'}
+            // The first one or two cards (the LCP) get a preload <link> + high
+            // priority; `preload` cannot be combined with loading="lazy".
+            preload={preload}
+            loading={preload ? undefined : priority ? 'eager' : 'lazy'}
             fetchPriority={preload ? 'high' : 'auto'}
             decoding={preload ? 'sync' : 'async'}
-            preload={preload}
           />
 
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
