@@ -2,6 +2,35 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { normalizeTagName } from '@/lib/tagName';
 
+// Datacenter ranges running a distributed scraper (Tencent Cloud, mostly
+// Singapore): hundreds of rotating IPs with fake Chrome UAs fetching every
+// post and its full-size image, ~50 req/s – enough to saturate the server.
+// Blocked here with a tiny 403 before any render or DB work. Extra ranges can
+// be added without a deploy through BLOCKED_CIDRS (comma-separated).
+const BLOCKED_CIDRS = ['43.128.0.0/10', ...(process.env.BLOCKED_CIDRS || '').split(',').map((c) => c.trim()).filter(Boolean)];
+function ipv4ToInt(ip: string): number | null {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  let n = 0;
+  for (const p of parts) {
+    const v = Number(p);
+    if (!Number.isInteger(v) || v < 0 || v > 255) return null;
+    n = n * 256 + v;
+  }
+  return n;
+}
+const BLOCKED = BLOCKED_CIDRS.map((cidr) => {
+  const [base, bits] = cidr.split('/');
+  const start = ipv4ToInt(base);
+  const size = 2 ** (32 - Number(bits));
+  return start === null || !Number.isFinite(size) ? null : { start: start - (start % size), end: start - (start % size) + size };
+}).filter(Boolean) as { start: number; end: number }[];
+function isBlocked(ip: string | null): boolean {
+  const n = ip ? ipv4ToInt(ip) : null;
+  return n !== null && BLOCKED.some((r) => n >= r.start && n < r.end);
+}
+let blockedCount = 0;
+
 // Traffic breakdown (route × who), printed every 15 s: which requests are
 // loading the server. Cheap: two counter bumps per request.
 const stats = new Map<string, number>();
@@ -34,6 +63,8 @@ function countRequest(request: NextRequest) {
       console.log(`[traffic] ${total} req/15s | ${rows.slice(0, 14).map(([k, v]) => `${k}=${v}`).join(' ')}`);
       const top = [...sources.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
       if (top.length) console.log(`[traffic-src] ${top.map(([k, v]) => `${v}x ${k}`).join(' || ')}`);
+      if (blockedCount) console.log(`[traffic-blocked] ${blockedCount} req/15s from blocked ranges`);
+      blockedCount = 0;
       stats.clear();
       sources.clear();
     }, 15_000);
@@ -42,6 +73,11 @@ function countRequest(request: NextRequest) {
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+  if (isBlocked(clientIp)) {
+    blockedCount++;
+    return new NextResponse('Forbidden', { status: 403, headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' } });
+  }
   countRequest(request);
 
   // Redirect /user/Anonymous (or any case variation) to /user/anonymous
