@@ -1,5 +1,6 @@
 'use client';
 
+import { writeViewPrefs, type GridSize } from '@/lib/viewPrefs';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
@@ -146,7 +147,7 @@ export default function SettingsPage() {
   
   const handleGridSizeChange = (value: string) => {
     setGridSize(value);
-    localStorage.setItem('serika_grid_size', value);
+    writeViewPrefs({ gridSize: value as GridSize });
   };
   
   const handleRatingToggle = (rating: Rating) => {
@@ -163,7 +164,7 @@ export default function SettingsPage() {
   
   const handleHideAIChange = (value: boolean) => {
     setHideAIDefault(value);
-    localStorage.setItem('serika_hide_ai_default', value.toString());
+    writeViewPrefs({ hideAI: value });
   };
   
   const handleAutoplayChange = (value: boolean) => {
@@ -178,12 +179,12 @@ export default function SettingsPage() {
   
   const handleInfiniteScrollChange = (value: boolean) => {
     setInfiniteScroll(value);
-    localStorage.setItem('serika_infinite_scroll', value.toString());
+    writeViewPrefs({ infiniteScroll: value });
   };
   
   const handlePostsPerPageChange = (value: string) => {
     setPostsPerPage(value);
-    localStorage.setItem('serika_posts_per_page', value);
+    writeViewPrefs({ postsPerPage: parseInt(value, 10) || 24 });
   };
 
   return (
@@ -595,6 +596,8 @@ export default function SettingsPage() {
                       keysToRemove.forEach(key => localStorage.removeItem(key));
                       // Clear rating cookie
                       document.cookie = 'serika_ratings=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                      document.cookie = 'serika_view=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                      document.cookie = 'serika_bl=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
                       window.location.reload();
                     }
                   }}

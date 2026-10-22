@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment, startTransition } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import ImageCard from '@/components/ImageCard';
 import { Image, Tag } from '@/lib/models';
@@ -28,6 +28,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import NativeAd from '@/components/NativeAd';
 import { buildImagesQuery } from '@/lib/postsQuery';
+import { DEFAULT_VIEW_PREFS, readViewPrefs, writeViewPrefs, writeBlacklistCookie, type BlacklistPrefs, type GridSize, type ViewPrefs } from '@/lib/viewPrefs';
 
 type TagType = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 
@@ -48,6 +49,12 @@ interface PostsPageProps {
   initialQuery?: string;
   /** First page rendered on the server, so thumbnails load with the HTML. */
   initialData?: InitialPosts;
+  /** View prefs / blacklist / ratings from cookies, so the first render matches the visitor's layout. */
+  initialPrefs?: ViewPrefs;
+  initialBlacklist?: BlacklistPrefs | null;
+  initialRatings?: string[];
+  /** The single searched tag, when the server found it is an artist tag. */
+  initialArtistTag?: string | null;
 }
 
 /** Top tags of a page of images, grouped by type, for the sidebar. */
@@ -75,7 +82,7 @@ function organizeTags(pageImages: Image[]): Record<TagType, Tag[]> {
   };
 }
 
-function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
+function PostsPageContent({ initialQuery, initialData, initialPrefs = DEFAULT_VIEW_PREFS, initialBlacklist = null, initialRatings, initialArtistTag = null }: PostsPageProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [images, setImages] = useState<Image[]>(initialData?.images ?? []);
@@ -90,28 +97,30 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   const [tagInput, setTagInput] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<Tag[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedRatings, setSelectedRatings] = useState<Rating[]>(['safe']);
+  const [selectedRatings, setSelectedRatings] = useState<Rating[]>((initialRatings as Rating[]) || ['safe']);
   const [ratingsInitialized, setRatingsInitialized] = useState(false);
-  const [hideAI, setHideAI] = useState(false);
-  const [blacklistEnabled, setBlacklistEnabledState] = useState(true);
-  const [blacklistedTags, setBlacklistedTags] = useState<string[]>([]);
-  const [postsPerPage, setPostsPerPage] = useState(24);
-  const [gridSize, setGridSize] = useState<'small' | 'medium' | 'large'>('medium');
-  const [infiniteScroll, setInfiniteScroll] = useState(false);
+  // Initial values come from cookies the server read (lib/viewPrefs), so the
+  // grid renders in its final layout instead of reflowing after hydration.
+  const [hideAI, setHideAI] = useState(initialPrefs.hideAI);
+  const [blacklistEnabled, setBlacklistEnabledState] = useState(initialBlacklist?.enabled ?? true);
+  const [blacklistedTags, setBlacklistedTags] = useState<string[]>(initialBlacklist?.tags ?? []);
+  const [postsPerPage, setPostsPerPage] = useState(initialPrefs.postsPerPage);
+  const [gridSize, setGridSize] = useState<GridSize>(initialPrefs.gridSize);
+  const [infiniteScroll, setInfiniteScroll] = useState(initialPrefs.infiniteScroll);
   const [loadingMore, setLoadingMore] = useState(false);
   const [allImages, setAllImages] = useState<Image[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [artistTagInfo, setArtistTagInfo] = useState<{ name: string; tagId: string } | null>(null);
+  const [artistTagInfo, setArtistTagInfo] = useState<{ name: string; tagId: string } | null>(
+    initialArtistTag ? { name: initialArtistTag, tagId: '' } : null
+  );
+  const artistCheckedFor = useRef<string | null>(searchParams.get('tags') || '');
   const inputRef = useRef<HTMLInputElement>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Desktop filter sidebar can be collapsed to a rail; remembered per browser
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  useEffect(() => {
-    try { setSidebarCollapsed(localStorage.getItem('serika_posts_sidebar') === 'collapsed'); } catch {}
-  }, []);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(initialPrefs.sidebarCollapsed);
   const toggleSidebar = (collapsed: boolean) => {
-    setSidebarCollapsed(collapsed);
-    try { localStorage.setItem('serika_posts_sidebar', collapsed ? 'collapsed' : 'open'); } catch {}
+    startTransition(() => setSidebarCollapsed(collapsed));
+    writeViewPrefs({ sidebarCollapsed: collapsed });
   };
   // Tag types seen so far (page results, suggestions) – colours the search chips
   const tagTypes = useRef(new Map<string, TagType>());
@@ -133,34 +142,23 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   // Initialize settings from localStorage/cookies on mount
   useEffect(() => {
     const cookieRatings = getRatingsFromCookie();
-    setSelectedRatings(cookieRatings);
-    setBlacklistEnabledState(isBlacklistEnabled());
-    setBlacklistedTags(getBlacklistedTags());
-    
-    // Load hideAI setting from localStorage
-    const savedHideAI = localStorage.getItem('serika_hide_ai_default');
-    if (savedHideAI === 'true') {
-      setHideAI(true);
-    }
-    
-    // Load posts per page setting
-    const savedPostsPerPage = localStorage.getItem('serika_posts_per_page');
-    if (savedPostsPerPage) {
-      setPostsPerPage(parseInt(savedPostsPerPage) || 24);
-    }
-    
-    // Load grid size setting
-    const savedGridSize = localStorage.getItem('serika_grid_size');
-    if (savedGridSize && ['small', 'medium', 'large'].includes(savedGridSize)) {
-      setGridSize(savedGridSize as 'small' | 'medium' | 'large');
-    }
-    
-    // Load infinite scroll setting
-    const savedInfiniteScroll = localStorage.getItem('serika_infinite_scroll');
-    if (savedInfiniteScroll === 'true') {
-      setInfiniteScroll(true);
-    }
-    
+    if (cookieRatings.join(',') !== selectedRatings.join(',')) setSelectedRatings(cookieRatings);
+
+    // Visitors from before the prefs cookies: adopt their localStorage settings
+    // (one last reflow) and write the cookies so the next visit renders right.
+    const local = readViewPrefs();
+    if (local.hideAI !== hideAI) setHideAI(local.hideAI);
+    if (local.postsPerPage !== postsPerPage) setPostsPerPage(local.postsPerPage);
+    if (local.gridSize !== gridSize) setGridSize(local.gridSize);
+    if (local.infiniteScroll !== infiniteScroll) setInfiniteScroll(local.infiniteScroll);
+    if (local.sidebarCollapsed !== sidebarCollapsed) setSidebarCollapsed(local.sidebarCollapsed);
+    writeViewPrefs(local);
+
+    const localBlacklist = { enabled: isBlacklistEnabled(), tags: getBlacklistedTags() };
+    if (localBlacklist.enabled !== blacklistEnabled) setBlacklistEnabledState(localBlacklist.enabled);
+    if (localBlacklist.tags.join(',') !== blacklistedTags.join(',')) setBlacklistedTags(localBlacklist.tags);
+    writeBlacklistCookie(localBlacklist);
+
     setRatingsInitialized(true);
   }, []);
 
@@ -180,6 +178,9 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
 
   // Check if filtering by a single artist tag
   useEffect(() => {
+    // The server already answered this for the URL the page was rendered with
+    if (artistCheckedFor.current === tagsParam) return;
+    artistCheckedFor.current = tagsParam;
     const checkArtistTag = async () => {
       if (selectedTags.length === 1) {
         try {
@@ -419,8 +420,9 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
 
   const toggleRating = useCallback((rating: Rating) => {
     const newRatings = toggleRatingUtil(selectedRatings, rating);
-    setSelectedRatings(newRatings);
     setRatingsCookie(newRatings);
+    // Re-rendering the grid is not urgent: let the tap paint first (INP)
+    startTransition(() => setSelectedRatings(newRatings));
     if (urlPage > 1) updateUrl(undefined, undefined, 1);
   }, [selectedRatings, urlPage, updateUrl]);
 
@@ -525,7 +527,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
           AI Content
         </h3>
         <button
-          onClick={() => { setHideAI(!hideAI); if (urlPage > 1) updateUrl(undefined, undefined, 1); }}
+          onClick={() => { startTransition(() => setHideAI(!hideAI)); if (urlPage > 1) updateUrl(undefined, undefined, 1); }}
           className={cn(
             "w-full flex items-center gap-3 px-3 py-2 rounded-md border transition-all text-sm",
             hideAI
@@ -842,7 +844,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
               );
             })}
             <button
-              onClick={() => { setHideAI(!hideAI); if (urlPage > 1) updateUrl(undefined, undefined, 1); }}
+              onClick={() => { startTransition(() => setHideAI(!hideAI)); if (urlPage > 1) updateUrl(undefined, undefined, 1); }}
               aria-pressed={hideAI}
               className={cn(
                 'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold transition-colors',

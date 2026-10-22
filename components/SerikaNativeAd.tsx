@@ -107,7 +107,9 @@ export const AdPlaceholder: React.FC<{ variant?: AdVariant }> = ({ variant = 'in
   return (
     <div className="promo-card flex flex-col h-full bg-card/50 rounded-2xl overflow-hidden border border-border/40" aria-hidden="true">
       <Skeleton className="aspect-square rounded-none" />
-      <div className="p-4 space-y-2">
+      {/* Same fixed height as the filled cards (INLINE_AD_BODY), so filling or
+          swapping the ad never moves the grid rows below it */}
+      <div className="p-4 space-y-2 h-[7.5rem] shrink-0 overflow-hidden">
         <Skeleton className="h-4 w-2/3" />
         <Skeleton className="h-3 w-full" />
         <Skeleton className="h-3 w-1/2" />
@@ -275,9 +277,9 @@ const SerikaNativeAd: React.FC<SerikaNativeAdProps> = ({ variant = 'inline', onE
         <Badge className={`${badgeClass} top-3 left-3 text-[10px] px-2 py-0.5`}>Sponsored</Badge>
         {image}
       </div>
-      <CardContent className="p-4 flex flex-col flex-1">
+      <CardContent className="p-4 flex flex-col h-[7.5rem] shrink-0 overflow-hidden">
         <p className="text-sm font-bold text-foreground mb-1 line-clamp-1">{ad.title}</p>
-        {ad.description && <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{ad.description}</p>}
+        <p className="text-xs text-muted-foreground mb-3 line-clamp-2 min-h-8">{ad.description}</p>
         <div className="flex items-center justify-between mt-auto gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center shrink-0">

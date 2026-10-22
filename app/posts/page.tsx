@@ -5,6 +5,7 @@ import PostsPageClient from '@/components/PostsPageClient';
 import { listImages, parseImageListParams, resolveTags } from '@/lib/imageSearch';
 import { query } from '@/lib/db';
 import { displayTag } from '@/lib/seo';
+import { BLACKLIST_COOKIE, VIEW_COOKIE, parseBlacklist, parseViewPrefs } from '@/lib/viewPrefs';
 import { buildImagesQuery, parseRatingsCookie, DEFAULT_POSTS_PER_PAGE, RATINGS_COOKIE } from '@/lib/postsQuery';
 
 // Don't hold the HTML back for a slow listing – the client fetches it instead
@@ -120,16 +121,25 @@ async function getInitialPosts(params: { [key: string]: string | string[] | unde
 
   // Mirror the client's first request (default per-page/AI settings; the
   // client refetches if its local settings differ).
+  const prefs = parseViewPrefs(cookieStore.get(VIEW_COOKIE)?.value);
+  const blacklist = parseBlacklist(cookieStore.get(BLACKLIST_COOKIE)?.value);
+  const ratings = parseRatingsCookie(cookieStore.get(RATINGS_COOKIE)?.value);
+  // A single artist tag gets a "View artist page" button; knowing that here
+  // means it's in the first render instead of popping in (and shifting the page)
+  const tagList = first(params.tags) ? first(params.tags).split(',').map((t) => t.trim()).filter(Boolean) : [];
+  const artistTag =
+    tagList.length === 1 && !tagList[0].startsWith('-') && (await tagType(tagList[0])) === 'artist' ? tagList[0] : null;
+  const view = { prefs, blacklist, ratings, artistTag };
   const initialQuery = buildImagesQuery({
     page: parseInt(first(params.page) || '1', 10) || 1,
-    limit: DEFAULT_POSTS_PER_PAGE,
+    limit: prefs.postsPerPage || DEFAULT_POSTS_PER_PAGE,
     sort: first(params.sort) || 'newest',
     tags: first(params.tags) ? first(params.tags).split(',').map((t) => t.trim()) : [],
-    ratings: parseRatingsCookie(cookieStore.get(RATINGS_COOKIE)?.value),
-    hideAI: false,
+    ratings,
+    hideAI: prefs.hideAI,
     uploader: first(params.uploader),
   });
-  if (initialQuery.includes('sort=random')) return null;
+  if (initialQuery.includes('sort=random')) return { view };
 
   try {
     const pending = listImages(parseImageListParams(new URLSearchParams(initialQuery)));
@@ -138,11 +148,11 @@ async function getInitialPosts(params: { [key: string]: string | string[] | unde
       pending,
       new Promise<null>((resolve) => setTimeout(() => resolve(null), budget)),
     ]);
-    if (!result || !result.success) return null;
-    return { initialQuery, initialData: { images: result.images.map(slimImage), pagination: result.pagination } };
+    if (!result || !result.success) return { view };
+    return { view, initialQuery, initialData: { images: result.images.map(slimImage), pagination: result.pagination } };
   } catch (error) {
     console.error('Error pre-rendering posts:', error);
-    return null;
+    return { view };
   }
 }
 
@@ -153,7 +163,14 @@ export default async function PostsPage({ searchParams }: Props) {
   return (
     <>
       <PostsSearchStructuredData searchParams={searchParams} />
-      <PostsPageClient initialQuery={initial?.initialQuery} initialData={initial?.initialData} />
+      <PostsPageClient
+        initialQuery={initial.initialQuery}
+        initialData={initial.initialData}
+        initialPrefs={initial.view.prefs}
+        initialBlacklist={initial.view.blacklist}
+        initialRatings={initial.view.ratings}
+        initialArtistTag={initial.view.artistTag}
+      />
     </>
   );
 }

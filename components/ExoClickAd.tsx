@@ -267,15 +267,16 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
         </Badge>
         <ins ref={insRef} className="eas6a97888e20 absolute inset-0" data-zoneid={zoneId} style={{ display: 'block', width: '100%', height: '100%' }}></ins>
       </div>
+      {/* Fixed height, same as the placeholder and the Serika card: no layout shift when it fills */}
       <CardContent
-        className={`p-4 flex flex-col flex-1 ${adData ? 'cursor-pointer' : ''}`}
+        className={`p-4 flex flex-col h-[7.5rem] shrink-0 overflow-hidden ${adData ? 'cursor-pointer' : ''}`}
         onClick={adData ? openAd : undefined}
         title={adData?.title}
       >
         <p className="text-sm font-bold text-foreground mb-1 line-clamp-1">
           {adData?.title || 'Advertisement'}
         </p>
-        <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
+        <p className="text-xs text-muted-foreground mb-3 line-clamp-2 min-h-8">
           {adData ? adData.description : 'Discover amazing products and services.'}
         </p>
         <div className="flex items-center justify-between mt-auto">

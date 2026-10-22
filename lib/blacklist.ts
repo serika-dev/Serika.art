@@ -1,5 +1,6 @@
 // Client-side blacklist management
 import { normalizeTagName } from '@/lib/tagName';
+import { writeBlacklistCookie } from '@/lib/viewPrefs';
 
 const BLACKLIST_KEY = 'serika_tag_blacklist';
 const BLACKLIST_ENABLED_KEY = 'serika_blacklist_enabled';
@@ -19,6 +20,8 @@ export function setBlacklistedTags(tags: string[]): void {
   if (typeof window === 'undefined') return;
   
   localStorage.setItem(BLACKLIST_KEY, JSON.stringify(tags));
+  // Mirror to a cookie so the server can leave these posts out of the HTML
+  writeBlacklistCookie({ enabled: isBlacklistEnabled(), tags });
 }
 
 export function addBlacklistedTag(tag: string): void {
@@ -58,6 +61,7 @@ export function setBlacklistEnabled(enabled: boolean): void {
   if (typeof window === 'undefined') return;
   
   localStorage.setItem(BLACKLIST_ENABLED_KEY, String(enabled));
+  writeBlacklistCookie({ enabled, tags: getBlacklistedTags() });
 }
 
 export function shouldHideImage(imageTags: (string | { name: string })[]): boolean {
