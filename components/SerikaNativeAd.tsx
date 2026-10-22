@@ -196,7 +196,7 @@ const SerikaNativeAd: React.FC<SerikaNativeAdProps> = ({ variant = 'inline', onE
   const image = (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={ad.imageUrl}
+      src={optimizedAdImage(ad.imageUrl)}
       alt={ad.title}
       loading="lazy"
       decoding="async"
@@ -224,7 +224,7 @@ const SerikaNativeAd: React.FC<SerikaNativeAdProps> = ({ variant = 'inline', onE
         <div className="relative h-24 aspect-[16/10] rounded-xl overflow-hidden bg-muted shrink-0">{image}</div>
         <div className="min-w-0 flex-1">
           <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">Sponsored</span>
-          <h3 className="text-sm font-bold text-foreground line-clamp-1">{ad.title}</h3>
+          <p className="text-sm font-bold text-foreground line-clamp-1">{ad.title}</p>
           {ad.description && <p className="text-xs text-muted-foreground line-clamp-2">{ad.description}</p>}
           <span className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-foreground/70 group-hover:text-primary transition-colors">
             {ad.buttonText}
@@ -246,7 +246,7 @@ const SerikaNativeAd: React.FC<SerikaNativeAdProps> = ({ variant = 'inline', onE
           {image}
         </div>
         <CardContent className="p-3 flex flex-col flex-1">
-          <h3 className="text-xs font-bold text-foreground mb-1 line-clamp-1">{ad.title}</h3>
+          <p className="text-xs font-bold text-foreground mb-1 line-clamp-1">{ad.title}</p>
           <div className="flex items-center justify-between mt-auto gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
               <div className="w-4 h-4 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -276,7 +276,7 @@ const SerikaNativeAd: React.FC<SerikaNativeAdProps> = ({ variant = 'inline', onE
         {image}
       </div>
       <CardContent className="p-4 flex flex-col flex-1">
-        <h3 className="text-sm font-bold text-foreground mb-1 line-clamp-1">{ad.title}</h3>
+        <p className="text-sm font-bold text-foreground mb-1 line-clamp-1">{ad.title}</p>
         {ad.description && <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{ad.description}</p>}
         <div className="flex items-center justify-between mt-auto gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -296,5 +296,17 @@ const SerikaNativeAd: React.FC<SerikaNativeAdProps> = ({ variant = 'inline', onE
     </a>
   );
 };
+
+// Advertisers upload full-size PNGs (often 1MB+) for a ~660px card. Hosts we
+// know go through the image optimizer (WebP, resized, cached for a year).
+const OPTIMIZABLE_AD_HOSTS = ['serika-ads.s3.eu-central-003.backblazeb2.com', 'cdn.serika.dev'];
+function optimizedAdImage(url: string): string {
+  try {
+    if (OPTIMIZABLE_AD_HOSTS.includes(new URL(url).hostname)) {
+      return `/_next/image?url=${encodeURIComponent(url)}&w=750&q=75`;
+    }
+  } catch {}
+  return url;
+}
 
 export default SerikaNativeAd;

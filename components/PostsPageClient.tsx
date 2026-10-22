@@ -834,7 +834,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
                   aria-pressed={active}
                   className={cn(
                     'rounded-full border px-2.5 py-1 font-semibold transition-colors',
-                    active ? on : 'border-border/50 text-muted-foreground/60 line-through hover:text-muted-foreground'
+                    active ? on : 'border-border/50 text-muted-foreground line-through hover:text-foreground'
                   )}
                 >
                   {label}

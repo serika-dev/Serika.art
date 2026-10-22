@@ -2,6 +2,7 @@ import { Metadata } from 'next';
 import StructuredData from '@/components/StructuredData';
 import { getCachedCount } from '@/lib/db';
 import HomePageClient from '@/components/HomePageClient';
+import { preconnect } from 'react-dom';
 
 // ISR: cache this page for 60s — stats don't need to be real-time
 export const revalidate = 60;
@@ -42,6 +43,8 @@ async function getStats() {
 
 export default async function HomePage() {
   const stats = await getStats();
+  // The post counter image is the home page's largest element
+  preconnect('https://count.getloli.com');
 
   return (
     <>

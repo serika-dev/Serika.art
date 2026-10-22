@@ -5,10 +5,12 @@ export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser();
 
+    // Being logged out is a normal answer here, not an error: every page
+    // asks on load, and a 401 shows up as a console error for every visitor.
     if (!user) {
       return NextResponse.json(
-        { success: false, error: 'Not authenticated' },
-        { status: 401 }
+        { success: false, user: null, error: 'Not authenticated' },
+        { headers: { 'Cache-Control': 'private, no-store' } }
       );
     }
 

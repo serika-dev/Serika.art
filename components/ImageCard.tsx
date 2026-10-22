@@ -120,7 +120,7 @@ export default function ImageCard({ image, priority = false }: ImageCardProps) {
               });
             })()}
             {(image.tags || []).length > 5 && (
-              <span className="text-muted-foreground/60 text-[10px] font-bold px-1 flex items-center">
+              <span className="text-muted-foreground text-[10px] font-bold px-1 flex items-center">
                 +{(image.tags || []).length - 5}
               </span>
             )}

@@ -1624,7 +1624,7 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
                         {sampleImages.slice(0, 6).map((img) => (
                           <Link key={img._id} href={`/image/${img.sequentialId}`}
                             className="relative aspect-square rounded-lg overflow-hidden bg-zinc-800 hover:opacity-80 transition">
-                            <NextImage src={img.thumbnailUrl} alt="" fill className="object-cover" />
+                            <NextImage src={img.thumbnailUrl} alt={`${artist.tagName.replace(/_/g, ' ')} artwork #${img.sequentialId}`} fill sizes="(max-width: 768px) 33vw, 160px" className="object-cover" />
                           </Link>
                         ))}
                       </div>

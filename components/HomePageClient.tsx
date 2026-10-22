@@ -39,9 +39,11 @@ function DigitCounter({ value }: { value: number }) {
         alt={`${value.toLocaleString()} posts`}
         className="h-24 sm:h-32 w-auto pointer-events-none select-none"
         style={{ imageRendering: 'pixelated' }}
-        loading="lazy"
+        // The largest thing above the fold: fetch it first, not lazily
+        fetchPriority="high"
+        decoding="async"
       />
-      <p className="text-[10px] text-muted-foreground/40 font-mono uppercase tracking-[0.2em]">
+      <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em]">
         Theme: {theme}
       </p>
     </div>

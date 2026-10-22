@@ -559,7 +559,7 @@ export default function ImageDetailContent({ initialImage, imageId, headline, su
         ) : (
           <div className="p-4 bg-muted rounded-lg text-center">
             <p className="text-muted-foreground">
-              <Link href="/login" className="text-primary hover:underline">Log in</Link> to post a comment
+              <Link href="/login" className="text-primary underline underline-offset-2">Log in</Link> to post a comment
             </p>
           </div>
         )}
@@ -734,7 +734,11 @@ export default function ImageDetailContent({ initialImage, imageId, headline, su
                   width={image.width}
                   height={image.height}
                   sizes="(max-width: 1024px) 100vw, 66vw"
-                  className="w-auto h-auto max-w-full max-h-[85vh] object-contain shadow-2xl rounded-sm"
+                  // A definite width (column width, or whatever keeps it under
+                  // 85vh tall) lets the browser reserve the height from the
+                  // aspect ratio before the file arrives: no layout shift.
+                  style={{ width: `min(100%, calc(85vh * ${image.width / image.height}))` }}
+                  className="h-auto max-w-full object-contain shadow-2xl rounded-sm"
                   preload
                   fetchPriority="high"
                 />

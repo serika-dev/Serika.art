@@ -25,6 +25,10 @@ const nextConfig: NextConfig = {
   // edge may serve them stale so a deploy is picked up within the hour.
   expireTime: 3600,
   poweredByHeader: false,
+  experimental: {
+    // ~22 KB of CSS inlined into the HTML instead of a render-blocking request
+    inlineCss: true,
+  },
   reactStrictMode: true,
   async headers() {
     return [
@@ -85,6 +89,15 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'via.placeholder.com',
+      },
+      // Serika Ads creatives
+      {
+        protocol: 'https',
+        hostname: 'serika-ads.s3.eu-central-003.backblazeb2.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'cdn.serika.dev',
       },
     ],
   },

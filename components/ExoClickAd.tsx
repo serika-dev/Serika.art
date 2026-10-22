@@ -96,16 +96,16 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
       return;
     }
 
-    // Poll for script load (max 5 seconds, 250ms intervals instead of 200ms × 50)
+    // Poll for script load (max 10 seconds: it is loaded after window.onload)
     let attempts = 0;
     const interval = setInterval(() => {
       attempts++;
       if (window.AdProvider) {
         if (isMounted.current) setScriptLoaded(true);
         clearInterval(interval);
-      } else if (attempts >= 20) {
+      } else if (attempts >= 40) {
         clearInterval(interval);
-        // Five seconds and still no ExoClick script: it was blocked.
+        // Ten seconds and still no ExoClick script: it was blocked.
         onEmptyRef.current?.();
       }
     }, 250);
@@ -238,9 +238,9 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
           onClick={adData ? openAd : undefined}
           title={adData?.title}
         >
-          <h3 className="text-xs font-bold text-foreground mb-1 line-clamp-1">
+          <p className="text-xs font-bold text-foreground mb-1 line-clamp-1">
             {adData?.title || 'Advertisement'}
-          </h3>
+          </p>
           <div className="flex items-center justify-between mt-auto">
             <div className="flex items-center gap-1.5 min-w-0">
               <div className="w-4 h-4 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -270,9 +270,9 @@ const ExoClickAd: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'inl
         onClick={adData ? openAd : undefined}
         title={adData?.title}
       >
-        <h3 className="text-sm font-bold text-foreground mb-1 line-clamp-1">
+        <p className="text-sm font-bold text-foreground mb-1 line-clamp-1">
           {adData?.title || 'Advertisement'}
-        </h3>
+        </p>
         <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
           {adData ? adData.description : 'Discover amazing products and services.'}
         </p>
