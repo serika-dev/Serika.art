@@ -30,6 +30,20 @@ const nextConfig: NextConfig = {
   // edge may serve them stale so a deploy is picked up within the hour.
   expireTime: 3600,
   poweredByHeader: false,
+  experimental: {
+    // Import only the components actually used from these barrel packages,
+    // instead of their whole index (smaller client bundles).
+    optimizePackageImports: [
+      'lucide-react',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-select',
+      '@radix-ui/react-tabs',
+      '@radix-ui/react-scroll-area',
+      '@radix-ui/react-avatar',
+      '@radix-ui/react-toggle-group',
+    ],
+  },
   reactStrictMode: true,
   async headers() {
     return [

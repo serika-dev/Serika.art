@@ -1,0 +1,10 @@
+# Modern evergreen targets only, so Next/SWC stops shipping polyfills and
+# down-level helpers for Array.at/flat/flatMap, Object.fromEntries/hasOwn,
+# String.trimEnd etc. (~14 KB of dead JS PageSpeed flagged). These all shipped
+# by Chrome 92 / Safari 15.4, so the floors below are comfortably above them.
+Chrome >= 109
+Edge >= 109
+Firefox >= 115
+Safari >= 16
+iOS >= 16
+not dead
