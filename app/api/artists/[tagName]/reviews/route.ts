@@ -27,8 +27,16 @@ export async function GET(
       [tagResult.rows[0].id]
     );
 
+    // Averages per category (the artist page shows them; pricing is optional)
+    const avg = (key: string) => {
+      const values = reviews.rows.map((r) => Number(r.ratings?.[key])).filter((v) => Number.isFinite(v) && v > 0);
+      return values.length ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10 : 0;
+    };
+
     return NextResponse.json({
       success: true,
+      totalReviews: reviews.rows.length,
+      avgRatings: { trust: avg('trust'), quality: avg('quality'), communication: avg('communication'), pricing: avg('pricing') },
       reviews: reviews.rows.map(r => ({
         _id: String(r.id),
         userId: r.user_id,

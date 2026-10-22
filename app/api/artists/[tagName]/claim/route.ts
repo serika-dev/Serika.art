@@ -2,6 +2,46 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
+// GET /api/artists/:tagName/claim – the logged-in user's latest claim on this artist (or null)
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ tagName: string }> }
+) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ success: true, claim: null });
+
+    const { tagName } = await params;
+    const normalized = tagName.toLowerCase().trim();
+    const possibleNames = Array.from(new Set([
+      normalized, normalized.replace(/ /g, '_'), normalized.replace(/_/g, ' '),
+    ]));
+    const result = await query(
+      `SELECT c.id, c.status, c.verification_words, c.verification_method, c.created_at
+       FROM artist_claims c JOIN tags t ON t.id = c.artist_tag_id
+       WHERE t.name = ANY($1) AND t.type = 'artist' AND c.user_id = $2
+       ORDER BY c.created_at DESC LIMIT 1`,
+      [possibleNames, user.id]
+    );
+    const c = result.rows[0];
+    return NextResponse.json({
+      success: true,
+      claim: c
+        ? {
+            _id: String(c.id),
+            status: c.status,
+            verificationWords: c.verification_words,
+            verificationMethod: c.verification_method,
+            createdAt: c.created_at,
+          }
+        : null,
+    });
+  } catch (error) {
+    console.error('Error fetching artist claim:', error);
+    return NextResponse.json({ success: false, error: 'Failed to fetch claim' }, { status: 500 });
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ tagName: string }> }

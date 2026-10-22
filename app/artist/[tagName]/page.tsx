@@ -594,9 +594,9 @@ export default function ArtistPage({ params }: { params: Promise<{ tagName: stri
       if (error || !data) return;
       
       if (data.success) {
-        setReviews(data.reviews);
-        setAvgRatings(data.avgRatings);
-        setTotalReviews(data.totalReviews);
+        setReviews(data.reviews || []);
+        setAvgRatings({ trust: 0, quality: 0, communication: 0, pricing: 0, ...(data.avgRatings || {}) });
+        setTotalReviews(data.totalReviews ?? (data.reviews || []).length);
       }
     } catch (err) {
       console.error('Failed to fetch reviews:', err);

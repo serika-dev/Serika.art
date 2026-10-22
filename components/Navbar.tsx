@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { Upload, Search, User, LogOut, Menu, X, Settings, Heart, Shield, Key, BookOpen, Hash } from 'lucide-react';
+import { Upload, Search, User, LogOut, Menu, X, Settings, Heart, Shield, Key, BookOpen, Hash, Palette } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -60,6 +60,9 @@ export default function Navbar() {
             </Button>
             <Button variant="ghost" asChild className="font-bold text-sm hover:bg-primary/5 hover:text-primary transition-all rounded-xl">
               <Link href="/tags">Tags</Link>
+            </Button>
+            <Button variant="ghost" asChild className="font-bold text-sm hover:bg-primary/5 hover:text-primary transition-all rounded-xl">
+              <Link href="/artists">Artists</Link>
             </Button>
             <Button variant="ghost" asChild className="font-bold text-sm hover:bg-primary/5 hover:text-primary transition-all rounded-xl">
               <Link href="/upload">
@@ -196,6 +199,12 @@ export default function Navbar() {
                         <Link href="/tags">
                           <Hash className="mr-2 h-4 w-4" />
                           Tags
+                        </Link>
+                      </Button>
+                      <Button variant="ghost" className="justify-start" asChild>
+                        <Link href="/artists">
+                          <Palette className="mr-2 h-4 w-4" />
+                          Artists
                         </Link>
                       </Button>
                       <Button variant="ghost" className="justify-start" asChild>
