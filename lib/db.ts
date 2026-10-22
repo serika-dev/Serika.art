@@ -8,11 +8,15 @@ if (!POSTGRES_URL) {
   throw new Error('Please define POSTGRES_URL in .env.local');
 }
 
-let pool: Pool | null = null;
+// Pools live on globalThis: Next compiles this module into several server
+// bundles (RSC, SSR, route handlers, instrumentation), and a module-level
+// variable would give each bundle its own 45-connection pool – together more
+// than Postgres's 100 connections, and invisible to monitoring.
+const g = globalThis as typeof globalThis & { __serikaPool?: Pool; __serikaImportPool?: Pool };
 
 export function getPool(): Pool {
-  if (!pool) {
-    pool = new Pool({
+  if (!g.__serikaPool) {
+    const pool = new Pool({
       connectionString: POSTGRES_URL,
       max: 45,
       min: 5,
@@ -23,19 +27,18 @@ export function getPool(): Pool {
     pool.on('error', (err) => {
       console.error('[DB] Unexpected pool error:', err);
     });
+    g.__serikaPool = pool;
   }
-  return pool;
+  return g.__serikaPool;
 }
 
 // ── Dedicated import pool ────────────────────────────────────────────
 // Background bulk imports must NEVER be able to consume every connection and
 // starve live web requests (auth, image, tag lookups). They get their own
 // small, bounded pool so the web pool above always keeps headroom.
-let importPool: Pool | null = null;
-
 export function getImportPool(): Pool {
-  if (!importPool) {
-    importPool = new Pool({
+  if (!g.__serikaImportPool) {
+    const importPool = new Pool({
       connectionString: POSTGRES_URL,
       max: 20,
       min: 2,
@@ -46,8 +49,9 @@ export function getImportPool(): Pool {
     importPool.on('error', (err) => {
       console.error('[DB] Unexpected import pool error:', err);
     });
+    g.__serikaImportPool = importPool;
   }
-  return importPool;
+  return g.__serikaImportPool;
 }
 
 export async function query<T extends Record<string, any> = any>(
@@ -113,9 +117,10 @@ export function getRedis(): Redis | null {
     redis = new Redis(REDIS_URL, {
       maxRetriesPerRequest: 3,
       lazyConnect: true,
+      // Keep reconnecting forever: returning null here would give up for good
+      // after one blip, and every cache read would miss until a restart.
       retryStrategy(times) {
-        if (times > 5) return null;
-        return Math.min(times * 200, 2000);
+        return Math.min(times * 200, 5000);
       },
     });
     redis.on('error', (err) => {
@@ -127,7 +132,10 @@ export function getRedis(): Redis | null {
 }
 
 // ── Cache helpers (Redis-first, in-memory fallback) ─────────────────
+// Only used while Redis is unreachable. Capped: cached values can be 100 KB+
+// each, and an unbounded Map would grow until the heap thrashes.
 const memoryCache = new Map<string, { value: string; expiresAt: number }>();
+const MEMORY_CACHE_MAX = 2000;
 
 export async function cacheGet(key: string): Promise<string | null> {
   const r = getRedis();
@@ -177,6 +185,10 @@ export async function cacheSet(
     } catch {
       // fall through to memory
     }
+  }
+  if (memoryCache.size >= MEMORY_CACHE_MAX) {
+    // Maps iterate in insertion order: drop the oldest entry
+    memoryCache.delete(memoryCache.keys().next().value as string);
   }
   memoryCache.set(key, {
     value,
