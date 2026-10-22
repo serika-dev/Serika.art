@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
-import { listImages } from '@/lib/imageSearch';
+import { relatedForTag } from '@/lib/relatedPosts';
 import { displayTag, postHeadline } from '@/lib/seo';
 
 // Server-rendered "more by this artist / of this character" strips under a
@@ -12,35 +12,23 @@ interface Props {
   artist?: string;
   character?: string;
   series?: string;
-  /** "artist": a bigger "Popular works by …" grid for artist pages */
+  /** "artist": a bigger "Latest works by …" grid for artist pages */
   variant?: 'post' | 'artist';
 }
 
 async function section(tag: string, post: Props['post'], perSection: number) {
   // Safe posts only suggest safe posts; NSFW posts may show all ratings
-  const ratings = post.rating === 'safe' ? ['safe'] : ['safe', 'questionable', 'explicit'];
-  const result = await listImages({
-    page: 1,
-    limit: perSection + 1,
-    tags: [tag],
-    ratings,
-    sort: 'popular',
-    aiOnly: false,
-    hideAI: false,
-    q: '',
-    userId: null,
-    username: null,
-  });
-  if (!result.success) return null;
-  const images = result.images.filter((img) => img.sequential_id !== post.sequentialId).slice(0, perSection);
-  return images.length >= 3 ? { tag, total: result.pagination.total, images } : null;
+  const result = await relatedForTag(tag, post.rating === 'safe');
+  if (!result) return null;
+  const images = result.images.filter((img) => img.sequentialId !== post.sequentialId).slice(0, perSection);
+  return images.length >= 3 ? { tag: result.tag, total: result.total, images } : null;
 }
 
 export default async function RelatedPosts({ post, artist, character, series, variant = 'post' }: Props) {
   const perSection = variant === 'artist' ? 24 : 12;
   try {
     const picks = [
-      artist && { tag: artist, label: (t: string) => (variant === 'artist' ? `Popular works by ${t}` : `More by ${t}`) },
+      artist && { tag: artist, label: (t: string) => (variant === 'artist' ? `Latest works by ${t}` : `More by ${t}`) },
       character && { tag: character, label: (t: string) => `More of ${t}` },
       !character && series && { tag: series, label: (t: string) => `More from ${t}` },
     ].filter(Boolean) as { tag: string; label: (t: string) => string }[];
@@ -67,15 +55,15 @@ export default async function RelatedPosts({ post, artist, character, series, va
               {data!.images.map((img) => {
                 const alt = postHeadline(img.tags);
                 return (
-                  <li key={img.sequential_id}>
+                  <li key={img.sequentialId}>
                     <Link
-                      href={`/image/${img.sequential_id}`}
+                      href={`/image/${img.sequentialId}`}
                       title={alt}
                       className="block aspect-square overflow-hidden rounded-xl border border-border/40 bg-muted transition-colors hover:border-primary/40"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={img.thumbnail_url || img.url}
+                        src={img.thumbnailUrl}
                         alt={alt}
                         loading="lazy"
                         decoding="async"

@@ -93,8 +93,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const seo = postSeo(image);
   const tagNames = image.tags.map((t: any) => t.name);
   const artistTags = image.tags.filter((t: any) => t.type === 'artist').map((t: any) => displayTag(t.name));
-  const shareImage = shareImageUrl(image.url);
-  const shareHeight = image.width > 0 ? Math.round((image.height / image.width) * 1200) : 630;
+  // Straight from the CDN when it's small enough to embed (no origin CPU per
+  // crawler); only huge originals go through the resizer.
+  const shareOriginal = image.fileSize > 0 && image.fileSize < 5_000_000 && image.width > 0;
+  const shareImage = shareOriginal ? image.url : shareImageUrl(image.url);
+  const shareWidth = shareOriginal ? image.width : 1200;
+  const shareHeight = shareOriginal ? image.height : image.width > 0 ? Math.round((image.height / image.width) * 1200) : 630;
 
   return {
     // absolute: the root layout's "%s | Serika Booru" template would add the site name twice
@@ -116,7 +120,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     openGraph: {
       title: seo.title,
       description: seo.description,
-      images: [{ url: shareImage, width: 1200, height: shareHeight, alt: seo.alt }],
+      images: [{ url: shareImage, width: shareWidth, height: shareHeight, alt: seo.alt }],
       type: 'article',
       url: `https://serika.art/image/${image.sequentialId}`,
       siteName: 'Serika.art',

@@ -8,7 +8,8 @@ export const runtime = "nodejs";
 // random pick at build time could be a huge original and fail the deploy.
 export const dynamic = "force-dynamic";
 
-const OG_CACHE_CONTROL = "public, max-age=300, s-maxage=600, stale-while-revalidate=1800";
+// Each render takes 1.5-3 s of CPU (and is per Cloudflare location): cache a day
+const OG_CACHE_CONTROL = "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800";
 
 export async function GET() {
   try {

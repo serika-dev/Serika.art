@@ -31,6 +31,10 @@ const nextConfig: NextConfig = {
   expireTime: 3600,
   poweredByHeader: false,
   experimental: {
+    // The optimizer resizes multi-MB originals (a 9 MB post takes ~8 s of
+    // CPU). Unbounded, a crawl burst starves the Node event loop and the site
+    // stops answering; two at a time leaves the rest of the app responsive.
+    imgOptConcurrency: 2,
     // Import only the components actually used from these barrel packages,
     // instead of their whole index (smaller client bundles).
     optimizePackageImports: [
