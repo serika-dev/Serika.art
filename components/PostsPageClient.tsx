@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import ImageCard from '@/components/ImageCard';
 import { Image, Tag } from '@/lib/models';
@@ -910,7 +910,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
                         rating={adRating}
                       />
                     )}
-                    <ImageCard image={image} priority={index < 8} />
+                    <ImageCard image={image} priority={index < 8} preload={index < 2} />
                   </Fragment>
                 ));
               })()}
@@ -950,10 +950,9 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   );
 }
 
+// No Suspense boundary here: /posts is always rendered per request, so
+// useSearchParams never bails out, and a boundary only made the browser paint
+// a full-screen spinner first and swap the grid in later (a slow LCP).
 export default function PostsPage(props: PostsPageProps) {
-  return (
-    <Suspense fallback={<div className="w-full h-screen flex items-center justify-center"><Loader2 className="animate-spin h-10 w-10 text-primary" /></div>}>
-      <PostsPageContent {...props} />
-    </Suspense>
-  );
+  return <PostsPageContent {...props} />;
 }

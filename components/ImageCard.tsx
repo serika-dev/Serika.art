@@ -12,9 +12,11 @@ interface ImageCardProps {
   image: Image;
   /** When true, the thumbnail loads eagerly with high fetch priority (above-the-fold). */
   priority?: boolean;
+  /** Also add a <link rel="preload"> in the head: for the first card or two only. */
+  preload?: boolean;
 }
 
-export default function ImageCard({ image, priority = false }: ImageCardProps) {
+export default function ImageCard({ image, priority = false, preload = false }: ImageCardProps) {
   // "hatsune miku (vocaloid) drawn by kuroi" rather than a raw tag dump
   const cardAlt = postHeadline(
     (image.tags || []).map((t: any) => (typeof t === 'string' ? { name: t, type: 'general' } : { name: t?.name ?? '', type: t?.type ?? 'general' }))
@@ -51,6 +53,7 @@ export default function ImageCard({ image, priority = false }: ImageCardProps) {
             // 1-year cache. Skip the Next.js image optimizer so the browser fetches them
             // straight from the CDN instead of round-tripping through /_next/image.
             unoptimized
+            preload={preload}
           />
           
           {/* Overlays */}
