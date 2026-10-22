@@ -1,6 +1,6 @@
 import { Metadata } from 'next';
 import { jsonLdHtml } from '@/lib/jsonLd';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import PostsPageClient from '@/components/PostsPageClient';
 import { listImages, parseImageListParams, resolveTags } from '@/lib/imageSearch';
 import { query } from '@/lib/db';
@@ -8,8 +8,11 @@ import { displayTag } from '@/lib/seo';
 import { buildImagesQuery, parseRatingsCookie, DEFAULT_POSTS_PER_PAGE, RATINGS_COOKIE } from '@/lib/postsQuery';
 
 // Don't hold the HTML back for a slow listing – the client fetches it instead
-// (by then the server-side query has usually warmed the cache).
+// (by then the server-side query has usually warmed the cache). Crawlers get
+// longer: for them the posts and tag links must be in the HTML itself.
 const INITIAL_DATA_BUDGET_MS = 800;
+const CRAWLER_BUDGET_MS = 4000;
+const CRAWLER_UA = /bot|crawl|spider|slurp|bingpreview|facebookexternalhit|embedly|discord/i;
 
 interface Props {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -90,6 +93,7 @@ async function tagType(name: string): Promise<string | null> {
 async function getInitialPosts(params: { [key: string]: string | string[] | undefined }) {
   const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || '';
   const cookieStore = await cookies();
+  const budget = CRAWLER_UA.test((await headers()).get('user-agent') || '') ? CRAWLER_BUDGET_MS : INITIAL_DATA_BUDGET_MS;
 
   // Mirror the client's first request (default per-page/AI settings; the
   // client refetches if its local settings differ).
@@ -109,7 +113,7 @@ async function getInitialPosts(params: { [key: string]: string | string[] | unde
     pending.catch(() => {});
     const result = await Promise.race([
       pending,
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), INITIAL_DATA_BUDGET_MS)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), budget)),
     ]);
     if (!result || !result.success) return null;
     return { initialQuery, initialData: { images: result.images, pagination: result.pagination } };

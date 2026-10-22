@@ -50,6 +50,31 @@ interface PostsPageProps {
   initialData?: InitialPosts;
 }
 
+/** Top tags of a page of images, grouped by type, for the sidebar. */
+function organizeTags(pageImages: Image[]): Record<TagType, Tag[]> {
+  const tagMap: Record<string, { count: number; type: TagType; _id: string }> = {};
+  for (const image of pageImages) {
+    for (const tag of image.tags || []) {
+      const t = tag as any;
+      const name = typeof t === 'string' ? t : t?.name;
+      const id = t && typeof t === 'object' ? t.id || t._id : null;
+      if (name && id && !tagMap[name]) tagMap[name] = { count: t.count || 0, type: (t.type || 'general') as TagType, _id: id };
+    }
+  }
+  const organized: Record<TagType, any[]> = { general: [], artist: [], character: [], copyright: [], meta: [] };
+  for (const [name, data] of Object.entries(tagMap)) {
+    (organized[data.type] ?? organized.general).push({ name, type: data.type, count: data.count, _id: data._id });
+  }
+  const top = (list: any[], n: number) => list.sort((a, b) => b.count - a.count).slice(0, n);
+  return {
+    artist: top(organized.artist, 5),
+    character: top(organized.character, 5),
+    copyright: top(organized.copyright, 5),
+    general: top(organized.general, 10),
+    meta: [],
+  };
+}
+
 function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -60,13 +85,8 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   // Which server-rendered payload has already been applied (one per navigation)
   const consumedInitialRef = useRef<InitialPosts | null>(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const [tagsByType, setTagsByType] = useState<Record<TagType, Tag[]>>({
-    general: [],
-    artist: [],
-    character: [],
-    copyright: [],
-    meta: [],
-  });
+  // Built from the server-rendered page right away, so the sidebar's tag links are in the HTML
+  const [tagsByType, setTagsByType] = useState<Record<TagType, Tag[]>>(() => organizeTags(initialData?.images ?? []));
   const [tagInput, setTagInput] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<Tag[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -284,45 +304,13 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   };
 
   const extractTagsFromImages = (pageImages: Image[]) => {
-    const tagMap: Record<string, { count: number; type: TagType; _id: string }> = {};
-    
-    pageImages.forEach(image => {
-      (image.tags || []).forEach(tag => {
-        const tagName = typeof tag === 'string' ? tag : (tag && 'name' in tag) ? (tag as any).name : null;
-        const tagType = typeof tag === 'object' && 'type' in tag ? (tag as any).type : 'general';
-        const tagId = (tag && typeof tag === 'object') ? ((tag as any).id || (tag as any)._id) : null;
-        const tagCount = (tag && typeof tag === 'object' && 'count' in tag) ? (tag as any).count : 0;
-        
-        if (tagName) tagTypes.current.set(tagName, tagType || 'general');
-        if (tagName && tagId && !tagMap[tagName]) {
-          tagMap[tagName] = { count: tagCount, type: tagType || 'general', _id: tagId };
-        }
-      });
-    });
-
-    const organized: Record<TagType, any[]> = {
-      general: [],
-      artist: [],
-      character: [],
-      copyright: [],
-      meta: [],
-    };
-
-    Object.entries(tagMap).forEach(([name, data]) => {
-      organized[data.type].push({
-        name,
-        type: data.type,
-        count: data.count,
-        _id: data._id,
-      });
-    });
-
-    organized.artist = organized.artist.sort((a, b) => b.count - a.count).slice(0, 5);
-    organized.character = organized.character.sort((a, b) => b.count - a.count).slice(0, 5);
-    organized.copyright = organized.copyright.sort((a, b) => b.count - a.count).slice(0, 5);
-    organized.general = organized.general.sort((a, b) => b.count - a.count).slice(0, 10);
-
-    setTagsByType(organized);
+    for (const image of pageImages) {
+      for (const tag of image.tags || []) {
+        const t = tag as any;
+        if (t && typeof t === 'object' && t.name) tagTypes.current.set(t.name, t.type || 'general');
+      }
+    }
+    setTagsByType(organizeTags(pageImages));
   };
 
   const fetchTagSuggestions = async () => {
