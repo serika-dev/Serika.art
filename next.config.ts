@@ -30,11 +30,6 @@ const nextConfig: NextConfig = {
   // edge may serve them stale so a deploy is picked up within the hour.
   expireTime: 3600,
   poweredByHeader: false,
-  experimental: {
-    // The stylesheet inlined into the HTML instead of a render-blocking
-    // request (~600 ms on PageSpeed's slow-4G mobile profile)
-    inlineCss: true,
-  },
   reactStrictMode: true,
   async headers() {
     return [
