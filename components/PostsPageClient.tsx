@@ -892,11 +892,16 @@ function PostsPageContent({ initialQuery, initialData, initialPrefs = DEFAULT_VI
                 // so they don't all align to the same grid column.
                 const adCount = 6;
                 const step = Math.max(4, Math.floor(postsPerPage / adCount));
+                // The ad script loads late (after interaction / idle), so an ad
+                // card in the first mobile viewport paints last and would become
+                // the LCP. Keep the first ad at least 8 cells in (row 5 on a
+                // 2-column phone), below the fold.
+                const firstAd = Math.max(8, step);
                 // Offsets 0..3 stagger each ad so it differs in column position
                 const staggerOffsets = [0, 2, 1, 3, 0, 2];
                 const adIndices = new Set(
                   Array.from({ length: adCount }, (_, i) => {
-                    const base = (i + 1) * step;
+                    const base = firstAd + i * step;
                     return base - 1 + staggerOffsets[i % staggerOffsets.length];
                   })
                 );
