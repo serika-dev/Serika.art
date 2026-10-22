@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import NativeAd from '@/components/NativeAd';
 import { buildImagesQuery } from '@/lib/postsQuery';
 
@@ -83,6 +83,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [artistTagInfo, setArtistTagInfo] = useState<{ name: string; tagId: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   // Desktop filter sidebar can be collapsed to a rail; remembered per browser
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   useEffect(() => {
@@ -452,6 +453,23 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   };
 
   const includedTags = selectedTags.filter((t) => !t.name.startsWith('-'));
+
+  const renderSort = (triggerClassName: string) => (
+    <Select value={sort} onValueChange={(value) => updateUrl(undefined, value, 1)}>
+      <SelectTrigger className={triggerClassName} aria-label="Sort posts">
+        <SelectValue placeholder="Sort by" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="newest">Newest First</SelectItem>
+        <SelectItem value="oldest">Oldest First</SelectItem>
+        <SelectItem value="popular">Popular</SelectItem>
+        <SelectItem value="favorites">Most Favorited</SelectItem>
+        <SelectItem value="views">Most Viewed</SelectItem>
+        <SelectItem value="alphabetical">Artist A-Z</SelectItem>
+        <SelectItem value="random">Random</SelectItem>
+      </SelectContent>
+    </Select>
+  );
   // Shown on the collapsed rail so hidden filters are never forgotten
   const activeFilterCount = selectedTags.length + (uploaderParam ? 1 : 0) + (hideAI ? 1 : 0);
 
@@ -593,7 +611,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
                         onClick={() => excludeTag(tag.name)}
                         title={`Hide posts tagged ${tag.name}`}
                         aria-label={`Exclude ${tag.name}`}
-                        className="shrink-0 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-rose-500/10 hover:text-rose-400 focus:opacity-100 group-hover:opacity-100"
+                        className="shrink-0 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-rose-500/10 hover:text-rose-400 focus:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-60"
                       >
                         <Minus className="h-3.5 w-3.5" />
                       </button>
@@ -671,7 +689,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
       <div className="flex-1 min-w-0">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="mb-1 truncate text-3xl font-bold tracking-tight">
+            <h1 className="mb-1 line-clamp-2 break-words text-2xl font-bold tracking-tight sm:line-clamp-1 sm:text-3xl">
               {includedTags.length > 0 ? includedTags.map((t) => t.name).join(' + ') : uploaderParam ? `Posts by ${uploaderParam}` : 'Posts'}
             </h1>
             <p className="text-muted-foreground">
@@ -691,20 +709,25 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
         </div>
 
         <div className="sticky top-16 z-40 -mx-4 mb-6 border-b border-border/40 bg-background/95 px-4 py-3 backdrop-blur-xl">
+          <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+            <SheetContent side="left" className="w-80 max-w-[85vw]">
+              <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
+              <div className="sk-scroll mt-6 h-[calc(100vh-100px)] overflow-y-auto overflow-x-hidden overscroll-contain pr-3">
+                {SidebarContent}
+              </div>
+            </SheetContent>
+          </Sheet>
+
           <div className="flex items-start gap-2">
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="outline" size="sm" className="h-10 shrink-0 gap-2 lg:hidden" aria-label="Filters">
-                  <SlidersHorizontal className="h-4 w-4" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-80">
-                <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
-                <div className="sk-scroll mt-6 h-[calc(100vh-100px)] overflow-y-auto overflow-x-hidden overscroll-contain pr-3">
-                  {SidebarContent}
-                </div>
-              </SheetContent>
-            </Sheet>
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden h-10 shrink-0 gap-2 sm:inline-flex lg:hidden"
+              aria-label="Filters"
+              onClick={() => setFiltersOpen(true)}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
 
             {/* Search: the active tags are chips inside the box */}
             <div className="relative min-w-0 flex-1">
@@ -746,7 +769,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
                   onKeyDown={handleSearchKeyDown}
                   onFocus={() => tagSuggestions.length > 0 && setShowSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                  placeholder={selectedTags.length ? 'Add a tag…' : 'Search tags, e.g. 1girl long_hair -comic'}
+                  placeholder={selectedTags.length ? 'Add a tag…' : 'Search tags, e.g. 1girl -comic'}
                   aria-label="Search tags"
                   className="h-7 min-w-[9rem] flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
                 />
@@ -779,24 +802,23 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
               )}
             </div>
 
-            <Select value={sort} onValueChange={(value) => updateUrl(undefined, value, 1)}>
-              <SelectTrigger className="h-10 w-[150px] shrink-0 sm:w-[170px]">
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="newest">Newest First</SelectItem>
-                <SelectItem value="oldest">Oldest First</SelectItem>
-                <SelectItem value="popular">Popular</SelectItem>
-                <SelectItem value="favorites">Most Favorited</SelectItem>
-                <SelectItem value="views">Most Viewed</SelectItem>
-                <SelectItem value="alphabetical">Artist A-Z</SelectItem>
-                <SelectItem value="random">Random</SelectItem>
-              </SelectContent>
-            </Select>
+            {renderSort('hidden h-10 w-[170px] shrink-0 sm:flex')}
+          </div>
+
+          {/* Phones: the search box gets the whole row; filters and sort sit under it */}
+          <div className="mt-2 flex items-center gap-2 sm:hidden">
+            <Button variant="outline" size="sm" className="h-9 flex-1 gap-2" onClick={() => setFiltersOpen(true)}>
+              <SlidersHorizontal className="h-4 w-4" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="rounded-full bg-violet-500 px-1.5 text-[10px] font-bold leading-4 text-white">{activeFilterCount}</span>
+              )}
+            </Button>
+            {renderSort('h-9 flex-1')}
           </div>
 
           {/* Everything else that narrows the results, at a glance */}
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs">
+          <div className="scrollbar-hide -mx-4 mt-2.5 flex items-center gap-1.5 overflow-x-auto whitespace-nowrap px-4 text-xs [&>*]:shrink-0 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             {([
               { rating: 'safe' as Rating, label: 'Safe', on: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' },
               { rating: 'questionable' as Rating, label: 'Questionable', on: 'border-amber-500/40 bg-amber-500/10 text-amber-300' },
