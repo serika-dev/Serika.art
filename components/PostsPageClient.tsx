@@ -708,7 +708,8 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
           )}
         </div>
 
-        <div className="sticky top-16 z-40 -mx-4 mb-6 border-b border-border/40 bg-background/95 px-4 py-3 backdrop-blur-xl">
+        {/* Sticky from tablets up; on phones it would cover a third of the screen, so it scrolls away */}
+        <div className="relative z-40 -mx-4 mb-6 border-b border-border/40 bg-background/95 px-4 py-3 sm:sticky sm:top-16 sm:backdrop-blur-xl">
           <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
             <SheetContent side="left" className="w-80 max-w-[85vw]">
               <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
