@@ -726,10 +726,13 @@ export default function ImageDetailContent({ initialImage, imageId, headline, su
               imageSize === 'fit' ? 'flex justify-center items-center bg-zinc-950/40 p-4' : 'overflow-auto bg-zinc-950/40'
             )}>
               {imageSize === 'fit' && image.width > 0 && image.height > 0 ? (
-                // Fit mode never needs the multi-MB original: serve a resized
-                // AVIF/WebP from the image optimizer (cached for a year).
+                // Straight from the CDN, not the Next image optimizer: resizing a
+                // multi-MB original takes seconds of CPU on the app server, and
+                // at ~20 post views a second that took the whole site down
+                // (it also starved the thread pool DB connections need).
                 <NextImage
                   src={image.url}
+                  unoptimized
                   alt={imageAlt || (image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
                   width={image.width}
                   height={image.height}
