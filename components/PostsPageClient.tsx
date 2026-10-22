@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import ImageCard from '@/components/ImageCard';
 import { Image, Tag } from '@/lib/models';
 import axios from 'axios';
-import { Loader2, X, Search, Shield, AlertTriangle, Ban, SlidersHorizontal, Sparkles, Bot, EyeOff, Eye, Palette, User, Minus } from 'lucide-react';
+import { Loader2, X, Search, Shield, AlertTriangle, Ban, SlidersHorizontal, Sparkles, Bot, EyeOff, Eye, Palette, User, Minus, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { normalizeTagName } from '@/lib/tagName';
 import Link from 'next/link';
 import { getRatingsFromCookie, setRatingsCookie, toggleRating as toggleRatingUtil, Rating } from '@/lib/ratingPreferences';
@@ -83,6 +83,15 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [artistTagInfo, setArtistTagInfo] = useState<{ name: string; tagId: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Desktop filter sidebar can be collapsed to a rail; remembered per browser
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  useEffect(() => {
+    try { setSidebarCollapsed(localStorage.getItem('serika_posts_sidebar') === 'collapsed'); } catch {}
+  }, []);
+  const toggleSidebar = (collapsed: boolean) => {
+    setSidebarCollapsed(collapsed);
+    try { localStorage.setItem('serika_posts_sidebar', collapsed ? 'collapsed' : 'open'); } catch {}
+  };
   // Tag types seen so far (page results, suggestions) – colours the search chips
   const tagTypes = useRef(new Map<string, TagType>());
   const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -443,6 +452,8 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
   };
 
   const includedTags = selectedTags.filter((t) => !t.name.startsWith('-'));
+  // Shown on the collapsed rail so hidden filters are never forgotten
+  const activeFilterCount = selectedTags.length + (uploaderParam ? 1 : 0) + (hideAI ? 1 : 0);
 
   const SidebarContent = useMemo(() => (
     <div className="space-y-6">
@@ -613,11 +624,47 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
 
   return (
     <div className="flex gap-6 px-4 sm:px-6 lg:px-8 py-8 max-w-[1800px] mx-auto">
-      <aside className="hidden lg:block w-60 xl:w-64 2xl:w-72 shrink-0">
+      <aside
+        className={cn(
+          'hidden lg:block shrink-0 transition-[width] duration-200',
+          sidebarCollapsed ? 'w-10' : 'w-60 xl:w-64 2xl:w-72'
+        )}
+      >
         <div className="sticky top-[4.5rem]">
-          <div className="h-[calc(100vh-6rem)] overflow-y-auto overflow-x-hidden overscroll-contain pr-3 [scrollbar-width:thin]">
-            {SidebarContent}
-          </div>
+          {sidebarCollapsed ? (
+            <button
+              onClick={() => toggleSidebar(false)}
+              title="Show filters"
+              aria-label="Show filters"
+              aria-expanded={false}
+              className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-border/50 bg-card/50 text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+              {activeFilterCount > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-500 px-1 text-[10px] font-bold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          ) : (
+            <>
+              <div className="mb-3 flex items-center justify-between pr-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Filters</span>
+                <button
+                  onClick={() => toggleSidebar(true)}
+                  title="Hide filters"
+                  aria-label="Hide filters"
+                  aria-expanded
+                  className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                >
+                  <PanelLeftClose className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="sk-scroll h-[calc(100vh-8.5rem)] overflow-y-auto overflow-x-hidden overscroll-contain pr-3">
+                {SidebarContent}
+              </div>
+            </>
+          )}
         </div>
       </aside>
 
@@ -653,7 +700,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
               </SheetTrigger>
               <SheetContent side="left" className="w-80">
                 <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
-                <div className="mt-6 h-[calc(100vh-100px)] overflow-y-auto overflow-x-hidden overscroll-contain pr-3">
+                <div className="sk-scroll mt-6 h-[calc(100vh-100px)] overflow-y-auto overflow-x-hidden overscroll-contain pr-3">
                   {SidebarContent}
                 </div>
               </SheetContent>
@@ -707,7 +754,7 @@ function PostsPageContent({ initialQuery, initialData }: PostsPageProps) {
 
               {showSuggestions && tagSuggestions.length > 0 && (
                 <div className="absolute z-[110] mt-1 w-full overflow-hidden rounded-xl border border-border/60 bg-popover shadow-2xl">
-                  <div className="max-h-72 overflow-y-auto overflow-x-hidden">
+                  <div className="sk-scroll max-h-72 overflow-y-auto overflow-x-hidden">
                     <div className="p-1">
                       {tagSuggestions.map((tag, i) => (
                         <button

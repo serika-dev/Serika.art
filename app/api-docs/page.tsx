@@ -201,7 +201,7 @@ export default function ApiDocsPage() {
   return (
     <div className="mx-auto flex max-w-[1500px] gap-10 px-4 sm:px-6 lg:px-8">
       <aside className="hidden w-64 shrink-0 lg:block">
-        <div className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto py-8 pr-2">
+        <div className="sk-scroll sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto py-8 pr-2">
           <DocsNav groups={navGroups} />
         </div>
       </aside>
