@@ -6,6 +6,16 @@ import { getPool, getImportPool } from '@/lib/db';
 // an overload shows what is saturating: GC/memory (heap/rss), CPU (lag with
 // a normal heap) or the database (pool waiting while the loop is fine).
 export function startHealthMonitor() {
+  // Confirms the Postgres tuning (set in Coolify) is actually active
+  getPool()
+    .query(
+      `SELECT string_agg(name || '=' || setting || COALESCE(unit, ''), ' ' ORDER BY name) AS s FROM pg_settings
+       WHERE name IN ('shared_buffers','effective_cache_size','work_mem','maintenance_work_mem','max_connections',
+                      'random_page_cost','jit','max_wal_size','dynamic_shared_memory_type','log_min_duration_statement')`
+    )
+    .then((r) => console.log(`[postgres] ${r.rows[0]?.s}`))
+    .catch((e) => console.warn('[postgres] settings check failed:', e.message));
+
   const loop = monitorEventLoopDelay({ resolution: 20 });
   loop.enable();
   const mb = (n: number) => Math.round(n / 1048576);

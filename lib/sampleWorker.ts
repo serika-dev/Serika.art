@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { cacheSet, getImportPool, importQuery } from '@/lib/db';
 import { ensureSampleTable, generateSample, popQueuedSample, type SampleSource } from '@/lib/samples';
 
@@ -116,9 +117,18 @@ async function loop() {
       await sleep(IDLE_MS);
       continue;
     }
-    // A few at a time; each sample is a fetch + resize + upload
-    for (let i = 0; i < posts.length; i += CONCURRENCY) {
-      const results = await Promise.allSettled(posts.slice(i, i + CONCURRENCY).map((p) => generateSample(p)));
+    // A few at a time; each sample is a fetch + resize + upload. The host is
+    // shared with many apps, so back off when its CPUs are oversubscribed.
+    for (let i = 0; i < posts.length; ) {
+      const cpus = os.cpus().length || 1;
+      const load = os.loadavg()[0];
+      if (load > cpus * 2.5) {
+        await sleep(20_000);
+        continue;
+      }
+      const n = load > cpus * 1.5 ? 1 : CONCURRENCY;
+      const results = await Promise.allSettled(posts.slice(i, i + n).map((p) => generateSample(p)));
+      i += n;
       for (const r of results) {
         if (r.status === 'fulfilled') made++;
         else {
