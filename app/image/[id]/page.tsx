@@ -6,6 +6,7 @@ import ImageDetailContent from '@/components/ImageDetailContent';
 import RelatedPosts from '@/components/RelatedPosts';
 import { postSeo, displayTag, shareImageUrl } from '@/lib/seo';
 import { jsonLdHtml } from '@/lib/jsonLd';
+import { enqueueSample, sampleUrlFor, SAMPLE_MAX_HEIGHT, SAMPLE_MAX_WIDTH } from '@/lib/samples';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -53,6 +54,10 @@ const getImageData = cache(async (id: string) => {
     [image.id]
   );
 
+  // The ~1280px WebP shown by default (lib/samples); queue one if missing
+  const sampleUrl = await sampleUrlFor(image.id);
+  if (!sampleUrl) void enqueueSample(image.id);
+
   const populatedTags = tagsResult.rows.map(t => ({
     _id: String(t.id),
     name: t.name,
@@ -76,6 +81,7 @@ const getImageData = cache(async (id: string) => {
     createdAt: image.created_at,
     updatedAt: image.updated_at,
     tags: populatedTags,
+    sampleUrl,
   };
 });
 
@@ -96,9 +102,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   // Straight from the CDN when it's small enough to embed (no origin CPU per
   // crawler); only huge originals go through the resizer.
   const shareOriginal = image.fileSize > 0 && image.fileSize < 5_000_000 && image.width > 0;
-  const shareImage = shareOriginal ? image.url : shareImageUrl(image.url);
-  const shareWidth = shareOriginal ? image.width : 1200;
-  const shareHeight = shareOriginal ? image.height : image.width > 0 ? Math.round((image.height / image.width) * 1200) : 630;
+  const shareImage = image.sampleUrl || (shareOriginal ? image.url : shareImageUrl(image.url));
+  let shareWidth = shareOriginal ? image.width : 1200;
+  let shareHeight = shareOriginal ? image.height : image.width > 0 ? Math.round((image.height / image.width) * 1200) : 630;
+  if (image.sampleUrl && image.width > 0 && image.height > 0) {
+    const scale = image.sampleUrl === image.url ? 1 : Math.min(1, SAMPLE_MAX_WIDTH / image.width, SAMPLE_MAX_HEIGHT / image.height);
+    shareWidth = Math.round(image.width * scale);
+    shareHeight = Math.round(image.height * scale);
+  }
 
   return {
     // absolute: the root layout's "%s | Serika Booru" template would add the site name twice
@@ -221,7 +232,7 @@ export default async function ImagePage({ params }: PageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLdHtml(jsonLd) }}
       />
-      <ImageDetailContent initialImage={image} imageId={id} headline={seo.headline} summary={seo.summary} imageAlt={seo.alt} />
+      <ImageDetailContent initialImage={image} imageId={id} headline={seo.headline} summary={seo.summary} imageAlt={seo.alt} sampleUrl={image.sampleUrl} />
       <RelatedPosts post={image} artist={artistTags[0]} character={characterTags[0]} series={copyrightTags[0]} />
     </>
   );

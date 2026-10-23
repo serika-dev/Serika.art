@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { normalizeTagName } from '@/lib/tagName';
+import { SAMPLE_MAX_HEIGHT, SAMPLE_MAX_WIDTH } from '@/lib/sampleSize';
 
 const TAG_GROUPS = [
   { type: 'artist', label: 'Artist' },
@@ -49,9 +50,11 @@ interface ImageDetailContentProps {
   summary?: string;
   /** Descriptive alt text for the image */
   imageAlt?: string;
+  /** ~1280px WebP sample shown by default (lib/samples); the original loads on "Show full size" */
+  sampleUrl?: string | null;
 }
 
-export default function ImageDetailContent({ initialImage, imageId, headline, summary, imageAlt }: ImageDetailContentProps) {
+export default function ImageDetailContent({ initialImage, imageId, headline, summary, imageAlt, sampleUrl }: ImageDetailContentProps) {
   const router = useRouter();
   const { user } = useAuth();
   const [image, setImage] = useState<ImageType>(initialImage);
@@ -693,6 +696,14 @@ export default function ImageDetailContent({ initialImage, imageId, headline, su
     </Card>
   );
 
+  // Sample vs original: what the fit view shows, and how much smaller it is
+  const showingSample = !!sampleUrl && sampleUrl !== image.url && imageSize === 'fit';
+  const displaySrc = sampleUrl || image.url;
+  const samplePercent =
+    image.width > 0 && image.height > 0
+      ? Math.max(1, Math.round(Math.min(1, SAMPLE_MAX_WIDTH / image.width, SAMPLE_MAX_HEIGHT / image.height) * 100))
+      : 100;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {headline && (
@@ -713,25 +724,31 @@ export default function ImageDetailContent({ initialImage, imageId, headline, su
               <span className="text-sm text-muted-foreground font-mono">
                 {image.width} × {image.height} • {((image.fileSize || image.file_size || 0) / 1024 / 1024).toFixed(2)} MB • ID #{image.sequentialId}
               </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setImageSize(imageSize === 'fit' ? 'original' : 'fit')}
-              >
-                {imageSize === 'fit' ? <><Maximize2 className="h-4 w-4 mr-2" /> View Original</> : <><Minimize2 className="h-4 w-4 mr-2" /> Fit to Screen</>}
-              </Button>
+              <div className="flex items-center gap-3">
+                {showingSample && (
+                  <span className="hidden text-xs text-muted-foreground sm:inline">
+                    Resized to {samplePercent}% of original
+                  </span>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setImageSize(imageSize === 'fit' ? 'original' : 'fit')}
+                >
+                  {imageSize === 'fit' ? <><Maximize2 className="h-4 w-4 mr-2" /> Show full size</> : <><Minimize2 className="h-4 w-4 mr-2" /> Fit to screen</>}
+                </Button>
+              </div>
             </div>
             
             <div className={cn(
               imageSize === 'fit' ? 'flex justify-center items-center bg-zinc-950/40 p-4' : 'overflow-auto bg-zinc-950/40'
             )}>
               {imageSize === 'fit' && image.width > 0 && image.height > 0 ? (
-                // Straight from the CDN, not the Next image optimizer: resizing a
-                // multi-MB original takes seconds of CPU on the app server, and
-                // at ~20 post views a second that took the whole site down
-                // (it also starved the thread pool DB connections need).
+                // The pre-made sample from the CDN (lib/samples) – never the Next
+                // image optimizer: resizing originals per view took the server
+                // down. Falls back to the original until the sample exists.
                 <NextImage
-                  src={image.url}
+                  src={displaySrc}
                   unoptimized
                   alt={imageAlt || (image.tags || []).map(t => typeof t === 'string' ? t : (t as any).name).join(', ')}
                   width={image.width}
