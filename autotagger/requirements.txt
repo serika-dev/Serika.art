@@ -3,5 +3,5 @@ uvicorn[standard]>=0.30
 python-multipart>=0.0.9
 onnxruntime>=1.18
 numpy>=1.26
-pillow>=10.3
+pillow>=13.0.0
 huggingface_hub>=0.23
