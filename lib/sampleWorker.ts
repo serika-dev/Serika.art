@@ -54,7 +54,7 @@ async function byIds(ids: number[]): Promise<SampleSource[]> {
   ).rows;
 }
 
-async function nextBatch(): Promise<{ posts: SampleSource[]; advance?: () => Promise<void> }> {
+async function nextBatch(): Promise<{ posts: SampleSource[]; advance?: () => Promise<void>; priority?: boolean }> {
   // 1. Viewed / uploaded posts
   const queued: number[] = [];
   for (let i = 0; i < BATCH; i++) {
@@ -62,7 +62,8 @@ async function nextBatch(): Promise<{ posts: SampleSource[]; advance?: () => Pro
     if (!id) break;
     queued.push(id);
   }
-  if (queued.length) return { posts: await byIds(queued) };
+  // Posts someone is viewing right now: make these regardless of host load
+  if (queued.length) return { posts: await byIds(queued), priority: true };
 
   // 2. New posts since the worker first started
   const newCursor = await getCounter(NEW_CURSOR);
@@ -112,21 +113,27 @@ async function loop() {
   let failed = 0;
   let windowStart = Date.now();
   for (;;) {
-    const { posts, advance } = await nextBatch();
+    const { posts, advance, priority } = await nextBatch();
     if (posts.length === 0 && !advance) {
       await sleep(IDLE_MS);
       continue;
     }
-    // A few at a time; each sample is a fetch + resize + upload. The host is
-    // shared with many apps, so back off when its CPUs are oversubscribed.
-    for (let i = 0; i < posts.length; ) {
-      const cpus = os.cpus().length || 1;
-      const load = os.loadavg()[0];
-      if (load > cpus * 2.5) {
-        await sleep(20_000);
-        continue;
+    // The box is shared (many apps + 40+ DBs on one disk) and usually runs
+    // hot, so the bulk backfill only runs when the host has spare capacity;
+    // posts someone is viewing (priority) are always made so nobody waits.
+    const cpus = os.cpus().length || 1;
+    if (!priority) {
+      let waited = 0;
+      while (os.loadavg()[0] > cpus * 1.2 && waited < 10 * 60_000) {
+        await sleep(30_000);
+        waited += 30_000;
       }
-      const n = load > cpus * 1.5 ? 1 : CONCURRENCY;
+    }
+    // One at a time under load, a couple when the host is calm; a short pause
+    // between each keeps this from pinning a core or hammering the disk.
+    for (let i = 0; i < posts.length; ) {
+      const load = os.loadavg()[0];
+      const n = priority ? CONCURRENCY : load > cpus * 1.2 ? 1 : CONCURRENCY;
       const results = await Promise.allSettled(posts.slice(i, i + n).map((p) => generateSample(p)));
       i += n;
       for (const r of results) {
@@ -136,6 +143,7 @@ async function loop() {
           if (failed <= 20 || failed % 100 === 0) console.warn('[samples] failed:', String(r.reason?.message || r.reason).slice(0, 200));
         }
       }
+      if (!priority) await sleep(2_000);
     }
     if (advance) await advance();
 
