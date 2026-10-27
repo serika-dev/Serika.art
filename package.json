@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "bun --no-env-file test tests",
     "migrate:r2-to-b2": "npx tsx scripts/migrate-r2-to-b2.ts",
     "verify-sync": "npx tsx scripts/verify-and-sync.ts",
     "seed:artist-wikis": "npx tsx scripts/seed-artist-wikis.ts",
