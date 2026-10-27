@@ -30,7 +30,12 @@ const nextConfig: NextConfig = {
   // edge may serve them stale so a deploy is picked up within the hour.
   expireTime: 3600,
   poweredByHeader: false,
+  // ISR pages stay in an in-memory LRU only. On disk, every /image/:id a
+  // crawler touched was written to .next/server/route-cache and never pruned:
+  // ~10 GB/hour of container-layer growth.
+  cacheMaxMemorySize: 128 * 1024 * 1024,
   experimental: {
+    isrFlushToDisk: false,
     // Import only the components actually used from these barrel packages,
     // instead of their whole index (smaller client bundles).
     optimizePackageImports: [
