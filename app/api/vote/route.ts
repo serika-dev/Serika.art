@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { castVote } from '@/lib/votes';
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,53 +37,32 @@ export async function POST(request: NextRequest) {
 
     const imageDbId = imgResult.rows[0].id;
 
-    // Check existing vote
-    const existingVote = await query(
-      `SELECT id, type FROM votes WHERE user_id = $1 AND image_id = $2`,
-      [user.id, imageDbId]
-    );
+    const { previous, current } = await castVote(user.id, imageDbId, type);
 
-    let userVote: string | null = null;
-
-    if (type === '' || (existingVote.rows.length > 0 && existingVote.rows[0].type === type)) {
-      // Remove vote
-      if (existingVote.rows.length > 0) {
-        const oldType = existingVote.rows[0].type;
-        await query(`DELETE FROM votes WHERE id = $1`, [existingVote.rows[0].id]);
-        const col = oldType === 'upvote' ? 'upvotes' : 'downvotes';
+    // Keep the denormalized counters on images in step with the change.
+    if (previous !== current) {
+      if (previous && current) {
+        const decCol = previous === 'upvote' ? 'upvotes' : 'downvotes';
+        const incCol = current === 'upvote' ? 'upvotes' : 'downvotes';
+        await query(
+          `UPDATE images SET ${decCol} = GREATEST(${decCol} - 1, 0), ${incCol} = ${incCol} + 1 WHERE id = $1`,
+          [imageDbId]
+        );
+      } else if (previous) {
+        const col = previous === 'upvote' ? 'upvotes' : 'downvotes';
         await query(
           `UPDATE images SET ${col} = GREATEST(${col} - 1, 0) WHERE id = $1`,
           [imageDbId]
         );
+      } else if (current) {
+        const col = current === 'upvote' ? 'upvotes' : 'downvotes';
+        await query(
+          `UPDATE images SET ${col} = ${col} + 1 WHERE id = $1`,
+          [imageDbId]
+        );
       }
-      userVote = null;
-    } else if (existingVote.rows.length > 0) {
-      // Change vote
-      const oldType = existingVote.rows[0].type;
-      await query(
-        `UPDATE votes SET type = $1, created_at = NOW() WHERE id = $2`,
-        [type, existingVote.rows[0].id]
-      );
-      const decCol = oldType === 'upvote' ? 'upvotes' : 'downvotes';
-      const incCol = type === 'upvote' ? 'upvotes' : 'downvotes';
-      await query(
-        `UPDATE images SET ${decCol} = GREATEST(${decCol} - 1, 0), ${incCol} = ${incCol} + 1 WHERE id = $1`,
-        [imageDbId]
-      );
-      userVote = type;
-    } else {
-      // New vote
-      await query(
-        `INSERT INTO votes (user_id, image_id, type, created_at) VALUES ($1, $2, $3, NOW())`,
-        [user.id, imageDbId, type]
-      );
-      const col = type === 'upvote' ? 'upvotes' : 'downvotes';
-      await query(
-        `UPDATE images SET ${col} = ${col} + 1 WHERE id = $1`,
-        [imageDbId]
-      );
-      userVote = type;
     }
+    const userVote = current;
 
     // Get updated counts
     const updated = await query(

@@ -1,5 +1,6 @@
 import { Pool, PoolClient, QueryResult } from 'pg';
 import Redis from 'ioredis';
+import { DETECT_VOTES_SCHEMA_SQL, VOTES_INDEXES, schemaFromDetectRow, type VotesSchema } from '@/lib/votesSchema';
 
 // ── PostgreSQL ──────────────────────────────────────────────────────
 const POSTGRES_URL = process.env.POSTGRES_URL!;
@@ -285,10 +286,20 @@ export async function syncSequencesAndCounters(): Promise<void> {
   ];
 
   try {
+    // The compact votes layout has no id column / votes_id_seq (see
+    // lib/votesSchema.ts); during the migration the sequence belongs to
+    // votes_old.
+    const votesSchema = await detectVotesSchema();
     for (const { table, column, seq } of sequences) {
-      await query(`
-        SELECT setval($1, COALESCE((SELECT MAX(${column}) FROM ${table}), 1))
-      `, [seq]);
+      if (table === 'votes' && votesSchema === 'compact') continue;
+      try {
+        await query(`
+          SELECT setval($1, COALESCE((SELECT MAX(${column}) FROM ${table}), 1))
+        `, [seq]);
+      } catch (err) {
+        // One bad table must not leave every later sequence unsynced.
+        console.error(`[DB] Failed to sync ${seq}:`, err instanceof Error ? err.message : err);
+      }
     }
     
     await query(`
@@ -327,8 +338,7 @@ const SCHEMA_INDEXES: { name: string; sql: string; trgm?: boolean }[] = [
   { name: 'idx_image_tags_tag', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_image_tags_tag ON image_tags (tag_id)` },
   { name: 'idx_image_tags_image', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_image_tags_image ON image_tags (image_id)` },
   { name: 'idx_image_tags_tag_image', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_image_tags_tag_image ON image_tags (tag_id, image_id)` },
-  { name: 'idx_votes_user', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_votes_user ON votes (user_id, created_at DESC)` },
-  { name: 'idx_votes_image', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_votes_image ON votes (image_id)` },
+  // votes indexes depend on the table layout: see VOTES_INDEXES / ensureIndexes.
   { name: 'idx_favorites_user', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_favorites_user ON favorites (user_id, created_at DESC)` },
   { name: 'idx_favorites_image', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_favorites_image ON favorites (image_id)` },
   { name: 'idx_comments_image', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_comments_image ON comments (image_id, created_at DESC)` },
@@ -347,6 +357,11 @@ const SCHEMA_INDEXES: { name: string; sql: string; trgm?: boolean }[] = [
   { name: 'idx_images_username_trgm', sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_images_username_trgm ON images USING gin (username gin_trgm_ops)`, trgm: true },
 ];
 
+async function detectVotesSchema(): Promise<VotesSchema> {
+  const res = await query(DETECT_VOTES_SCHEMA_SQL);
+  return schemaFromDetectRow(res.rows[0]);
+}
+
 // Advisory-lock key so concurrent app workers serialize index builds.
 const INDEX_BUILD_LOCK_KEY = 72419641703;
 
@@ -363,6 +378,12 @@ async function ensureIndexes(): Promise<void> {
     // Our IF NOT EXISTS builds then become fast no-ops.
     await client.query(`SELECT pg_advisory_lock(${INDEX_BUILD_LOCK_KEY})`);
 
+    // Only the indexes of the votes layout that is live right now. Listing the
+    // other layout's names would rebuild the 24 GB legacy idx_votes_user on
+    // the compact table, or drop the migration's in-progress builds below.
+    const votesSchema = schemaFromDetectRow((await client.query(DETECT_VOTES_SCHEMA_SQL)).rows[0]);
+    const indexes: { name: string; sql: string; trgm?: boolean }[] = [...SCHEMA_INDEXES, ...VOTES_INDEXES[votesSchema]];
+
     // A canceled CONCURRENTLY build leaves an INVALID index behind which
     // IF NOT EXISTS would treat as complete – drop those so they rebuild.
     const invalid = await client.query(
@@ -370,7 +391,7 @@ async function ensureIndexes(): Promise<void> {
        FROM pg_index i
        JOIN pg_class c ON c.oid = i.indexrelid
        WHERE NOT i.indisvalid AND c.relname = ANY($1)`,
-      [SCHEMA_INDEXES.map((i) => i.name)]
+      [indexes.map((i) => i.name)]
     );
     for (const row of invalid.rows) {
       try {
@@ -389,7 +410,7 @@ async function ensureIndexes(): Promise<void> {
       console.warn('[DB] pg_trgm extension unavailable, skipping trigram indexes:', err?.message || err);
     }
 
-    for (const { name, sql, trgm } of SCHEMA_INDEXES) {
+    for (const { name, sql, trgm } of indexes) {
       if (trgm && !trgmReady) continue;
       try {
         await client.query(sql);

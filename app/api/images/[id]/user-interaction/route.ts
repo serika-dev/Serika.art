@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { getUserVote } from '@/lib/votes';
 
 export async function GET(
   request: NextRequest,
@@ -43,11 +44,8 @@ export async function GET(
     const imageDbId = imgResult.rows[0].id;
 
     // Fetch user vote and favorite status in parallel
-    const [voteRes, favRes] = await Promise.all([
-      query(
-        `SELECT type FROM votes WHERE user_id = $1 AND image_id = $2`,
-        [user.id, imageDbId]
-      ),
+    const [vote, favRes] = await Promise.all([
+      getUserVote(user.id, imageDbId),
       query(
         `SELECT 1 FROM favorites WHERE user_id = $1 AND image_id = $2`,
         [user.id, imageDbId]
@@ -56,7 +54,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      vote: voteRes.rows[0]?.type || null,
+      vote,
       isFavorited: favRes.rows.length > 0,
     });
   } catch (error: any) {

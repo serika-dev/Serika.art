@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { listUpvotedImages } from '@/lib/votes';
 
 export async function GET(
   request: NextRequest,
@@ -31,17 +32,7 @@ export async function GET(
 
     // Get liked posts
     if (type === 'likes' || type === 'all') {
-      const likesResult = await query(
-        `SELECT i.*
-         FROM votes v
-         JOIN images i ON i.id = v.image_id
-         WHERE v.user_id = $1 AND v.type = 'upvote'
-         ORDER BY v.created_at DESC
-         LIMIT 50`,
-        [userId]
-      );
-
-      const likedImages = likesResult.rows;
+      const likedImages = await listUpvotedImages(userId, 50);
 
       // Populate tags
       if (likedImages.length > 0) {
