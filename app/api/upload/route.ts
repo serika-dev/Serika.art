@@ -13,10 +13,11 @@ import { isAutotaggerConfigured } from '@/lib/autotagger';
 const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === 'true';
 
 // Same cap as /api/v1/upload. next.config.ts lets request bodies through up to
-// 55 MB (file plus form fields); anything bigger is refused here up front.
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
-const MAX_BODY_BYTES = 55 * 1024 * 1024;
-const TOO_LARGE = { success: false, error: 'This file is too large. Images can be up to 50 MB.' };
+// 105 MB (file plus form fields); anything bigger is refused here up front.
+// Cloudflare also stops any request over 100 MB before it reaches us.
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+const MAX_BODY_BYTES = 105 * 1024 * 1024;
+const TOO_LARGE = { success: false, error: 'This file is too large. Images can be up to 100 MB.' };
 
 export async function POST(request: NextRequest) {
   const declaredLength = Number(request.headers.get('content-length') || 0);
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
       // body over the proxy limit without a Content-Length).
       console.warn('Upload body could not be read as form data:', error);
       return NextResponse.json(
-        { success: false, error: 'The upload did not arrive completely. Please try again; images can be up to 50 MB.' },
+        { success: false, error: 'The upload did not arrive completely. Please try again; images can be up to 100 MB.' },
         { status: 400 }
       );
     }

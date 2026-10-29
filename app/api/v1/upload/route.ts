@@ -44,10 +44,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check file size (50MB max)
-    const maxSize = 50 * 1024 * 1024;
+    // Check file size (100MB max, same as /api/upload)
+    const maxSize = 100 * 1024 * 1024;
     if (file.size > maxSize) {
-      return apiError('File too large. Maximum size is 50MB', 400, 'FILE_TOO_LARGE');
+      return apiError('File too large. Maximum size is 100MB', 400, 'FILE_TOO_LARGE');
     }
 
     // Parse tags

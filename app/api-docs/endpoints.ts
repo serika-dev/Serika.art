@@ -293,7 +293,7 @@ Response headers:
     longDescription: 'Accepts multipart/form-data with the image file, tags, and metadata. The server automatically generates a thumbnail, extracts dimensions, uploads to CDN storage, creates tag records (or reuses existing ones), and assigns a sequential post ID.',
     auth: true, permission: 'upload',
     body: [
-      { name: 'file', type: 'File', required: true, description: 'Image file. Supported: JPEG, PNG, GIF, WebP. Max: 50MB.' },
+      { name: 'file', type: 'File', required: true, description: 'Image file. Supported: JPEG, PNG, GIF, WebP. Max: 100MB.' },
       { name: 'tags', type: 'string', required: true, description: 'JSON array of tag objects or comma-separated string. Min 5, Max 100 tags (with auto_tag=true, predicted tags count towards the 5).' },
       { name: 'rating', type: 'string', required: true, description: 'Content rating: safe, questionable, or explicit. With auto_tag=true it may be omitted and the predicted rating is used.' },
       { name: 'auto_tag', type: 'boolean', default: 'false', description: 'Run the autotagger and add its confident tag predictions to the ones you send (see POST /api/v1/autotag).' },
@@ -369,7 +369,7 @@ Response headers:
     longDescription: 'Runs the image through the Serika autotagger (a WD v3 tagger model, compatible with the Danbooru autotagger API). Every prediction comes with a confidence score; "recommended" marks the ones confident enough to apply automatically (general ≥ 0.35, character ≥ 0.75). Tag names and types are matched against existing Serika tags, and "is_new" marks predictions that do not exist on Serika yet.',
     auth: true, permission: 'images:read',
     body: [
-      { name: 'file', type: 'File', description: 'Image file (multipart/form-data). Max: 50MB.' },
+      { name: 'file', type: 'File', description: 'Image file (multipart/form-data). Max: 100MB.' },
       { name: 'post_id', type: 'integer', description: 'Alternatively, a JSON body {"post_id": 123} to tag an existing post.' },
     ],
     responseExample: `{
