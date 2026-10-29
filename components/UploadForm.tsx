@@ -262,6 +262,12 @@ export default function UploadForm() {
       return;
     }
 
+    // Same 50 MB cap as /api/upload; saves uploading a file only to have it refused.
+    if (file.size > 50 * 1024 * 1024) {
+      setError(`This file is ${(file.size / (1024 * 1024)).toFixed(1)} MB. Images can be up to 50 MB.`);
+      return;
+    }
+
     if (tags.length < MIN_TAGS) {
       setError(`Please add at least ${MIN_TAGS} tags (${tags.length} so far)`);
       return;

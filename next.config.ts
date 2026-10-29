@@ -35,6 +35,11 @@ const nextConfig: NextConfig = {
   // ~10 GB/hour of container-layer growth.
   cacheMaxMemorySize: 128 * 1024 * 1024,
   experimental: {
+    // middleware.ts runs on every route, so Next buffers each request body and
+    // cuts it off at 10 MB by default. A bigger image upload then arrived
+    // truncated and request.formData() failed ("Failed to parse body as
+    // FormData", a 500). Uploads allow 50 MB; the rest is room for the fields.
+    proxyClientMaxBodySize: '55mb',
     isrFlushToDisk: false,
     // Import only the components actually used from these barrel packages,
     // instead of their whole index (smaller client bundles).

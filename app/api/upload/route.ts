@@ -12,7 +12,18 @@ import { isAutotaggerConfigured } from '@/lib/autotagger';
 
 const USE_LOCAL_STORAGE = process.env.USE_LOCAL_STORAGE === 'true';
 
+// Same cap as /api/v1/upload. next.config.ts lets request bodies through up to
+// 55 MB (file plus form fields); anything bigger is refused here up front.
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_BODY_BYTES = 55 * 1024 * 1024;
+const TOO_LARGE = { success: false, error: 'This file is too large. Images can be up to 50 MB.' };
+
 export async function POST(request: NextRequest) {
+  const declaredLength = Number(request.headers.get('content-length') || 0);
+  if (declaredLength > MAX_BODY_BYTES) {
+    return NextResponse.json(TOO_LARGE, { status: 413 });
+  }
+
   try {
     // Try to get user, but allow anonymous uploads
     let user: any = null;
@@ -39,8 +50,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const formData = await request.formData();
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (error) {
+      // A truncated or malformed body (connection dropped mid-upload, or a
+      // body over the proxy limit without a Content-Length).
+      console.warn('Upload body could not be read as form data:', error);
+      return NextResponse.json(
+        { success: false, error: 'The upload did not arrive completely. Please try again; images can be up to 50 MB.' },
+        { status: 400 }
+      );
+    }
     const file = formData.get('file') as File;
+    if (file && typeof file === 'object' && file.size > MAX_UPLOAD_BYTES) {
+      return NextResponse.json(TOO_LARGE, { status: 413 });
+    }
     const tagsString = formData.get('tags') as string;
     let tagsData = [];
     try {
