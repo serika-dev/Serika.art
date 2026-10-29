@@ -56,6 +56,16 @@ function buildUrl(url: string, config?: AxiosRequestConfig) {
 
 function encodeBody(data: unknown, headers: Record<string, string>): BodyInit | undefined {
   if (data === undefined) return undefined;
+  if (data instanceof FormData) {
+    // Like real axios: drop any Content-Type the caller set ("multipart/form-data"
+    // without a boundary) so the browser writes the full header with the
+    // boundary. Without it the server can't split the parts and every upload
+    // fails with "Failed to parse body as FormData".
+    for (const key of Object.keys(headers)) {
+      if (key.toLowerCase() === 'content-type') delete headers[key];
+    }
+    return data;
+  }
   if (
     typeof data === 'string' ||
     data instanceof FormData ||
