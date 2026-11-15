@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import axios from 'axios';
 import { Search, Hash, Users, BookOpen, ImageIcon, X } from 'lucide-react';
+import DonationWidget from '@/components/DonationWidget';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -188,6 +189,8 @@ export default function HomePageClient({ imageCount, tagCount }: HomePageClientP
             <span className="text-foreground font-bold">{tagCount.toLocaleString()}</span> tags archive
           </p>
         </div>
+
+        <DonationWidget variant="home" />
 
         {/* Quick links grid */}
         <div className="grid grid-cols-4 gap-2 pt-4">

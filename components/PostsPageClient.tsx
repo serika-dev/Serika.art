@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import NativeAd from '@/components/NativeAd';
+import DonationWidget from '@/components/DonationWidget';
 import { buildImagesQuery } from '@/lib/postsQuery';
 import { DEFAULT_VIEW_PREFS, readViewPrefs, writeViewPrefs, writeBlacklistCookie, type BlacklistPrefs, type GridSize, type ViewPrefs } from '@/lib/viewPrefs';
 
@@ -875,6 +876,8 @@ function PostsPageContent({ initialQuery, initialData, initialPrefs = DEFAULT_VI
           </div>
         </div>
 
+        <DonationWidget variant="banner" className="mb-6" />
+
         {loading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
             {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="aspect-square rounded-2xl" />)}
@@ -910,6 +913,7 @@ function PostsPageContent({ initialQuery, initialData, initialPrefs = DEFAULT_VI
 
                 return filteredImages.map((image, index) => (
                   <Fragment key={(image.id || image._id)?.toString()}>
+                    {index === 8 && <DonationWidget variant="tile" />}
                     {adIndices.has(index) && (
                       <NativeAd
                         key={`ad-${image.id || image._id}`}

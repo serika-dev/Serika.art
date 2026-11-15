@@ -11,6 +11,8 @@ interface User {
   email: string;
   avatarUrl?: string;
   rank?: UserRank;
+  /** Set by Serika Accounts for an active Serika+ plan. */
+  isPremium?: boolean;
 }
 
 interface AuthContextType {
