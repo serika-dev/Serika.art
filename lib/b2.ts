@@ -39,6 +39,11 @@ export const b2Client = new S3Client({
   }),
 });
 
+/** B2 refused or could not be reached; the file was not stored. */
+export class B2UploadError extends Error {
+  readonly code = 'STORAGE_REFUSED';
+}
+
 export async function uploadToB2(
   file: Buffer,
   filename: string,
@@ -77,11 +82,41 @@ export async function uploadToB2(
     
     // Provide more helpful error messages
     if (error.code === 'EPROTO' || error.code === 'ERR_SSL_WRONG_VERSION_NUMBER') {
-      throw new Error('SSL/TLS connection error with B2. Please check your B2 credentials and network connection.');
+      throw new B2UploadError('SSL/TLS connection error with B2. Please check your B2 credentials and network connection.');
     }
     
-    throw new Error(`Failed to upload to B2: ${error.message}`);
+    throw new B2UploadError(`Failed to upload to B2: ${error.message}`);
   }
+}
+
+/** Bucket key for a URL returned by uploadToB2. */
+export function b2KeyFromUrl(url: string): string {
+  return new URL(url).pathname.replace(/^\//, '');
+}
+
+/**
+ * Uploads several files; if B2 refuses any of them, removes the ones that did
+ * go up and throws, so a post is never created with a missing file.
+ */
+export async function uploadAllToB2(
+  files: { file: Buffer; filename: string; contentType: string; folder?: string }[]
+): Promise<string[]> {
+  const results = await Promise.allSettled(
+    files.map((f) => uploadToB2(f.file, f.filename, f.contentType, f.folder))
+  );
+  const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+  if (!failed) return results.map((r) => (r as PromiseFulfilledResult<string>).value);
+
+  await Promise.all(
+    results.map((r) =>
+      r.status === 'fulfilled'
+        ? deleteFromB2(b2KeyFromUrl(r.value)).catch((err) =>
+            console.error('B2 cleanup after failed upload:', r.value, err?.message || err)
+          )
+        : null
+    )
+  );
+  throw failed.reason;
 }
 
 export async function deleteFromB2(key: string): Promise<void> {

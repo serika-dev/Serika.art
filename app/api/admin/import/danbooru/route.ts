@@ -10,8 +10,8 @@ import {
   DanbooruPost,
 } from '@/lib/danbooru';
 import { query, getNextSequentialId, withTransaction } from '@/lib/db';
-import { uploadToB2 } from '@/lib/b2';
-import sharp from 'sharp';
+import { uploadAllToB2 } from '@/lib/b2';
+import { checkImage, makeThumbnail } from '@/lib/imageValidation';
 
 interface ImportResult {
   success: boolean;
@@ -36,58 +36,33 @@ async function checkAdminAuth(request: NextRequest) {
 async function downloadAndUploadImage(
   fileUrl: string,
   postId: number
-): Promise<{ mainUrl: string; thumbnailUrl: string; width: number; height: number }> {
+): Promise<{ mainUrl: string; thumbnailUrl: string; width: number; height: number; contentType: string }> {
   // Download the image
   const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-  let imageBuffer = Buffer.from(imageResponse.data);
+  const imageBuffer = Buffer.from(imageResponse.data);
 
-  // Get image metadata and convert if needed
-  let metadata;
-  try {
-    metadata = await sharp(imageBuffer).metadata();
-  } catch (error) {
-    // If sharp can't read it, try to convert from webp or other format to jpeg
-    try {
-      imageBuffer = await sharp(imageBuffer).toFormat('jpeg', { quality: 90 }).toBuffer();
-      metadata = await sharp(imageBuffer).metadata();
-    } catch (convertError) {
-      throw new Error('Unsupported image format and conversion failed');
-    }
-  }
-
-  const width = metadata.width || 0;
-  const height = metadata.height || 0;
+  // Throws InvalidImageError for truncated/corrupt/unsupported files
+  const checked = await checkImage(imageBuffer);
+  const { width, height, ext } = checked;
 
   // Generate unique filename with proper folder structure
   const timestamp = Date.now();
-  let ext = fileUrl.split('.').pop()?.split('?')[0] || 'jpg';
-  // Force jpg if we had to convert
-  if (ext === 'webp' || ext === 'gif') {
-    ext = 'jpg';
-  }
   const mainFilename = `${timestamp}-danbooru-${postId}.${ext}`;
   const thumbFilename = `thumb-${timestamp}-danbooru-${postId}.jpg`;
 
-  // Upload main image
-  const mainUrl = await uploadToB2(imageBuffer, mainFilename, `image/${ext}`);
-
-  // Create and upload thumbnail (aggressive compression for previews)
-  const thumbnailBuffer = await sharp(imageBuffer)
-    .resize(320, 320, { fit: 'cover' })
-    .jpeg({ quality: 45, mozjpeg: true, progressive: true })
-    .toBuffer();
-  const thumbnailUrl = await uploadToB2(
-    thumbnailBuffer,
-    thumbFilename,
-    'image/jpeg',
-    'thumbnails'
-  );
+  // Upload main image and thumbnail; both or neither
+  const thumbnailBuffer = await makeThumbnail(imageBuffer);
+  const [mainUrl, thumbnailUrl] = await uploadAllToB2([
+    { file: imageBuffer, filename: mainFilename, contentType: checked.contentType },
+    { file: thumbnailBuffer, filename: thumbFilename, contentType: 'image/jpeg', folder: 'thumbnails' },
+  ]);
 
   return {
     mainUrl,
     thumbnailUrl,
     width,
     height,
+    contentType: checked.contentType,
   };
 }
 
@@ -108,7 +83,7 @@ async function importDanbooruPost(post: DanbooruPost): Promise<ImportResult> {
       return { success: false, error: 'No file URL available (post may be deleted or restricted)', postId: post.id, skipped: true };
     }
 
-    const { mainUrl, thumbnailUrl, width, height } = await downloadAndUploadImage(
+    const { mainUrl, thumbnailUrl, width, height, contentType } = await downloadAndUploadImage(
       fileUrl,
       post.id
     );
@@ -169,7 +144,7 @@ async function importDanbooruPost(post: DanbooruPost): Promise<ImportResult> {
           post.file_size || 0,
           width,
           height,
-          `image/${post.file_ext}`,
+          contentType,
           mapDanbooruRating(post.rating),
           isAIGenerated,
           post.source || `https://danbooru.donmai.us/posts/${post.id}`,

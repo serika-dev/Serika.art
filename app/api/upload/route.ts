@@ -2,10 +2,10 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { normalizeTagName } from '@/lib/tagName';
 import { detectAiProvenance } from '@/lib/aiProvenance';
 import { query, withTransaction } from '@/lib/db';
-import { uploadToB2 } from '@/lib/b2';
+import { uploadAllToB2 } from '@/lib/b2';
+import { checkImage, makeThumbnail, withExt, InvalidImageError, type CheckedImage } from '@/lib/imageValidation';
 import { uploadLocally } from '@/lib/localStorage';
 import { requireAuth } from '@/lib/auth';
-import sharp from 'sharp';
 import { revalidateImagePage } from '@/lib/revalidate';
 import { autotagPost, MIN_TAGS, sameTagKey } from '@/lib/autotagApply';
 import { isAutotaggerConfigured } from '@/lib/autotagger';
@@ -112,45 +112,43 @@ export async function POST(request: NextRequest) {
     const aiProvenance = detectAiProvenance(buffer);
     if (aiProvenance) isAIGenerated = true;
 
-    // Get image metadata
-    const metadata = await sharp(buffer).metadata();
+    // Refuse anything that isn't a complete, displayable image
+    let checked: CheckedImage;
+    try {
+      checked = await checkImage(buffer);
+    } catch (err) {
+      if (err instanceof InvalidImageError) {
+        return NextResponse.json({ success: false, error: err.message, code: err.code }, { status: 400 });
+      }
+      throw err;
+    }
+    const filename = withExt(file.name, checked.ext);
 
     // Create compressed thumbnail
-    const thumbnailBuffer = await sharp(buffer)
-      .resize(320, 320, { fit: 'cover' })
-      .jpeg({ quality: 45, mozjpeg: true, progressive: true })
-      .toBuffer();
+    const thumbnailBuffer = await makeThumbnail(buffer);
 
-    // Upload to storage
+    // Upload to storage. If B2 refuses, so do we: no post is created (a local
+    // fallback isn't served in production and left posts with broken images).
     let imageUrl: string;
     let thumbnailUrl: string;
-
     try {
       if (USE_LOCAL_STORAGE) {
         [imageUrl, thumbnailUrl] = await Promise.all([
-          uploadLocally(buffer, file.name, file.type),
-          uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
+          uploadLocally(buffer, filename, checked.contentType),
+          uploadLocally(thumbnailBuffer, `thumb-${filename}`, 'image/jpeg', 'thumbnails'),
         ]);
       } else {
-        [imageUrl, thumbnailUrl] = await Promise.all([
-          uploadToB2(buffer, file.name, file.type),
-          uploadToB2(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
+        [imageUrl, thumbnailUrl] = await uploadAllToB2([
+          { file: buffer, filename, contentType: checked.contentType },
+          { file: thumbnailBuffer, filename: `thumb-${withExt(filename, 'jpg')}`, contentType: 'image/jpeg', folder: 'thumbnails' },
         ]);
       }
-    } catch (uploadError: any) {
-      console.error('Primary upload failed, trying fallback:', uploadError);
-      if (!USE_LOCAL_STORAGE) {
-        try {
-          [imageUrl, thumbnailUrl] = await Promise.all([
-            uploadLocally(buffer, file.name, file.type),
-            uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
-          ]);
-        } catch (fallbackError) {
-          throw new Error('Both B2 and local storage uploads failed.');
-        }
-      } else {
-        throw uploadError;
-      }
+    } catch (uploadError) {
+      console.error('Storage refused the upload:', uploadError);
+      return NextResponse.json(
+        { success: false, error: 'Storage refused the upload, so nothing was posted. Please try again later.', code: 'STORAGE_REFUSED' },
+        { status: 502 }
+      );
     }
 
     // Insert image and tags in a transaction (sequential ID is allocated atomically inside)
@@ -197,8 +195,8 @@ export async function POST(request: NextRequest) {
           (user && !postAnonymously) ? user.username : 'Anonymous',
           imageUrl, thumbnailUrl,
           file.name, buffer.length,
-          metadata.width || 0, metadata.height || 0,
-          file.type, rating, isAIGenerated, source, description,
+          checked.width, checked.height,
+          checked.contentType, rating, isAIGenerated, source, description,
           aiProvenance ? JSON.stringify({ aiProvenance }) : null,
         ]
       );

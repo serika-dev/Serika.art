@@ -1,9 +1,9 @@
 import { NextRequest, after } from 'next/server';
 import { query, withTransaction } from '@/lib/db';
 import { validateApiKey, apiResponse, apiError } from '@/lib/apiAuth';
-import { uploadToB2 } from '@/lib/b2';
+import { uploadAllToB2 } from '@/lib/b2';
+import { checkImage, makeThumbnail, withExt, InvalidImageError, ALLOWED_IMAGE_TYPES, type CheckedImage } from '@/lib/imageValidation';
 import { uploadLocally } from '@/lib/localStorage';
-import sharp from 'sharp';
 import { autotagImage, AutotaggerUnavailableError } from '@/lib/autotagger';
 import { detectAiProvenance } from '@/lib/aiProvenance';
 import { revalidateImagePage } from '@/lib/revalidate';
@@ -34,11 +34,12 @@ export async function POST(request: NextRequest) {
       return apiError('No file provided', 400, 'MISSING_FILE');
     }
 
-    // Check file type
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
+    // Check the declared type (the bytes are checked again below; clients that
+    // send no type or a generic one get judged on the bytes alone)
+    const declaredType = file.type === 'image/jpg' ? 'image/jpeg' : file.type;
+    if (declaredType && declaredType !== 'application/octet-stream' && !ALLOWED_IMAGE_TYPES.includes(declaredType)) {
       return apiError(
-        `Invalid file type. Allowed: ${allowedTypes.join(', ')}`,
+        `Invalid file type. Allowed: ${ALLOWED_IMAGE_TYPES.join(', ')}`,
         400,
         'INVALID_FILE_TYPE'
       );
@@ -93,6 +94,16 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // Refuse anything that isn't a complete, displayable image
+    let checked: CheckedImage;
+    try {
+      checked = await checkImage(buffer);
+    } catch (err) {
+      if (err instanceof InvalidImageError) return apiError(err.message, 400, err.code);
+      throw err;
+    }
+    const filename = withExt(file.name, checked.ext);
+
     // AI provenance metadata in the file forces is_ai_generated
     const aiProvenance = detectAiProvenance(buffer);
     if (aiProvenance) isAIGenerated = true;
@@ -128,34 +139,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get metadata
-    const sharpMetadata = await sharp(buffer).metadata();
-
     // Create thumbnail
-    const thumbnailBuffer = await sharp(buffer)
-      .resize(320, 320, { fit: 'cover' })
-      .jpeg({ quality: 45, mozjpeg: true, progressive: true })
-      .toBuffer();
+    const thumbnailBuffer = await makeThumbnail(buffer);
 
-    // Upload to storage
+    // Upload to storage. If B2 refuses, the upload is refused and no post is made.
     let imageUrl: string;
     let thumbnailUrl: string;
 
     try {
       if (USE_LOCAL_STORAGE) {
         [imageUrl, thumbnailUrl] = await Promise.all([
-          uploadLocally(buffer, file.name, file.type),
-          uploadLocally(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
+          uploadLocally(buffer, filename, checked.contentType),
+          uploadLocally(thumbnailBuffer, `thumb-${filename}`, 'image/jpeg', 'thumbnails'),
         ]);
       } else {
-        [imageUrl, thumbnailUrl] = await Promise.all([
-          uploadToB2(buffer, file.name, file.type),
-          uploadToB2(thumbnailBuffer, `thumb-${file.name}`, 'image/jpeg', 'thumbnails'),
+        [imageUrl, thumbnailUrl] = await uploadAllToB2([
+          { file: buffer, filename, contentType: checked.contentType },
+          { file: thumbnailBuffer, filename: `thumb-${withExt(filename, 'jpg')}`, contentType: 'image/jpeg', folder: 'thumbnails' },
         ]);
       }
-    } catch (uploadError: any) {
-      console.error('Upload error:', uploadError);
-      return apiError('Failed to upload file', 500, 'UPLOAD_FAILED');
+    } catch (uploadError) {
+      console.error('Storage refused the upload:', uploadError);
+      return apiError('Storage refused the upload, so nothing was posted. Try again later.', 502, 'STORAGE_REFUSED');
     }
 
     // Run db queries in a transaction
@@ -205,9 +210,9 @@ export async function POST(request: NextRequest) {
           thumbnailUrl,
           file.name,
           file.size,
-          sharpMetadata.width || 0,
-          sharpMetadata.height || 0,
-          file.type,
+          checked.width,
+          checked.height,
+          checked.contentType,
           rating,
           isAIGenerated,
           source,
@@ -256,10 +261,10 @@ export async function POST(request: NextRequest) {
       post_id: uploadResult.nextSequentialId,
       url: imageUrl,
       thumbnail_url: thumbnailUrl,
-      width: sharpMetadata.width || 0,
-      height: sharpMetadata.height || 0,
+      width: checked.width,
+      height: checked.height,
       file_size: file.size,
-      content_type: file.type,
+      content_type: checked.contentType,
       rating,
       is_ai_generated: isAIGenerated,
       ...(aiProvenance && { ai_provenance: aiProvenance }),

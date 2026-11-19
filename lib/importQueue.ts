@@ -10,9 +10,9 @@ import {
   isAIPost,
   DanbooruPost,
 } from '@/lib/danbooru';
-import { uploadToB2 } from '@/lib/b2';
+import { uploadAllToB2 } from '@/lib/b2';
+import { checkImage, makeThumbnail } from '@/lib/imageValidation';
 import axios from 'axios';
-import sharp from 'sharp';
 
 // Import job status
 export type ImportJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'paused';
@@ -185,48 +185,31 @@ async function getOrCreateTagsBulk(
 async function downloadAndUploadImage(
   fileUrl: string,
   postId: number
-): Promise<{ mainUrl: string; thumbnailUrl: string; width: number; height: number }> {
+): Promise<{ mainUrl: string; thumbnailUrl: string; width: number; height: number; contentType: string }> {
   const imageResponse = await axios.get(fileUrl, {
     responseType: 'arraybuffer',
     timeout: 60000,
     maxContentLength: 100 * 1024 * 1024,
   });
-  let imageBuffer = Buffer.from(imageResponse.data);
+  const imageBuffer = Buffer.from(imageResponse.data);
 
-  let metadata;
-  try {
-    metadata = await sharp(imageBuffer).metadata();
-  } catch {
-    try {
-      imageBuffer = await sharp(imageBuffer).toFormat('jpeg', { quality: 90 }).toBuffer();
-      metadata = await sharp(imageBuffer).metadata();
-    } catch {
-      throw new Error('Unsupported image format');
-    }
-  }
-
-  const width = metadata.width || 0;
-  const height = metadata.height || 0;
+  // Throws InvalidImageError for truncated/corrupt/unsupported files
+  const checked = await checkImage(imageBuffer);
+  const { width, height, ext } = checked;
 
   const timestamp = Date.now();
   const rand = Math.random().toString(36).substring(7);
-  let ext = fileUrl.split('.').pop()?.split('?')[0] || 'jpg';
-  if (ext === 'webp' || ext === 'gif') ext = 'jpg';
-  
   const mainFilename = `${timestamp}-${rand}-danbooru-${postId}.${ext}`;
   const thumbFilename = `thumb-${timestamp}-${rand}-danbooru-${postId}.jpg`;
 
-  // Upload main and thumbnail in parallel
-  const [mainUrl, thumbnailUrl] = await Promise.all([
-    uploadToB2(imageBuffer, mainFilename, `image/${ext}`),
-    sharp(imageBuffer)
-      .resize(320, 320, { fit: 'cover' })
-      .jpeg({ quality: 45, mozjpeg: true, progressive: true })
-      .toBuffer()
-      .then(thumbBuffer => uploadToB2(thumbBuffer, thumbFilename, 'image/jpeg', 'thumbnails'))
+  const thumbBuffer = await makeThumbnail(imageBuffer);
+  // Both files or neither: a B2 refusal fails this post's import
+  const [mainUrl, thumbnailUrl] = await uploadAllToB2([
+    { file: imageBuffer, filename: mainFilename, contentType: checked.contentType },
+    { file: thumbBuffer, filename: thumbFilename, contentType: 'image/jpeg', folder: 'thumbnails' },
   ]);
 
-  return { mainUrl, thumbnailUrl, width, height };
+  return { mainUrl, thumbnailUrl, width, height, contentType: checked.contentType };
 }
 
 interface ImportResult {
@@ -252,7 +235,7 @@ async function importSinglePost(post: DanbooruPost): Promise<ImportResult> {
       return { success: false, error: 'No file URL', postId: post.id, skipped: true };
     }
 
-    const { mainUrl, thumbnailUrl, width, height } = await downloadAndUploadImage(fileUrl, post.id);
+    const { mainUrl, thumbnailUrl, width, height, contentType } = await downloadAndUploadImage(fileUrl, post.id);
 
     // Get/create tags using bulk operation
     const tagData = extractDanbooruTags(post);
@@ -293,7 +276,7 @@ async function importSinglePost(post: DanbooruPost): Promise<ImportResult> {
           post.file_size || 0,
           width,
           height,
-          `image/${post.file_ext}`,
+          contentType,
           mapDanbooruRating(post.rating),
           isAIPost(post),
           post.source || `https://danbooru.donmai.us/posts/${post.id}`,
