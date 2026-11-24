@@ -102,6 +102,31 @@ async function executeRequest(item: typeof requestQueue[0]) {
   }
 }
 
+// 401/403 mean Danbooru (or Cloudflare in front of it) refused us outright;
+// retrying won't help, so callers should stop and surface this.
+export class DanbooruAccessError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = 'DanbooruAccessError';
+  }
+}
+
+function describeAccessError(error: any): DanbooruAccessError {
+  const res = error.response;
+  const headers = res?.headers || {};
+  const data = res?.data;
+  let source: string;
+  if (headers['cf-mitigated'] || (typeof data === 'string' && /cloudflare|cf-ray|challenge/i.test(data))) {
+    source = `blocked by Cloudflare${headers['cf-ray'] ? ` (cf-ray ${headers['cf-ray']})` : ''} - likely an IP/rate block on this server`;
+  } else if (data && typeof data === 'object' && (data.message || data.error)) {
+    source = `Danbooru said: ${data.message || data.error}`;
+  } else {
+    const snippet = typeof data === 'string' ? data.slice(0, 200).replace(/\s+/g, ' ') : '';
+    source = `no explanation from server${snippet ? `: ${snippet}` : ''}`;
+  }
+  return new DanbooruAccessError(res.status, `Danbooru HTTP ${res.status}: ${source}`);
+}
+
 async function rateLimitedRequest<T>(requestFn: () => Promise<T>, retries = 3): Promise<T> {
   return new Promise((resolve, reject) => {
     requestQueue.push({ requestFn, resolve, reject, retries });
@@ -135,6 +160,9 @@ export async function fetchDanbooruPost(postId: number): Promise<DanbooruPost | 
       return response.data;
     });
   } catch (error: any) {
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      throw describeAccessError(error);
+    }
     if (error.response?.status !== 429) {
       console.error(`Error fetching Danbooru post ${postId}:`, error.message);
     }
@@ -227,7 +255,11 @@ export async function fetchDanbooruPostsByTags(
         consecutiveFailures++;
         
         // Handle specific HTTP errors
-        if (pageError.response?.status === 410) {
+        if (pageError.response?.status === 401 || pageError.response?.status === 403) {
+          const accessError = describeAccessError(pageError);
+          console.error(`[DANBOORU] ${accessError.message} (tags "${tags}")`);
+          throw accessError;
+        } else if (pageError.response?.status === 410) {
           console.error(`[DANBOORU] 410 Gone for tags "${tags}"`);
           break;
         } else if (pageError.response?.status === 429 || pageError.response?.status === 421) {
@@ -254,6 +286,7 @@ export async function fetchDanbooruPostsByTags(
     console.log(`[DANBOORU] Finished fetching "${tags}": ${posts.length} total posts`);
     return unlimited ? posts : posts.slice(0, limit);
   } catch (error: any) {
+    if (error instanceof DanbooruAccessError) throw error;
     console.error('[DANBOORU] Error fetching posts by tags:', error.message);
     return [];
   }
