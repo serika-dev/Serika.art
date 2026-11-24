@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import StatusBadge from '@/components/StatusBadge';
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -6,9 +7,12 @@ export default function Footer() {
   return (
     <footer className="border-t border-border/40 bg-background/95 backdrop-blur py-4 sm:py-6 px-3 sm:px-4 mt-auto">
       <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
-        <p className="text-xs sm:text-sm text-zinc-400">
-          © {currentYear} Serika. All rights reserved.
-        </p>
+        <div className="flex flex-col items-center gap-2 sm:items-start">
+          <p className="text-xs sm:text-sm text-zinc-400">
+            © {currentYear} Serika. All rights reserved.
+          </p>
+          <StatusBadge />
+        </div>
         
         <div className="flex items-center justify-center flex-wrap gap-x-2 sm:gap-x-3 text-xs sm:text-sm text-zinc-300">
           <Link href="/posts" className="inline-block rounded px-1.5 py-1.5 hover:text-foreground transition-colors">Posts</Link>
