@@ -1,6 +1,6 @@
 'use client';
 
-import { writeViewPrefs, type GridSize } from '@/lib/viewPrefs';
+import { readViewPrefs, writeViewPrefs, type GridSize } from '@/lib/viewPrefs';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
@@ -48,7 +48,7 @@ export default function SettingsPage() {
   // Display Settings
   const [gridSize, setGridSize] = useState('medium');
   const [defaultRatings, setDefaultRatings] = useState<Rating[]>(['safe']);
-  const [hideAIDefault, setHideAIDefault] = useState(false);
+  const [hideAIDefault, setHideAIDefault] = useState(true);
   const [autoplayGifs, setAutoplayGifs] = useState(true);
   const [showThumbnails, setShowThumbnails] = useState(true);
   const [infiniteScroll, setInfiniteScroll] = useState(false);
@@ -69,8 +69,7 @@ export default function SettingsPage() {
     const savedGridSize = localStorage.getItem('serika_grid_size');
     if (savedGridSize) setGridSize(savedGridSize);
     
-    const savedHideAI = localStorage.getItem('serika_hide_ai_default');
-    if (savedHideAI) setHideAIDefault(savedHideAI === 'true');
+    setHideAIDefault(readViewPrefs().hideAI);
     
     const savedAutoplay = localStorage.getItem('serika_autoplay_gifs');
     if (savedAutoplay !== null) setAutoplayGifs(savedAutoplay === 'true');
@@ -549,7 +548,7 @@ export default function SettingsPage() {
                       blacklistEnabled: isBlacklistEnabled(),
                       defaultRatings: getRatingsFromCookie(),
                       gridSize: localStorage.getItem('serika_grid_size'),
-                      hideAIDefault: localStorage.getItem('serika_hide_ai_default'),
+                      hideAIDefault: String(readViewPrefs().hideAI),
                       autoplayGifs: localStorage.getItem('serika_autoplay_gifs'),
                       showThumbnails: localStorage.getItem('serika_show_thumbnails'),
                       infiniteScroll: localStorage.getItem('serika_infinite_scroll'),

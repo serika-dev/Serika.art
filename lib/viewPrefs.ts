@@ -30,7 +30,8 @@ export const DEFAULT_VIEW_PREFS: ViewPrefs = {
   gridSize: 'medium',
   postsPerPage: 24,
   sidebarCollapsed: false,
-  hideAI: false,
+  // AI-generated posts are hidden unless the visitor turns them on
+  hideAI: true,
   infiniteScroll: false,
 };
 
@@ -47,22 +48,28 @@ function decode(value: string | undefined): string {
   }
 }
 
-/** "g=small;p=48;s=1;a=1;i=1" */
+/**
+ * "g=small;p=48;s=1;h=1;i=1". Hide AI used to be `a`, defaulting to off and
+ * written into every visitor's cookie, so an old `a=0` is not a choice anyone
+ * made: only `a=1` is kept, and the setting is now saved as `h`.
+ */
 export function parseViewPrefs(raw: string | undefined): ViewPrefs {
   const prefs = { ...DEFAULT_VIEW_PREFS };
+  let sawH = false;
   for (const part of decode(raw).split(';')) {
     const [k, v] = part.split('=');
     if (k === 'g' && (v === 'small' || v === 'medium' || v === 'large')) prefs.gridSize = v;
     else if (k === 'p' && POSTS_PER_PAGE_OPTIONS.includes(Number(v))) prefs.postsPerPage = Number(v);
     else if (k === 's') prefs.sidebarCollapsed = v === '1';
-    else if (k === 'a') prefs.hideAI = v === '1';
+    else if (k === 'h') { prefs.hideAI = v === '1'; sawH = true; }
+    else if (k === 'a' && v === '1' && !sawH) prefs.hideAI = true;
     else if (k === 'i') prefs.infiniteScroll = v === '1';
   }
   return prefs;
 }
 
 export function serializeViewPrefs(p: ViewPrefs): string {
-  return `g=${p.gridSize};p=${p.postsPerPage};s=${p.sidebarCollapsed ? 1 : 0};a=${p.hideAI ? 1 : 0};i=${p.infiniteScroll ? 1 : 0}`;
+  return `g=${p.gridSize};p=${p.postsPerPage};s=${p.sidebarCollapsed ? 1 : 0};h=${p.hideAI ? 1 : 0};i=${p.infiniteScroll ? 1 : 0}`;
 }
 
 /** "1|tag_a,tag_b" (enabled flag, then tags) */
@@ -108,7 +115,7 @@ export function readViewPrefs(): ViewPrefs {
     const p = Number(localStorage.getItem('serika_posts_per_page'));
     if (POSTS_PER_PAGE_OPTIONS.includes(p)) prefs.postsPerPage = p;
     prefs.sidebarCollapsed = localStorage.getItem('serika_posts_sidebar') === 'collapsed';
-    prefs.hideAI = localStorage.getItem('serika_hide_ai_default') === 'true';
+    // serika_hide_ai_default was written as 'false' for everyone: keep the new default
     prefs.infiniteScroll = localStorage.getItem('serika_infinite_scroll') === 'true';
   } catch {}
   return prefs;
