@@ -125,6 +125,34 @@ export default function RootLayout({
           </main>
           <Footer />
         </AuthProvider>
+        {/* Native script so Better Stack can read data-id from document.currentScript.
+            next/script loads it in a callback, where currentScript is null and the bar never appears.
+            The bar is fixed to the bottom. Their placeholder would also push the page down from the top. */}
+        <style>{`
+          .betteruptime-announcement {
+            top: auto !important;
+            bottom: 0 !important;
+            height: auto !important;
+          }
+          .betteruptime-announcement__placeholder {
+            display: none !important;
+          }
+          html.dark .betteruptime-announcement {
+            --betteruptime-announcement-bg: #0c0c0e !important;
+            --betteruptime-announcement-color: #fafafa !important;
+            border-top: 1px solid #27272a;
+          }
+          html:not(.dark) .betteruptime-announcement {
+            --betteruptime-announcement-bg: #ffffff !important;
+            --betteruptime-announcement-color: #09090b !important;
+            border-top: 1px solid #e4e4e7;
+          }
+        `}</style>
+        <script
+          src="https://incidents.betterstack.com/widgets/announcement.js"
+          data-id="228162"
+          async
+        />
       </body>
     </html>
   );
