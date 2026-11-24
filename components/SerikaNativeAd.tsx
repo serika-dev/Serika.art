@@ -5,7 +5,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowUpRight, Megaphone } from 'lucide-react';
+import { ArrowUpRight, Heart, Megaphone } from 'lucide-react';
+import { SERIKA_PLUS_URL } from '@/components/DonationWidget';
 import type { AdVariant } from '@/components/ExoClickAd';
 
 /**
@@ -17,7 +18,8 @@ import type { AdVariant } from '@/components/ExoClickAd';
  * navigation and remounts. Anything short of a usable ad (no active ads, network
  * error, timeout, broken image) calls `onEmpty`, and the slot falls back to ExoClick.
  *
- * Serika Ads is SFW only: NativeAd never shows this on NSFW pages.
+ * NativeAd decides where this shows (SFW pages, and NSFW pages unless
+ * NEXT_PUBLIC_SERIKA_ADS_ON_NSFW is false).
  */
 
 // cdn.serika.dev is Serika Ads under a name ad blockers don't block (uBlock Origin's `://ads.`
@@ -118,9 +120,59 @@ export const AdPlaceholder: React.FC<{ variant?: AdVariant }> = ({ variant = 'in
   );
 };
 
+/**
+ * Our own card, same footprint as an ad, for a slot where neither Serika Ads
+ * nor ExoClick had anything (or both are blocked): the slot is never left as a
+ * skeleton that never finishes.
+ */
+export const HouseAd: React.FC<{ variant?: AdVariant }> = ({ variant = 'inline' }) => {
+  const linkProps = { href: SERIKA_PLUS_URL, target: '_blank', rel: 'noopener noreferrer' } as const;
+  const art = (
+    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/20 via-primary/5 to-transparent">
+      <Heart className="h-10 w-10 text-primary/70" />
+    </div>
+  );
+  if (variant === 'banner') {
+    return (
+      <a {...linkProps} className="promo-card-banner group w-full flex items-center gap-4 bg-card/30 rounded-2xl overflow-hidden border border-border/30 hover:border-primary/30 transition-colors p-3 min-h-[120px]">
+        <div className="relative h-24 aspect-[16/10] rounded-xl overflow-hidden bg-muted shrink-0">{art}</div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-foreground">Browse without ads</p>
+          <p className="text-xs text-muted-foreground line-clamp-2">Serika+ removes ads and helps keep the site online.</p>
+        </div>
+      </a>
+    );
+  }
+  if (variant === 'sidebar') {
+    return (
+      <a {...linkProps} className="promo-card-sidebar group flex flex-col bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-colors">
+        <div className="relative aspect-[16/10] overflow-hidden bg-muted shrink-0">{art}</div>
+        <CardContent className="p-3">
+          <p className="text-xs font-bold text-foreground mb-1">Browse without ads</p>
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-muted-foreground group-hover:text-primary transition-colors">
+            Get Serika+ <ArrowUpRight size={10} />
+          </span>
+        </CardContent>
+      </a>
+    );
+  }
+  return (
+    <a {...linkProps} className="promo-card group flex flex-col h-full bg-card/50 rounded-2xl overflow-hidden border border-border/40 hover:border-primary/30 transition-colors">
+      <div className="relative aspect-square overflow-hidden bg-muted shrink-0">{art}</div>
+      <CardContent className="p-4 flex flex-col h-[7.5rem] shrink-0 overflow-hidden">
+        <p className="text-sm font-bold text-foreground mb-1 line-clamp-1">Browse without ads</p>
+        <p className="text-xs text-muted-foreground mb-3 line-clamp-2 min-h-8">Serika+ removes ads and helps keep the site online.</p>
+        <span className="mt-auto inline-flex items-center gap-0.5 text-[11px] font-bold text-muted-foreground group-hover:text-primary transition-colors">
+          Get Serika+ <ArrowUpRight size={12} />
+        </span>
+      </CardContent>
+    </a>
+  );
+};
+
 interface SerikaNativeAdProps {
   variant?: AdVariant;
-  /** Called once when there's no ad to show; the parent swaps in ExoClick. */
+  /** Called when there's no ad to show; the parent swaps in ExoClick. */
   onEmpty: () => void;
 }
 
