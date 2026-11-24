@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 
 import ExoClickAd, { exoClickZoneFor, isSafeAdRating, type AdSlotProps } from '@/components/ExoClickAd';
 import SerikaNativeAd, { AdPlaceholder, HouseAd } from '@/components/SerikaNativeAd';
+import { useAuth } from '@/lib/AuthContext';
 
 /**
  * One ad slot: a Serika Ads native card or an ExoClick native ad, about half
@@ -14,6 +15,7 @@ import SerikaNativeAd, { AdPlaceholder, HouseAd } from '@/components/SerikaNativ
  *   NSFW zone (see exoClickZoneFor). The NSFW zone never loads on a safe page.
  * - Serika Ads shows on every page. Set NEXT_PUBLIC_SERIKA_ADS_ON_NSFW=false to
  *   keep it off NSFW pages (those slots are then ExoClick only).
+ * - Serika+ accounts (isPremium from Serika Accounts) get no ad slots at all.
  * - Whichever source a slot gets, if it has nothing (no fill, blocked by an ad
  *   blocker, network error) the slot shows the other one, and if both are empty,
  *   our own Serika+ card. A slot is never left blank.
@@ -97,7 +99,11 @@ const NativeAdSlot: React.FC<AdSlotProps> = ({ id, rating = 'safe', variant = 'i
   const handleSerikaEmpty = useCallback(() => markEmpty('serika'), [markEmpty]);
   const handleExoEmpty = useCallback(() => markEmpty('exoclick'), [markEmpty]);
 
-  if (!hydrated) return <AdPlaceholder variant={variant} />;
+  // Serika+ is ad-free. Until the account check is back, hold the placeholder
+  // so a subscriber never gets an ad request (or an ad flashing in) first.
+  const { user, loading: authLoading } = useAuth();
+  if (user?.isPremium) return null;
+  if (!hydrated || authLoading) return <AdPlaceholder variant={variant} />;
 
   const current = empty.key === slotKey ? empty : { serika: false, exoclick: false };
   const usable = (source: Source) =>

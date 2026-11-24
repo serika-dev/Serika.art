@@ -114,11 +114,12 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://cdn.serika.art" />
       </head>
       <body className={cn("min-h-screen bg-background font-sans antialiased flex flex-col", inter.className)}>
-        {/* ExoClick: after first interaction or a few idle seconds, so ads never delay content */}
-        <AdScript />
         <ChristmasSnow />
         <SerikaPlaceBanner />
         <AuthProvider>
+          {/* ExoClick: after first interaction or a few idle seconds, so ads never delay
+              content. Inside AuthProvider: Serika+ accounts never load it. */}
+          <AdScript />
           <Navbar />
           <main className="flex-1">
             {children}

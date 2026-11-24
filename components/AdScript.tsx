@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 
 import { setAdScriptStatus } from '@/lib/adScriptStatus';
+import { useAuth } from '@/lib/AuthContext';
 
 const SRC = 'https://a.magsrv.com/ad-provider.js';
 /** A script still not loaded after this long is treated as blocked. */
@@ -13,8 +14,14 @@ const LOAD_TIMEOUT_MS = 10000;
 // never competes with the page's own content for bandwidth or the main thread.
 // Ad slots follow its load state (lib/adScriptStatus, see ExoClickAd): a
 // blocked or failed script makes them show a Serika ad straight away.
+// Serika+ accounts get no ads, so for them it never loads (it waits for the
+// account check, which is normally done well before the idle timer).
 export default function AdScript() {
+  const { user, loading } = useAuth();
+  const adFree = !!user?.isPremium;
+
   useEffect(() => {
+    if (loading || adFree) return;
     let done = false;
     const events = ['pointerdown', 'keydown', 'scroll', 'touchstart'] as const;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -58,7 +65,7 @@ export default function AdScript() {
     if (document.readyState === 'complete') onLoad();
     else window.addEventListener('load', onLoad, { once: true });
     return cleanup;
-  }, []);
+  }, [loading, adFree]);
 
   return null;
 }
