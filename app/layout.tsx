@@ -7,6 +7,7 @@ import Footer from "@/components/Footer";
 import ChristmasSnow from "@/components/ChristmasSnow";
 import { cn } from "@/lib/utils";
 import AdScript from "@/components/AdScript";
+import SerikaPlaceBanner from "@/components/SerikaPlaceBanner";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -116,6 +117,7 @@ export default function RootLayout({
         {/* ExoClick: after first interaction or a few idle seconds, so ads never delay content */}
         <AdScript />
         <ChristmasSnow />
+        <SerikaPlaceBanner />
         <AuthProvider>
           <Navbar />
           <main className="flex-1">
